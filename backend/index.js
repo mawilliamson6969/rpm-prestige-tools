@@ -61,7 +61,7 @@ app.get("/", (_req, res) => {
   res.json({ message: "RPM Prestige API — use /health for a quick check." });
 });
 
-/** Proxies AppFolio GET /units.json (browser: /api/appfolio/units). */
+/** Proxies AppFolio Reports v2 unit directory (POST; browser: /api/appfolio/units). */
 app.get("/appfolio/units", async (_req, res) => {
   try {
     const json = await fetchAppfolioUnitsJson();

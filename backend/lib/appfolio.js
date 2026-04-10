@@ -1,7 +1,27 @@
 /**
- * AppFolio Property Manager REST API (Basic Auth).
- * Base: https://[subdomain].appfolio.com/api/v1/
+ * AppFolio Property Manager — Reports API v2 (HTTP Basic Auth).
+ * Base: https://[subdomain].appfolio.com/api/v2/reports/{endpoint}
+ * Rate limit: 7 requests per 15 seconds (enforced below for outbound calls).
  */
+
+const RATE_WINDOW_MS = 15_000;
+const RATE_MAX_REQUESTS = 7;
+const outboundTimestamps = [];
+
+async function acquireAppfolioRateSlot() {
+  for (;;) {
+    const now = Date.now();
+    while (outboundTimestamps.length && outboundTimestamps[0] < now - RATE_WINDOW_MS) {
+      outboundTimestamps.shift();
+    }
+    if (outboundTimestamps.length < RATE_MAX_REQUESTS) {
+      outboundTimestamps.push(Date.now());
+      return;
+    }
+    const waitMs = RATE_WINDOW_MS - (now - outboundTimestamps[0]) + 50;
+    await new Promise((r) => setTimeout(r, Math.max(waitMs, 0)));
+  }
+}
 
 function requireAppfolioConfig() {
   const clientId = process.env.APPFOLIO_CLIENT_ID?.trim();
@@ -22,16 +42,17 @@ function basicAuthHeader(clientId, clientSecret) {
   return `Basic ${token}`;
 }
 
+/** Unit rows from POST .../unit_directory.json use { results: [...] }. */
 function normalizeUnitsPayload(json) {
   if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.results)) return json.results;
   if (json && Array.isArray(json.data)) return json.data;
   if (json && Array.isArray(json.units)) return json.units;
-  if (json && Array.isArray(json.results)) return json.results;
   return [];
 }
 
 /**
- * Heuristic vacancy detection — AppFolio field names vary; we match common status strings.
+ * Vacancy from unit directory / report rows (status, etc.).
  */
 export function isUnitVacant(unit) {
   if (!unit || typeof unit !== "object") return false;
@@ -71,6 +92,13 @@ export function isUnitVacant(unit) {
 }
 
 export function propertyLabel(unit) {
+  const flat =
+    unit.property_name ??
+    unit.PropertyName ??
+    unit.propertyName ??
+    unit.property_label;
+  if (flat != null && String(flat).trim()) return String(flat).trim();
+
   const p = unit.property;
   if (typeof p === "string" && p.trim()) return p.trim();
   if (p && typeof p === "object") {
@@ -84,27 +112,32 @@ export function propertyLabel(unit) {
       p.title;
     if (name != null && String(name).trim()) return String(name).trim();
   }
-  const flat =
-    unit.property_name ??
-    unit.PropertyName ??
-    unit.propertyName ??
-    unit.property_label;
-  if (flat != null && String(flat).trim()) return String(flat).trim();
   return "Unknown property";
 }
 
+/**
+ * Fetches unit directory via Reports API v2 (POST + JSON body).
+ */
 export async function fetchAppfolioUnitsJson() {
   const { clientId, clientSecret, subdomain } = requireAppfolioConfig();
-  const url = `https://${subdomain}.appfolio.com/api/v1/units.json`;
+  const url = `https://${subdomain}.appfolio.com/api/v2/reports/unit_directory.json`;
+  const body = JSON.stringify({
+    property_visibility: "active",
+    paginate_results: false,
+  });
+
+  await acquireAppfolioRateSlot();
 
   let res;
   try {
     res = await fetch(url, {
-      method: "GET",
+      method: "POST",
       headers: {
         Authorization: basicAuthHeader(clientId, clientSecret),
         Accept: "application/json",
+        "Content-Type": "application/json",
       },
+      body,
     });
   } catch (e) {
     const err = new Error(`Could not reach AppFolio: ${e.message || "network error"}`);
