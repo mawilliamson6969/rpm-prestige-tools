@@ -1,0 +1,39 @@
+# When you push to `main`, GitHub runs this job and SSHes into your Linode to pull the latest
+# code and rebuild/restart Docker containers. No Docker build happens on GitHub — the VPS does it.
+
+name: Deploy to Linode
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          # Add these in: Repo → Settings → Secrets and variables → Actions
+          # DEPLOY_HOST    e.g. 45.33.125.191
+          # DEPLOY_USER    e.g. root or deploy
+          # DEPLOY_SSH_KEY private key that can SSH as DEPLOY_USER (full PEM, with newlines intact)
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="/var/www/rpm-prestige-tools"
+            cd "$APP_DIR"
+            # Fast-forward to match origin/main (repo must be cloned once on the server).
+            git fetch origin main
+            git reset --hard origin/main
+            # Rebuild images if Dockerfiles or app code changed, then restart containers.
+            docker compose build
+            docker compose up -d
+            # Remove dangling images to save disk on a small VPS (optional).
+            docker image prune -f

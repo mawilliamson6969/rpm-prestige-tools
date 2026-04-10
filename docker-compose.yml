@@ -1,0 +1,54 @@
+# Runs PostgreSQL, the Node API, and the Next.js app as three containers on one Docker network.
+# Nginx on the host (not in this file) listens on 80/443 and proxies to the published localhost ports.
+
+services:
+  db:
+    # Official Postgres 16 image — data survives restarts in the named volume `pgdata`.
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a .env file on the server}
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Only expose Postgres to localhost on the VPS (backend connects via Docker network `db:5432`).
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # `db` is the Docker service name — internal DNS resolves it inside the compose network.
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app
+      PORT: "4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4000:4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  pgdata:
