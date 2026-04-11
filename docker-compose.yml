@@ -32,6 +32,15 @@ services:
       # `db` is the Docker service name — internal DNS resolves it inside the compose network.
       DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app
       PORT: "4000"
+      TEAM_NOTIFICATION_EMAILS: ${TEAM_NOTIFICATION_EMAILS:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      LEADSIMPLE_API_KEY: ${LEADSIMPLE_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      ADMIN_API_SECRET: ${ADMIN_API_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

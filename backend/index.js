@@ -1,6 +1,5 @@
 /**
- * Minimal Express API — expand with routes, DB access (e.g. pg + DATABASE_URL), auth, etc.
- * Nginx serves /api/* from the browser; paths here are without the /api prefix (see rpm-prestige.conf).
+ * Express API — Nginx serves /api/* from the browser; paths here are without the /api prefix.
  */
 import express from "express";
 import {
@@ -8,17 +7,23 @@ import {
   getUnitsForResponse,
   summarizeOccupancy,
 } from "./lib/appfolio.js";
+import { ensureOwnerTerminationSchema } from "./lib/db.js";
+import {
+  exportOwnerTerminationsCsv,
+  listOwnerTerminations,
+  patchOwnerTermination,
+  postOwnerTermination,
+} from "./routes/ownerTermination.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
 
-// Allow local dev when the Next.js dev server calls Express directly (different origin).
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -61,7 +66,6 @@ app.get("/", (_req, res) => {
   res.json({ message: "RPM Prestige API — use /health for a quick check." });
 });
 
-/** Proxies AppFolio Reports v2 unit directory (POST; browser: /api/appfolio/units). */
 app.get("/appfolio/units", async (_req, res) => {
   try {
     const json = await fetchAppfolioUnitsJson();
@@ -71,7 +75,6 @@ app.get("/appfolio/units", async (_req, res) => {
   }
 });
 
-/** Occupancy summary derived from units (browser: /api/dashboard/occupancy). */
 app.get("/dashboard/occupancy", async (_req, res) => {
   try {
     const units = await getUnitsForResponse();
@@ -85,6 +88,26 @@ app.get("/dashboard/occupancy", async (_req, res) => {
   }
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`API listening on ${port}`);
-});
+app.post("/forms/owner-termination", postOwnerTermination);
+app.get("/forms/owner-termination/export.csv", exportOwnerTerminationsCsv);
+app.get("/forms/owner-termination", listOwnerTerminations);
+app.patch("/forms/owner-termination/:id", patchOwnerTermination);
+
+async function start() {
+  if (process.env.DATABASE_URL) {
+    try {
+      await ensureOwnerTerminationSchema();
+      console.log("Database schema OK (owner_termination_requests).");
+    } catch (e) {
+      console.error("Could not ensure database schema:", e.message);
+    }
+  } else {
+    console.warn("DATABASE_URL not set — owner termination routes may fail.");
+  }
+
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`API listening on ${port}`);
+  });
+}
+
+start();
