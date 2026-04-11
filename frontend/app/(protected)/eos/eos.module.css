@@ -1,0 +1,480 @@
+.page {
+  --navy: #1b2856;
+  --blue: #0098d0;
+  --red: #b32317;
+  --grey: #6a737b;
+  --white: #ffffff;
+  --off: #f5f5f5;
+  --green: #2d8b4e;
+  min-height: 100vh;
+  background: var(--off);
+  color: var(--grey);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.topBar {
+  background: var(--navy);
+  color: var(--white);
+  padding: 1rem clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.titleRow h1 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.2vw, 1.35rem);
+  font-weight: 700;
+}
+
+.backLink {
+  font-size: 0.85rem;
+  color: #c5960c;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.navLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.navLinks a {
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+}
+
+.navLinks a:hover,
+.navActive {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.main {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.toolbar label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--grey);
+  gap: 0.25rem;
+}
+
+.select,
+.input,
+.dateIn {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  min-width: 0;
+  background: var(--white);
+  color: var(--navy);
+}
+
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.presetBtn {
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  background: var(--white);
+  color: var(--navy);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.presetBtn:hover {
+  border-color: var(--blue);
+}
+
+.presetActive {
+  background: rgba(0, 152, 208, 0.15);
+  border-color: var(--blue);
+}
+
+.gridWrap {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: 0 2px 12px rgba(27, 40, 86, 0.06);
+}
+
+.scoreTable {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  min-width: max(100%, 720px);
+}
+
+.scoreTable th,
+.scoreTable td {
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  padding: 0.35rem 0.45rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.scoreTable th:first-child,
+.scoreTable td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--white);
+  min-width: 12rem;
+  box-shadow: 4px 0 8px rgba(27, 40, 86, 0.04);
+}
+
+.scoreTable thead th {
+  background: rgba(27, 40, 86, 0.06);
+  color: var(--navy);
+  font-weight: 700;
+  top: 0;
+  z-index: 1;
+}
+
+.metricTitle {
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.metricMeta {
+  font-size: 0.68rem;
+  color: var(--grey);
+  font-weight: 400;
+}
+
+.cellOk {
+  background: rgba(45, 139, 78, 0.14) !important;
+}
+
+.cellBad {
+  background: rgba(179, 35, 23, 0.12) !important;
+}
+
+.cellEmpty {
+  background: var(--white);
+  cursor: pointer;
+}
+
+.cellBtn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.25rem;
+  font: inherit;
+  cursor: pointer;
+  text-align: right;
+}
+
+.noteHint {
+  margin-left: 0.25rem;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background: var(--blue);
+  color: #fff;
+}
+
+.btnGhost {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  color: var(--navy);
+}
+
+.alert {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(179, 35, 23, 0.08);
+  color: var(--red);
+  margin-bottom: 1rem;
+}
+
+.chartCard {
+  margin-top: 1.5rem;
+  background: var(--white);
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.chartTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--navy);
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow: auto;
+}
+
+.modal {
+  background: var(--white);
+  border-radius: 14px;
+  padding: 1.25rem;
+  max-width: 32rem;
+  width: 100%;
+  box-shadow: 0 16px 48px rgba(27, 40, 86, 0.2);
+}
+
+.modal h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  color: var(--navy);
+}
+
+.formGrid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.formGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+/* Rocks */
+.rocksSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.progressTrack {
+  flex: 1;
+  min-width: 120px;
+  max-width: 280px;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(27, 40, 86, 0.08);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+
+.rockGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 720px) {
+  .rockGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.rockCard {
+  background: var(--white);
+  border-radius: 14px;
+  padding: 1.1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  box-shadow: 0 4px 16px rgba(27, 40, 86, 0.06);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rockCardOpen {
+  grid-column: 1 / -1;
+  cursor: default;
+}
+
+.rockHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.timeline {
+  border-left: 2px solid rgba(27, 40, 86, 0.12);
+  margin: 0.75rem 0;
+  padding-left: 0.85rem;
+}
+
+.timelineItem {
+  margin-bottom: 0.65rem;
+  font-size: 0.85rem;
+}
+
+/* L10 */
+.l10List {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.meetingRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+  background: var(--white);
+  border-radius: 10px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.sectionRunner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+.timerWarn {
+  color: #c5960c;
+}
+
+.timerOver {
+  color: var(--red);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 100px;
+  border-radius: 10px;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  padding: 0.65rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.issueRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.5rem;
+  background: var(--white);
+  border-radius: 8px;
+  margin-bottom: 0.35rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.priority {
+  font-weight: 800;
+  color: var(--red);
+  min-width: 1.25rem;
+}
+
+.compactGrid {
+  overflow: auto;
+  font-size: 0.72rem;
+}
+
+.compactGrid .scoreTable {
+  min-width: 400px;
+}
+
+.muted {
+  font-size: 0.85rem;
+  color: var(--grey);
+}

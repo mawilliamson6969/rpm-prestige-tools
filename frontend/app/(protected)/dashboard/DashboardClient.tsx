@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import EosNavDropdown from "../../../components/EosNavDropdown";
 import UserMenu from "../../../components/UserMenu";
 import { useAuth } from "../../../context/AuthContext";
 import { apiUrl } from "../../../lib/api";
@@ -247,6 +248,7 @@ export default function DashboardClient() {
           <Link href="/" className={styles.backLink}>
             ← Team Hub
           </Link>
+          <EosNavDropdown variant="light" />
           <h1>RPM Prestige — {tabTitle} Dashboard</h1>
         </div>
         <div className={styles.topBarRight}>

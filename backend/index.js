@@ -14,6 +14,7 @@ import {
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
 } from "./lib/db.js";
+import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runFullSync } from "./lib/sync-engine.js";
 import {
   getMe,
@@ -43,6 +44,41 @@ import {
   postSyncRun,
 } from "./routes/kpiCacheRoutes.js";
 import { createUser, deleteUser, listUsers, updateUser } from "./routes/users.js";
+import {
+  deleteL10Issue,
+  deleteL10Todo,
+  deleteRock,
+  deleteRockMilestone,
+  deleteScorecardEntry,
+  deleteScorecardMetric,
+  getEosTeamUsers,
+  getL10Issues,
+  getL10Meeting,
+  getL10Meetings,
+  getL10Todos,
+  getRockUpdates,
+  getRocks,
+  getScorecardEntries,
+  getScorecardMetrics,
+  getScorecardReport,
+  postL10Issue,
+  postL10IssuesReorder,
+  postL10Meeting,
+  postL10Todo,
+  postRock,
+  postRockMilestone,
+  postRockUpdate,
+  postScorecardEntry,
+  postScorecardMetric,
+  putL10Issue,
+  putL10Meeting,
+  putL10MeetingRatings,
+  putL10Todo,
+  putRock,
+  putRockMilestone,
+  putScorecardEntry,
+  putScorecardMetric,
+} from "./routes/eos.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -158,6 +194,43 @@ app.get("/forms/owner-termination/export.csv", requireAuth, requireAdminRole, ex
 app.get("/forms/owner-termination", requireAuth, requireAdminRole, listOwnerTerminations);
 app.patch("/forms/owner-termination/:id", requireAuth, requireAdminRole, patchOwnerTermination);
 
+/** EOS — Entrepreneurial Operating System */
+app.get("/eos/team-users", requireAuth, getEosTeamUsers);
+app.get("/eos/scorecard/metrics", requireAuth, getScorecardMetrics);
+app.post("/eos/scorecard/metrics", requireAuth, requireAdminRole, postScorecardMetric);
+app.put("/eos/scorecard/metrics/:id", requireAuth, requireAdminRole, putScorecardMetric);
+app.delete("/eos/scorecard/metrics/:id", requireAuth, requireAdminRole, deleteScorecardMetric);
+app.get("/eos/scorecard/entries", requireAuth, getScorecardEntries);
+app.post("/eos/scorecard/entries", requireAuth, postScorecardEntry);
+app.put("/eos/scorecard/entries/:id", requireAuth, putScorecardEntry);
+app.delete("/eos/scorecard/entries/:id", requireAuth, requireAdminRole, deleteScorecardEntry);
+app.get("/eos/scorecard/report", requireAuth, getScorecardReport);
+
+app.get("/eos/rocks", requireAuth, getRocks);
+app.post("/eos/rocks", requireAuth, requireAdminRole, postRock);
+app.put("/eos/rocks/:id", requireAuth, putRock);
+app.delete("/eos/rocks/:id", requireAuth, requireAdminRole, deleteRock);
+app.post("/eos/rocks/:id/milestones", requireAuth, postRockMilestone);
+app.put("/eos/rocks/:id/milestones/:milestoneId", requireAuth, putRockMilestone);
+app.delete("/eos/rocks/:id/milestones/:milestoneId", requireAuth, deleteRockMilestone);
+app.post("/eos/rocks/:id/updates", requireAuth, postRockUpdate);
+app.get("/eos/rocks/:id/updates", requireAuth, getRockUpdates);
+
+app.get("/eos/l10/meetings", requireAuth, getL10Meetings);
+app.post("/eos/l10/meetings", requireAuth, postL10Meeting);
+app.get("/eos/l10/meetings/:id", requireAuth, getL10Meeting);
+app.put("/eos/l10/meetings/:id/ratings", requireAuth, putL10MeetingRatings);
+app.put("/eos/l10/meetings/:id", requireAuth, putL10Meeting);
+app.get("/eos/l10/todos", requireAuth, getL10Todos);
+app.post("/eos/l10/todos", requireAuth, postL10Todo);
+app.put("/eos/l10/todos/:id", requireAuth, putL10Todo);
+app.delete("/eos/l10/todos/:id", requireAuth, deleteL10Todo);
+app.post("/eos/l10/issues/reorder", requireAuth, postL10IssuesReorder);
+app.get("/eos/l10/issues", requireAuth, getL10Issues);
+app.post("/eos/l10/issues", requireAuth, postL10Issue);
+app.put("/eos/l10/issues/:id", requireAuth, putL10Issue);
+app.delete("/eos/l10/issues/:id", requireAuth, deleteL10Issue);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -169,6 +242,8 @@ async function start() {
       console.log("Database schema OK (cached dashboard / sync_log).");
       await ensureUsersSchema();
       console.log("Database schema OK (users).");
+      await ensureEosSchema();
+      console.log("Database schema OK (EOS).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

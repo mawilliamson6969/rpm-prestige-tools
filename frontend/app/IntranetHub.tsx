@@ -41,10 +41,6 @@ const TEASERS = [
     desc: "AppFolio-connected chatbot for tenants and owners",
   },
   {
-    title: "EOS Scorecard & Rocks",
-    desc: "Weekly scorecard and quarterly Rocks tracking",
-  },
-  {
     title: "Shared Inbox",
     desc: "Unified communications hub",
   },
@@ -315,6 +311,25 @@ export default function IntranetHub() {
                   href="/dashboard"
                   title="KPI Dashboard"
                   description="Live AppFolio data: doors, occupancy, property breakdown"
+                />
+              </div>
+
+              <p className={styles.catLabel}>EOS</p>
+              <div className={styles.toolGrid}>
+                <ToolCardLive
+                  href="/eos/scorecard"
+                  title="Scorecard"
+                  description="Track weekly and monthly measurables"
+                />
+                <ToolCardLive
+                  href="/eos/rocks"
+                  title="Rocks"
+                  description="Quarterly Rock tracking with milestones"
+                />
+                <ToolCardLive
+                  href="/eos/l10"
+                  title="L10 Meeting"
+                  description="Run structured L10 meetings"
                 />
               </div>
 

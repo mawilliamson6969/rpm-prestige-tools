@@ -1,0 +1,3 @@
+-- EOS tables (also created at runtime via ensureEosSchema in backend/lib/eosSchema.js)
+-- scorecard_metrics, scorecard_entries, rocks, rock_milestones, rock_updates,
+-- l10_meetings, l10_meeting_ratings, l10_todos, l10_issues
