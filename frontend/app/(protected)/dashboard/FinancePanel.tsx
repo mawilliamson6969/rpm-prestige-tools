@@ -26,7 +26,7 @@ const RED_MED = "#e11d48";
 const RED_DARK = "#7f1d1d";
 const GREEN = "#2d8b4e";
 
-const BREAKDOWN_COLORS = [NAVY, BLUE, GOLD];
+const BREAKDOWN_COLORS = [NAVY, BLUE, GOLD, ORANGE, RED_MED];
 
 type CompanyRev = {
   ytd: number;
@@ -40,8 +40,15 @@ type CompanyRev = {
   revenuePerDoorGoal: number;
 };
 
-type BreakdownRow = { category: string; ytd: number; mtd: number; percent?: number };
-type OwnerBreakdownRow = { category: string; ytd: number; mtd: number };
+type BreakdownRow = {
+  category: string;
+  ytd: number;
+  mtd: number;
+  lastYearYtd?: number;
+  percent?: number;
+};
+type OwnerBreakdownRow = { category: string; ytd: number; mtd: number; lastYearYtd?: number };
+type PlLine = { ytd: number; mtd: number; lastYearYtd: number };
 
 type DelTenant = {
   name: string;
@@ -60,11 +67,21 @@ type DelTenant = {
 };
 
 type FinancePayload = {
+  profitAndLoss?: {
+    companyRevenue: PlLine;
+    costOfServices: PlLine;
+    grossProfit: PlLine;
+    operatingExpenses: PlLine;
+    payroll: PlLine;
+    totalExpenses: PlLine;
+    netProfit: PlLine;
+  };
+  expenseBreakdown?: BreakdownRow[];
   companyRevenue?: CompanyRev;
   companyRevenueBreakdown?: BreakdownRow[];
-  ownerRevenue?: { ytd: number; mtd: number };
+  ownerRevenue?: { ytd: number; mtd: number; lastYearYtd?: number };
   ownerRevenueBreakdown?: OwnerBreakdownRow[];
-  profitMargin?: { current: number; goal: number };
+  profitMargin?: { current: number; monthToDate?: number; goal: number };
   delinquency?: {
     totalAmount: number;
     accountCount: number;
@@ -235,14 +252,17 @@ export default function FinancePanel(props: {
   }
 
   const pm = finance.profitMargin?.current ?? 0;
+  const pmMtd = finance.profitMargin?.monthToDate;
   const goalBarWidth = Math.min(100, cr.goalProgress);
+  const pl = finance.profitAndLoss;
 
   return (
     <>
       <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
-        <strong>Company revenue</strong> (accounts 0-5xxxx) is RPM Prestige management and fee income — this drives the
-        annual goal and margin. <strong>Owner revenue</strong> (0-4xxxx) is pass-through rent and tenant charges to
-        owners, shown separately below.
+        <strong>Company revenue</strong> (4xxxxx on RPM&apos;s books, excluding property 0-4xxxx pass-through) drives
+        goals and margin. <strong>Cost of services</strong> (5xxxxx), <strong>operating expenses</strong> (6xxxxx), and{" "}
+        <strong>payroll</strong> (7xxxxx) roll into net profit. <strong>Owner revenue</strong> (0-4xxxx) is shown
+        separately.
       </p>
 
       <div className={styles.grid4}>
@@ -268,11 +288,14 @@ export default function FinancePanel(props: {
         </div>
 
         <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Profit margin (company)</div>
+          <div className={styles.kpiLabel}>Net profit margin</div>
           <div className={styles.kpiValue} style={{ color: marginColor(pm) }}>
             {pm.toFixed(1)}%
           </div>
-          <div className={styles.kpiSub}>Goal {finance.profitMargin?.goal ?? 20}% · company revenue minus 0-6 expenses</div>
+          <div className={styles.kpiSub}>
+            YTD: net profit ÷ company revenue · MTD:{" "}
+            {typeof pmMtd === "number" ? `${pmMtd.toFixed(1)}%` : "—"} · Goal {finance.profitMargin?.goal ?? 20}%
+          </div>
         </div>
 
         <div className={styles.kpiCard}>
@@ -281,8 +304,7 @@ export default function FinancePanel(props: {
             {fmtMoney(cr.revenuePerDoor)}
           </div>
           <div className={styles.kpiSub}>
-            YTD cumulative per unit · Avg / month / door {fmtMoney(cr.revenuePerDoorMonthlyAvg)} (goal{" "}
-            {fmtMoney(cr.revenuePerDoorGoal)})
+            Company YTD ÷ months elapsed ÷ units (vs goal {fmtMoney(cr.revenuePerDoorGoal)}/door/mo)
           </div>
         </div>
       </div>
@@ -320,6 +342,7 @@ export default function FinancePanel(props: {
             {(finance.companyRevenueBreakdown ?? []).map((r) => (
               <li key={r.category}>
                 <strong>{r.category}:</strong> {fmtMoney(r.ytd)} YTD · {fmtMoney(r.mtd)} MTD
+                {typeof r.lastYearYtd === "number" ? ` · ${fmtMoney(r.lastYearYtd)} LY` : ""}
                 {typeof r.percent === "number" ? ` (${r.percent}%)` : ""}
               </li>
             ))}
@@ -349,10 +372,76 @@ export default function FinancePanel(props: {
           </div>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.82rem", color: GREY }}>
             YoY change: <strong>{cr.yoyChange >= 0 ? "+" : ""}
-            {cr.yoyChange.toFixed(1)}%</strong> vs prior-year YTD (0-5 accounts).
+            {cr.yoyChange.toFixed(1)}%</strong> vs prior-year YTD (company 4xxxxx accounts).
           </p>
         </div>
       </div>
+
+      {pl ? (
+        <div className={styles.tableCard} style={{ marginBottom: "1.25rem" }}>
+          <h3 className={styles.chartTitle}>Company P&amp;L summary</h3>
+          <div className={styles.tableWrap}>
+            <table className={`${styles.table} ${styles.maintVendorTable}`}>
+              <thead>
+                <tr>
+                  <th>Line</th>
+                  <th>YTD</th>
+                  <th>MTD</th>
+                  <th>Prior YTD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    ["Company revenue", pl.companyRevenue],
+                    ["Cost of services", pl.costOfServices],
+                    ["Gross profit", pl.grossProfit],
+                    ["Operating expenses", pl.operatingExpenses],
+                    ["Payroll", pl.payroll],
+                    ["Total expenses", pl.totalExpenses],
+                    ["Net profit", pl.netProfit],
+                  ] as const
+                ).map(([label, row]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td>{fmtMoney(row.ytd)}</td>
+                    <td>{fmtMoney(row.mtd)}</td>
+                    <td>{fmtMoney(row.lastYearYtd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {finance.expenseBreakdown && finance.expenseBreakdown.length > 0 ? (
+        <div className={styles.tableCard} style={{ marginBottom: "1.25rem" }}>
+          <h3 className={styles.chartTitle}>Expense breakdown</h3>
+          <div className={styles.tableWrap}>
+            <table className={`${styles.table} ${styles.maintVendorTable}`}>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>YTD</th>
+                  <th>MTD</th>
+                  <th>Prior YTD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finance.expenseBreakdown.map((r) => (
+                  <tr key={r.category}>
+                    <td>{r.category}</td>
+                    <td>{fmtMoney(r.ytd)}</td>
+                    <td>{fmtMoney(r.mtd)}</td>
+                    <td>{fmtMoney(r.lastYearYtd ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.tableCard} style={{ marginBottom: "1.25rem" }}>
         <h3 className={styles.chartTitle}>Owner revenue (pass-through)</h3>
@@ -372,11 +461,20 @@ export default function FinancePanel(props: {
               {fmtMoney(finance.ownerRevenue?.mtd ?? 0)}
             </div>
           </div>
+          {typeof finance.ownerRevenue?.lastYearYtd === "number" ? (
+            <div>
+              <div className={styles.kpiLabel}>Prior YTD</div>
+              <div className={styles.kpiValue} style={{ fontSize: "1.45rem", color: NAVY }}>
+                {fmtMoney(finance.ownerRevenue.lastYearYtd)}
+              </div>
+            </div>
+          ) : null}
         </div>
         <ul style={{ margin: "0.75rem 0 0", paddingLeft: "1.1rem", fontSize: "0.88rem", color: GREY }}>
           {(finance.ownerRevenueBreakdown ?? []).map((r) => (
             <li key={r.category}>
               <strong>{r.category}:</strong> {fmtMoney(r.ytd)} YTD · {fmtMoney(r.mtd)} MTD
+              {typeof r.lastYearYtd === "number" ? ` · ${fmtMoney(r.lastYearYtd)} LY` : ""}
             </li>
           ))}
         </ul>

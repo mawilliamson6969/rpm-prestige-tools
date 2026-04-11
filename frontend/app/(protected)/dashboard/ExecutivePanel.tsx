@@ -205,7 +205,8 @@ export default function ExecutivePanel(props: {
     const rs = rangeStart.slice(0, 7);
     const re = rangeEnd.slice(0, 7);
     for (const row of stmt) {
-      if (!accountNumberFromFinanceRow(row).startsWith("0-5")) continue;
+      const an = accountNumberFromFinanceRow(row);
+      if (!(an.startsWith("4") && !an.startsWith("0-4"))) continue;
       const mk = monthKeyFromRow(row);
       if (!mk || !amounts.has(mk)) continue;
       if (mk < rs || mk > re) continue;
@@ -379,8 +380,8 @@ export default function ExecutivePanel(props: {
     <>
       <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
         Date context: <strong>{dateLabel}</strong> ({rangeStart} → {rangeEnd}) · Revenue chart uses{" "}
-        <strong>company</strong> accounts (0-5xxxx) <code className={styles.codeInline}>month_to_date</code> by
-        period.
+        <strong>company</strong> accounts (4xxxxx, excluding 0-4 property lines){" "}
+        <code className={styles.codeInline}>month_to_date</code> by period.
       </p>
 
       <div className={styles.grid4}>
@@ -412,7 +413,7 @@ export default function ExecutivePanel(props: {
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Company revenue (YTD)</div>
           <div className={styles.kpiValue}>{fmtMoney(executive.totalRevenueYtd)}</div>
-          <div className={styles.kpiSub}>Management &amp; fee income (0-5xxxx) · Goal {fmtMoney(REVENUE_GOAL)} · {revPct}% of goal</div>
+          <div className={styles.kpiSub}>Company books (4xxxxx) · Goal {fmtMoney(REVENUE_GOAL)} · {revPct}% of goal</div>
           <div className={styles.progressTrack}>
             <div className={styles.progressFill} style={{ width: `${revPct}%`, background: BLUE }} />
           </div>
@@ -423,7 +424,7 @@ export default function ExecutivePanel(props: {
           <div className={styles.kpiValue} style={{ color: marginColor(executive.profitMarginPercent) }}>
             {executive.profitMarginPercent.toFixed(1)}%
           </div>
-          <div className={styles.kpiSub}>Company revenue less 0-6xxxx expenses · Target {MARGIN_GOAL}%</div>
+          <div className={styles.kpiSub}>Net profit ÷ company revenue (4/5/6/7 accounts) · Target {MARGIN_GOAL}%</div>
         </div>
       </div>
 

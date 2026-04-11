@@ -205,25 +205,43 @@ function incomeStatementMoneyFields(d) {
   };
 }
 
-/** Owner pass-through revenue (rent & tenant charges). */
-function isOwnerRevenueAccount(accountNumber) {
+/** Property-level pass-through (owner) revenue — 0-4xxxx, not company books. */
+function isPropertyOwnerRevenueAccount(accountNumber) {
   return accountNumber.startsWith("0-4");
 }
 
-/** RPM company revenue (management, leasing, company income). */
+/** Company revenue — 4xxxxx (excludes property 0-4 prefix). */
 function isCompanyRevenueAccount(accountNumber) {
-  return accountNumber.startsWith("0-5");
+  if (!accountNumber) return false;
+  return accountNumber.startsWith("4") && !accountNumber.startsWith("0-4");
 }
 
-/** Operating expenses. */
-function isExpenseCoaAccount(accountNumber) {
-  return accountNumber.startsWith("0-6");
+/** Cost of services / COGS — 5xxxxx (not 0-5 property lines). */
+function isCostOfServicesAccount(accountNumber) {
+  if (!accountNumber) return false;
+  return accountNumber.startsWith("5") && !accountNumber.startsWith("0-5");
 }
 
-function categorizeCompanyRevenueBucket(accountNumber) {
-  if (/^0-506/.test(accountNumber)) return "management";
-  if (/^0-503/.test(accountNumber)) return "leasing";
-  return "other";
+/** Operating expenses — 6xxxxx (not 0-6). */
+function isOperatingExpenseAccount(accountNumber) {
+  if (!accountNumber) return false;
+  return accountNumber.startsWith("6") && !accountNumber.startsWith("0-6");
+}
+
+/** Payroll — 7xxxxx (not 0-7). */
+function isPayrollAccount(accountNumber) {
+  if (!accountNumber) return false;
+  return accountNumber.startsWith("7") && !accountNumber.startsWith("0-7");
+}
+
+function shouldSkipIncomeStatementRow(d, accountNumberStr) {
+  const an = accountNumberStr.trim();
+  if (an !== "") return false;
+  const nm = String(d.account_name ?? d.AccountName ?? "")
+    .trim()
+    .toLowerCase();
+  if (nm === "total income" || nm === "total expense") return true;
+  return true;
 }
 
 function categorizeOwnerRevenueBucket(accountNumber) {
@@ -232,108 +250,185 @@ function categorizeOwnerRevenueBucket(accountNumber) {
   return "other";
 }
 
+/** Donut: company revenue (4xxxxx) sub-buckets. */
+function categorizeCompanyRevenueDonut(accountNumber) {
+  if (accountNumber.startsWith("4050")) return "management";
+  if (accountNumber.startsWith("4000-3") || accountNumber.startsWith("4000-2")) return "leasingAdmin";
+  if (
+    accountNumber.startsWith("4300") ||
+    accountNumber.startsWith("4350") ||
+    accountNumber.startsWith("4390")
+  )
+    return "maintenance";
+  if (
+    accountNumber.startsWith("4700") ||
+    accountNumber.startsWith("4800") ||
+    accountNumber.startsWith("4850") ||
+    accountNumber.startsWith("4900")
+  )
+    return "tenantFees";
+  return "other";
+}
+
+/** Operating expense detail (6xxxxx). */
+function categorizeOperatingExpensePrefix(accountNumber) {
+  if (accountNumber.startsWith("6100")) return "advertising";
+  if (accountNumber.startsWith("6300")) return "professional";
+  if (accountNumber.startsWith("6400")) return "feesRoyalties";
+  if (accountNumber.startsWith("6500")) return "office";
+  if (accountNumber.startsWith("6600")) return "travel";
+  if (accountNumber.startsWith("6800")) return "insurance";
+  return "other";
+}
+
+function bucket() {
+  return { ytd: 0, mtd: 0, ly: 0 };
+}
+
+function addB(b, ytd, mtd, ly) {
+  b.ytd += ytd;
+  b.mtd += mtd;
+  b.ly += ly;
+}
+
 function roundMoney2(n) {
   return Math.round(n * 100) / 100;
 }
 
 /**
- * Splits AppFolio income statement by COA: 0-4 owner, 0-5 company, 0-6 expenses.
- * Profit margin = (company YTD − expense YTD) / company YTD.
+ * Portfolio income statement: property 0-4 = owner pass-through; 4/5/6/7 = company P&amp;L.
+ * Skips rows with empty account_number (including Total Income / Total Expense rollup lines).
  */
-function aggregateCoaIncomeStatement(incRows, propertyIds) {
-  let companyYtd = 0;
-  let companyMtd = 0;
-  let companyLy = 0;
-  let ownerYtd = 0;
-  let ownerMtd = 0;
-  let expensesYtd = 0;
-  let expensesLy = 0;
+function aggregatePortfolioIncomeStatement(incRows, propertyIds) {
+  const companyRevenue = bucket();
+  const costOfServices = bucket();
+  const operatingExpenses = bucket();
+  const payroll = bucket();
 
-  let mgmtYtd = 0;
-  let mgmtMtd = 0;
-  let leasingYtd = 0;
-  let leasingMtd = 0;
-  let companyOtherYtd = 0;
-  let companyOtherMtd = 0;
+  const donut = {
+    managementFees: bucket(),
+    leasingAdmin: bucket(),
+    maintenanceRevenue: bucket(),
+    tenantFees: bucket(),
+    otherRevenue: bucket(),
+  };
 
-  let rentYtd = 0;
-  let rentMtd = 0;
-  let tenantFeesYtd = 0;
-  let tenantFeesMtd = 0;
-  let ownerOtherYtd = 0;
-  let ownerOtherMtd = 0;
+  const opexDetail = {
+    advertising: bucket(),
+    professional: bucket(),
+    feesRoyalties: bucket(),
+    office: bucket(),
+    travel: bucket(),
+    insurance: bucket(),
+    other: bucket(),
+  };
+
+  const ownerRevenue = bucket();
+  const ownerRent = bucket();
+  const ownerTenantFees = bucket();
+  const ownerOther = bucket();
 
   for (const r of incRows) {
     const d = rowData(r);
     if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
-    const an = incomeStatementAccountNumber(d);
-    if (!an) continue;
+    const anRaw = incomeStatementAccountNumber(d);
+    if (shouldSkipIncomeStatementRow(d, anRaw)) continue;
+    const an = anRaw.trim();
     const { ytd, mtd, lytd } = incomeStatementMoneyFields(d);
 
-    if (isOwnerRevenueAccount(an)) {
-      ownerYtd += ytd;
-      ownerMtd += mtd;
-      const b = categorizeOwnerRevenueBucket(an);
-      if (b === "rent") {
-        rentYtd += ytd;
-        rentMtd += mtd;
-      } else if (b === "tenantFees") {
-        tenantFeesYtd += ytd;
-        tenantFeesMtd += mtd;
-      } else {
-        ownerOtherYtd += ytd;
-        ownerOtherMtd += mtd;
-      }
-    } else if (isCompanyRevenueAccount(an)) {
-      companyYtd += ytd;
-      companyMtd += mtd;
-      companyLy += lytd;
-      const cb = categorizeCompanyRevenueBucket(an);
-      if (cb === "management") {
-        mgmtYtd += ytd;
-        mgmtMtd += mtd;
-      } else if (cb === "leasing") {
-        leasingYtd += ytd;
-        leasingMtd += mtd;
-      } else {
-        companyOtherYtd += ytd;
-        companyOtherMtd += mtd;
-      }
-    } else if (isExpenseCoaAccount(an)) {
-      expensesYtd += ytd;
-      expensesLy += lytd;
+    if (isPropertyOwnerRevenueAccount(an)) {
+      addB(ownerRevenue, ytd, mtd, lytd);
+      const ob = categorizeOwnerRevenueBucket(an);
+      if (ob === "rent") addB(ownerRent, ytd, mtd, lytd);
+      else if (ob === "tenantFees") addB(ownerTenantFees, ytd, mtd, lytd);
+      else addB(ownerOther, ytd, mtd, lytd);
+      continue;
+    }
+
+    if (isCompanyRevenueAccount(an)) {
+      addB(companyRevenue, ytd, mtd, lytd);
+      const cat = categorizeCompanyRevenueDonut(an);
+      if (cat === "management") addB(donut.managementFees, ytd, mtd, lytd);
+      else if (cat === "leasingAdmin") addB(donut.leasingAdmin, ytd, mtd, lytd);
+      else if (cat === "maintenance") addB(donut.maintenanceRevenue, ytd, mtd, lytd);
+      else if (cat === "tenantFees") addB(donut.tenantFees, ytd, mtd, lytd);
+      else addB(donut.otherRevenue, ytd, mtd, lytd);
+      continue;
+    }
+
+    if (isCostOfServicesAccount(an)) {
+      addB(costOfServices, ytd, mtd, lytd);
+      continue;
+    }
+
+    if (isOperatingExpenseAccount(an)) {
+      addB(operatingExpenses, ytd, mtd, lytd);
+      const tag = categorizeOperatingExpensePrefix(an);
+      addB(opexDetail[tag] ?? opexDetail.other, ytd, mtd, lytd);
+      continue;
+    }
+
+    if (isPayrollAccount(an)) {
+      addB(payroll, ytd, mtd, lytd);
     }
   }
 
-  const profitYtd = companyYtd - expensesYtd;
+  const grossProfit = {
+    ytd: companyRevenue.ytd - costOfServices.ytd,
+    mtd: companyRevenue.mtd - costOfServices.mtd,
+    ly: companyRevenue.ly - costOfServices.ly,
+  };
+
+  const totalExpenses = {
+    ytd: costOfServices.ytd + operatingExpenses.ytd + payroll.ytd,
+    mtd: costOfServices.mtd + operatingExpenses.mtd + payroll.mtd,
+    ly: costOfServices.ly + operatingExpenses.ly + payroll.ly,
+  };
+
+  const netProfit = {
+    ytd: companyRevenue.ytd - totalExpenses.ytd,
+    mtd: companyRevenue.mtd - totalExpenses.mtd,
+    ly: companyRevenue.ly - totalExpenses.ly,
+  };
+
   const profitMarginPercent =
-    companyYtd > 0 ? Math.round((profitYtd / companyYtd) * 10000) / 100 : 0;
+    companyRevenue.ytd > 0 ? Math.round((netProfit.ytd / companyRevenue.ytd) * 10000) / 100 : 0;
+
+  const profitMarginPercentMtd =
+    companyRevenue.mtd > 0 ? Math.round((netProfit.mtd / companyRevenue.mtd) * 10000) / 100 : 0;
 
   const yoyChange =
-    companyLy > 0
-      ? Math.round(((companyYtd - companyLy) / companyLy) * 10000) / 100
-      : companyYtd > 0
+    companyRevenue.ly > 0
+      ? Math.round(((companyRevenue.ytd - companyRevenue.ly) / companyRevenue.ly) * 10000) / 100
+      : companyRevenue.ytd > 0
         ? 100
         : 0;
 
   return {
-    companyYtd,
-    companyMtd,
-    companyLy,
-    ownerYtd,
-    ownerMtd,
-    expensesYtd,
-    expensesLy,
-    profitYtd,
+    companyRevenue,
+    costOfServices,
+    grossProfit,
+    operatingExpenses,
+    payroll,
+    totalExpenses,
+    netProfit,
     profitMarginPercent,
+    profitMarginPercentMtd,
     yoyChange,
-    breakdownCompany: { mgmtYtd, mgmtMtd, leasingYtd, leasingMtd, companyOtherYtd, companyOtherMtd },
-    breakdownOwner: { rentYtd, rentMtd, tenantFeesYtd, tenantFeesMtd, ownerOtherYtd, ownerOtherMtd },
-    monthToDateRevenue: companyMtd,
-    lastYearRevenueYtd: companyLy,
-    lastYearExpensesYtd: expensesLy,
+    donut,
+    opexDetail,
+    ownerRevenue,
+    ownerBuckets: {
+      rent: ownerRent,
+      tenantFees: ownerTenantFees,
+      other: ownerOther,
+    },
+    monthToDateRevenue: companyRevenue.mtd,
+    lastYearRevenueYtd: companyRevenue.ly,
+    lastYearExpensesYtd: totalExpenses.ly,
   };
 }
+
 
 function delinquencyAmountReceivable(d) {
   const o = typeof d === "object" ? d : {};
@@ -511,17 +606,17 @@ function propertyKeyFromRow(d) {
   );
 }
 
-/** @deprecated Use aggregateCoaIncomeStatement — kept name for callers expecting company revenue as "revenueYtd". */
+/** Maps portfolio P&amp;L to legacy executive finance KPI field names. */
 function aggregateIncomeFromRows(incRows, propertyIds) {
-  const coa = aggregateCoaIncomeStatement(incRows, propertyIds);
+  const p = aggregatePortfolioIncomeStatement(incRows, propertyIds);
   return {
-    revenueYtd: coa.companyYtd,
-    expensesYtd: coa.expensesYtd,
-    profitYtd: coa.profitYtd,
-    profitMarginPercent: coa.profitMarginPercent,
-    monthToDateRevenue: coa.monthToDateRevenue,
-    lastYearRevenueYtd: coa.lastYearRevenueYtd,
-    lastYearExpensesYtd: coa.lastYearExpensesYtd,
+    revenueYtd: p.companyRevenue.ytd,
+    expensesYtd: p.totalExpenses.ytd,
+    profitYtd: p.netProfit.ytd,
+    profitMarginPercent: p.profitMarginPercent,
+    monthToDateRevenue: p.companyRevenue.mtd,
+    lastYearRevenueYtd: p.companyRevenue.ly,
+    lastYearExpensesYtd: p.totalExpenses.ly,
   };
 }
 
@@ -590,9 +685,12 @@ export async function getExecutive(req) {
   const { rows: incRows } = await pool.query(
     `SELECT appfolio_data, period FROM cached_income_statement ORDER BY id`
   );
-  const incomeKpis = aggregateIncomeFromRows(incRows, propertyIds);
+  const pnl = aggregatePortfolioIncomeStatement(incRows, propertyIds);
+  const monthsElapsedExec = Math.max(1, new Date().getMonth() + 1);
   const revenuePerDoor =
-    totalUnits > 0 ? Math.round((incomeKpis.revenueYtd / totalUnits) * 100) / 100 : 0;
+    totalUnits > 0
+      ? Math.round((pnl.companyRevenue.ytd / monthsElapsedExec / totalUnits) * 100) / 100
+      : 0;
 
   const { rows: woRows } = await pool.query(
     `SELECT appfolio_data FROM cached_work_orders ORDER BY id`
@@ -631,14 +729,18 @@ export async function getExecutive(req) {
     occupiedUnits: occupied,
     vacantUnits: vacant,
     occupancyRatePercent,
-    totalRevenueYtd: incomeKpis.revenueYtd,
-    totalExpensesYtd: incomeKpis.expensesYtd,
-    profitYtd: incomeKpis.profitYtd,
-    profitMarginPercent: incomeKpis.profitMarginPercent,
-    monthToDateRevenue: incomeKpis.monthToDateRevenue,
+    totalRevenueYtd: pnl.companyRevenue.ytd,
+    totalExpensesYtd: pnl.totalExpenses.ytd,
+    costOfServicesYtd: pnl.costOfServices.ytd,
+    grossProfitYtd: pnl.grossProfit.ytd,
+    operatingExpensesYtd: pnl.operatingExpenses.ytd,
+    payrollYtd: pnl.payroll.ytd,
+    profitYtd: pnl.netProfit.ytd,
+    profitMarginPercent: pnl.profitMarginPercent,
+    monthToDateRevenue: pnl.companyRevenue.mtd,
     revenuePerDoor,
-    lastYearRevenueYtd: incomeKpis.lastYearRevenueYtd,
-    lastYearExpensesYtd: incomeKpis.lastYearExpensesYtd,
+    lastYearRevenueYtd: pnl.companyRevenue.ly,
+    lastYearExpensesYtd: pnl.totalExpenses.ly,
     openWorkOrders,
     totalDelinquency: delKpis.totalDelinquency,
     delinquentAccountCount: delKpis.delinquentAccountCount,
@@ -855,7 +957,7 @@ export async function getFinance(req) {
   );
   const { rows: del } = await pool.query(`SELECT appfolio_data FROM cached_delinquency ORDER BY id`);
 
-  const coa = aggregateCoaIncomeStatement(inc, propertyIds);
+  const pnl = aggregatePortfolioIncomeStatement(inc, propertyIds);
   const delKpis = aggregateDelinquencyFromRows(del, propertyIds);
 
   const incomeStatement = [];
@@ -870,56 +972,176 @@ export async function getFinance(req) {
   const unitCount = rrCountAgg.totalUnits;
 
   const monthsElapsed = Math.max(1, new Date().getMonth() + 1);
+  /** Average company revenue per door per month: (YTD ÷ months elapsed) ÷ units. */
   const revenuePerDoor =
-    unitCount > 0 ? Math.round((coa.companyYtd / unitCount) * 100) / 100 : 0;
-  const revenuePerDoorMonthlyAvg =
-    unitCount > 0 ? Math.round((coa.companyYtd / monthsElapsed / unitCount) * 100) / 100 : 0;
+    unitCount > 0
+      ? Math.round((pnl.companyRevenue.ytd / monthsElapsed / unitCount) * 100) / 100
+      : 0;
+  const revenuePerDoorMonthlyAvg = revenuePerDoor;
 
   const goalProgress =
-    FINANCE_GOAL_ANNUAL > 0 ? Math.round((coa.companyYtd / FINANCE_GOAL_ANNUAL) * 1000) / 10 : 0;
+    FINANCE_GOAL_ANNUAL > 0
+      ? Math.round((pnl.companyRevenue.ytd / FINANCE_GOAL_ANNUAL) * 1000) / 10
+      : 0;
 
-  const bc = coa.breakdownCompany;
-  const bo = coa.breakdownOwner;
-  const companyYtdTotal = coa.companyYtd;
+  const companyYtdTotal = pnl.companyRevenue.ytd;
+  const d = pnl.donut;
 
   const companyRevenueBreakdown = [
     {
       category: "Management Fees",
-      ytd: roundMoney2(bc.mgmtYtd),
-      mtd: roundMoney2(bc.mgmtMtd),
-      percent: breakdownPercent(bc.mgmtYtd, companyYtdTotal),
+      ytd: roundMoney2(d.managementFees.ytd),
+      mtd: roundMoney2(d.managementFees.mtd),
+      lastYearYtd: roundMoney2(d.managementFees.ly),
+      percent: breakdownPercent(d.managementFees.ytd, companyYtdTotal),
     },
     {
-      category: "Leasing Fees",
-      ytd: roundMoney2(bc.leasingYtd),
-      mtd: roundMoney2(bc.leasingMtd),
-      percent: breakdownPercent(bc.leasingYtd, companyYtdTotal),
+      category: "Leasing & Admin Fees",
+      ytd: roundMoney2(d.leasingAdmin.ytd),
+      mtd: roundMoney2(d.leasingAdmin.mtd),
+      lastYearYtd: roundMoney2(d.leasingAdmin.ly),
+      percent: breakdownPercent(d.leasingAdmin.ytd, companyYtdTotal),
     },
     {
-      category: "Other Income",
-      ytd: roundMoney2(bc.companyOtherYtd),
-      mtd: roundMoney2(bc.companyOtherMtd),
-      percent: breakdownPercent(bc.companyOtherYtd, companyYtdTotal),
-    },
-  ];
-
-  const ownerRevenueBreakdown = [
-    {
-      category: "Rent Income",
-      ytd: roundMoney2(bo.rentYtd),
-      mtd: roundMoney2(bo.rentMtd),
+      category: "Maintenance Revenue",
+      ytd: roundMoney2(d.maintenanceRevenue.ytd),
+      mtd: roundMoney2(d.maintenanceRevenue.mtd),
+      lastYearYtd: roundMoney2(d.maintenanceRevenue.ly),
+      percent: breakdownPercent(d.maintenanceRevenue.ytd, companyYtdTotal),
     },
     {
       category: "Tenant Fees",
-      ytd: roundMoney2(bo.tenantFeesYtd),
-      mtd: roundMoney2(bo.tenantFeesMtd),
+      ytd: roundMoney2(d.tenantFees.ytd),
+      mtd: roundMoney2(d.tenantFees.mtd),
+      lastYearYtd: roundMoney2(d.tenantFees.ly),
+      percent: breakdownPercent(d.tenantFees.ytd, companyYtdTotal),
+    },
+    {
+      category: "Other Revenue",
+      ytd: roundMoney2(d.otherRevenue.ytd),
+      mtd: roundMoney2(d.otherRevenue.mtd),
+      lastYearYtd: roundMoney2(d.otherRevenue.ly),
+      percent: breakdownPercent(d.otherRevenue.ytd, companyYtdTotal),
+    },
+  ];
+
+  const bo = pnl.ownerBuckets;
+  const ownerRevenueBreakdown = [
+    {
+      category: "Rent Income",
+      ytd: roundMoney2(bo.rent.ytd),
+      mtd: roundMoney2(bo.rent.mtd),
+      lastYearYtd: roundMoney2(bo.rent.ly),
+    },
+    {
+      category: "Tenant Fees",
+      ytd: roundMoney2(bo.tenantFees.ytd),
+      mtd: roundMoney2(bo.tenantFees.mtd),
+      lastYearYtd: roundMoney2(bo.tenantFees.ly),
     },
     {
       category: "Other",
-      ytd: roundMoney2(bo.ownerOtherYtd),
-      mtd: roundMoney2(bo.ownerOtherMtd),
+      ytd: roundMoney2(bo.other.ytd),
+      mtd: roundMoney2(bo.other.mtd),
+      lastYearYtd: roundMoney2(bo.other.ly),
     },
   ];
+
+  const ox = pnl.opexDetail;
+  const expenseBreakdown = [
+    {
+      category: "Cost of Services",
+      ytd: roundMoney2(pnl.costOfServices.ytd),
+      mtd: roundMoney2(pnl.costOfServices.mtd),
+      lastYearYtd: roundMoney2(pnl.costOfServices.ly),
+    },
+    {
+      category: "Advertising & Marketing",
+      ytd: roundMoney2(ox.advertising.ytd),
+      mtd: roundMoney2(ox.advertising.mtd),
+      lastYearYtd: roundMoney2(ox.advertising.ly),
+    },
+    {
+      category: "Professional Services",
+      ytd: roundMoney2(ox.professional.ytd),
+      mtd: roundMoney2(ox.professional.mtd),
+      lastYearYtd: roundMoney2(ox.professional.ly),
+    },
+    {
+      category: "Office Expenses",
+      ytd: roundMoney2(ox.office.ytd),
+      mtd: roundMoney2(ox.office.mtd),
+      lastYearYtd: roundMoney2(ox.office.ly),
+    },
+    {
+      category: "Fees & Royalties",
+      ytd: roundMoney2(ox.feesRoyalties.ytd),
+      mtd: roundMoney2(ox.feesRoyalties.mtd),
+      lastYearYtd: roundMoney2(ox.feesRoyalties.ly),
+    },
+    {
+      category: "Travel",
+      ytd: roundMoney2(ox.travel.ytd),
+      mtd: roundMoney2(ox.travel.mtd),
+      lastYearYtd: roundMoney2(ox.travel.ly),
+    },
+    {
+      category: "Insurance",
+      ytd: roundMoney2(ox.insurance.ytd),
+      mtd: roundMoney2(ox.insurance.mtd),
+      lastYearYtd: roundMoney2(ox.insurance.ly),
+    },
+    {
+      category: "Other Operating",
+      ytd: roundMoney2(ox.other.ytd),
+      mtd: roundMoney2(ox.other.mtd),
+      lastYearYtd: roundMoney2(ox.other.ly),
+    },
+    {
+      category: "Payroll",
+      ytd: roundMoney2(pnl.payroll.ytd),
+      mtd: roundMoney2(pnl.payroll.mtd),
+      lastYearYtd: roundMoney2(pnl.payroll.ly),
+    },
+  ];
+
+  const profitAndLoss = {
+    companyRevenue: {
+      ytd: roundMoney2(pnl.companyRevenue.ytd),
+      mtd: roundMoney2(pnl.companyRevenue.mtd),
+      lastYearYtd: roundMoney2(pnl.companyRevenue.ly),
+    },
+    costOfServices: {
+      ytd: roundMoney2(pnl.costOfServices.ytd),
+      mtd: roundMoney2(pnl.costOfServices.mtd),
+      lastYearYtd: roundMoney2(pnl.costOfServices.ly),
+    },
+    grossProfit: {
+      ytd: roundMoney2(pnl.grossProfit.ytd),
+      mtd: roundMoney2(pnl.grossProfit.mtd),
+      lastYearYtd: roundMoney2(pnl.grossProfit.ly),
+    },
+    operatingExpenses: {
+      ytd: roundMoney2(pnl.operatingExpenses.ytd),
+      mtd: roundMoney2(pnl.operatingExpenses.mtd),
+      lastYearYtd: roundMoney2(pnl.operatingExpenses.ly),
+    },
+    payroll: {
+      ytd: roundMoney2(pnl.payroll.ytd),
+      mtd: roundMoney2(pnl.payroll.mtd),
+      lastYearYtd: roundMoney2(pnl.payroll.ly),
+    },
+    totalExpenses: {
+      ytd: roundMoney2(pnl.totalExpenses.ytd),
+      mtd: roundMoney2(pnl.totalExpenses.mtd),
+      lastYearYtd: roundMoney2(pnl.totalExpenses.ly),
+    },
+    netProfit: {
+      ytd: roundMoney2(pnl.netProfit.ytd),
+      mtd: roundMoney2(pnl.netProfit.mtd),
+      lastYearYtd: roundMoney2(pnl.netProfit.ly),
+    },
+  };
 
   const tenantRows = [];
   for (const r of del) {
@@ -951,11 +1173,12 @@ export async function getFinance(req) {
     delAccountCount > 0 ? roundMoney2(delKpis.totalDelinquency / delAccountCount) : 0;
 
   return {
+    profitAndLoss,
     companyRevenue: {
-      ytd: roundMoney2(coa.companyYtd),
-      mtd: roundMoney2(coa.companyMtd),
-      lastYearYtd: roundMoney2(coa.companyLy),
-      yoyChange: roundMoney2(coa.yoyChange),
+      ytd: roundMoney2(pnl.companyRevenue.ytd),
+      mtd: roundMoney2(pnl.companyRevenue.mtd),
+      lastYearYtd: roundMoney2(pnl.companyRevenue.ly),
+      yoyChange: roundMoney2(pnl.yoyChange),
       goalAnnual: FINANCE_GOAL_ANNUAL,
       goalProgress,
       revenuePerDoor,
@@ -963,13 +1186,16 @@ export async function getFinance(req) {
       revenuePerDoorGoal: FINANCE_REV_PER_DOOR_GOAL,
     },
     companyRevenueBreakdown,
+    expenseBreakdown,
     ownerRevenue: {
-      ytd: roundMoney2(coa.ownerYtd),
-      mtd: roundMoney2(coa.ownerMtd),
+      ytd: roundMoney2(pnl.ownerRevenue.ytd),
+      mtd: roundMoney2(pnl.ownerRevenue.mtd),
+      lastYearYtd: roundMoney2(pnl.ownerRevenue.ly),
     },
     ownerRevenueBreakdown,
     profitMargin: {
-      current: coa.profitMarginPercent,
+      current: pnl.profitMarginPercent,
+      monthToDate: pnl.profitMarginPercentMtd,
       goal: FINANCE_MARGIN_GOAL,
     },
     delinquency: {
@@ -985,7 +1211,7 @@ export async function getFinance(req) {
       tenants: tenantRows,
     },
     incomeStatement,
-    totalRevenueInCache: roundMoney2(coa.companyYtd),
+    totalRevenueInCache: roundMoney2(pnl.companyRevenue.ytd),
     revenuePerDoor,
     filters: { propertyIds },
   };
