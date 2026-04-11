@@ -8,6 +8,7 @@ import { apiUrl } from "../../../lib/api";
 import styles from "./dashboard.module.css";
 import { getDateRange, PRESET_OPTIONS, type DatePresetId } from "./dateRange";
 import ExecutivePanel from "./ExecutivePanel";
+import FinancePanel from "./FinancePanel";
 import MaintenancePanel from "./MaintenancePanel";
 
 type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio";
@@ -385,13 +386,18 @@ export default function DashboardClient() {
             />
           </div>
         )}
-        {tab !== "executive" && tab !== "maintenance" && (
+        {tab === "finance" && (
+          <div className={styles.tabPanel}>
+            <FinancePanel finance={finance as never} loading={loading} error={error} />
+          </div>
+        )}
+        {tab !== "executive" && tab !== "maintenance" && tab !== "finance" && (
           <div className={`${styles.tabPanel} ${styles.comingSoon}`}>
             <p>
               <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong> dashboard coming in a later phase.
             </p>
             <p style={{ fontSize: "0.9rem", marginTop: "0.5rem" }}>
-              Executive and Maintenance tabs use live cached endpoints today.
+              Executive, Maintenance, and Finance tabs use live cached endpoints today.
             </p>
           </div>
         )}

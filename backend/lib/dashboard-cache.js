@@ -196,20 +196,142 @@ function incomeStatementAccountNumber(d) {
   return String(o.account_number ?? o.AccountNumber ?? "").trim();
 }
 
-function isIncomeCoaAccount(accountNumber) {
-  return accountNumber.startsWith("0-4");
-}
-
-function isExpenseCoaAccount(accountNumber) {
-  return accountNumber.startsWith("0-5") || accountNumber.startsWith("0-6");
-}
-
 function incomeStatementMoneyFields(d) {
   const o = typeof d === "object" ? d : {};
   return {
     ytd: parseMoney(o.year_to_date ?? o.yearToDate),
     mtd: parseMoney(o.month_to_date ?? o.monthToDate),
     lytd: parseMoney(o.last_year_to_date ?? o.lastYearToDate),
+  };
+}
+
+/** Owner pass-through revenue (rent & tenant charges). */
+function isOwnerRevenueAccount(accountNumber) {
+  return accountNumber.startsWith("0-4");
+}
+
+/** RPM company revenue (management, leasing, company income). */
+function isCompanyRevenueAccount(accountNumber) {
+  return accountNumber.startsWith("0-5");
+}
+
+/** Operating expenses. */
+function isExpenseCoaAccount(accountNumber) {
+  return accountNumber.startsWith("0-6");
+}
+
+function categorizeCompanyRevenueBucket(accountNumber) {
+  if (/^0-506/.test(accountNumber)) return "management";
+  if (/^0-503/.test(accountNumber)) return "leasing";
+  return "other";
+}
+
+function categorizeOwnerRevenueBucket(accountNumber) {
+  if (/^0-401/.test(accountNumber)) return "rent";
+  if (/^0-42/.test(accountNumber)) return "tenantFees";
+  return "other";
+}
+
+function roundMoney2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Splits AppFolio income statement by COA: 0-4 owner, 0-5 company, 0-6 expenses.
+ * Profit margin = (company YTD − expense YTD) / company YTD.
+ */
+function aggregateCoaIncomeStatement(incRows, propertyIds) {
+  let companyYtd = 0;
+  let companyMtd = 0;
+  let companyLy = 0;
+  let ownerYtd = 0;
+  let ownerMtd = 0;
+  let expensesYtd = 0;
+  let expensesLy = 0;
+
+  let mgmtYtd = 0;
+  let mgmtMtd = 0;
+  let leasingYtd = 0;
+  let leasingMtd = 0;
+  let companyOtherYtd = 0;
+  let companyOtherMtd = 0;
+
+  let rentYtd = 0;
+  let rentMtd = 0;
+  let tenantFeesYtd = 0;
+  let tenantFeesMtd = 0;
+  let ownerOtherYtd = 0;
+  let ownerOtherMtd = 0;
+
+  for (const r of incRows) {
+    const d = rowData(r);
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
+    const an = incomeStatementAccountNumber(d);
+    if (!an) continue;
+    const { ytd, mtd, lytd } = incomeStatementMoneyFields(d);
+
+    if (isOwnerRevenueAccount(an)) {
+      ownerYtd += ytd;
+      ownerMtd += mtd;
+      const b = categorizeOwnerRevenueBucket(an);
+      if (b === "rent") {
+        rentYtd += ytd;
+        rentMtd += mtd;
+      } else if (b === "tenantFees") {
+        tenantFeesYtd += ytd;
+        tenantFeesMtd += mtd;
+      } else {
+        ownerOtherYtd += ytd;
+        ownerOtherMtd += mtd;
+      }
+    } else if (isCompanyRevenueAccount(an)) {
+      companyYtd += ytd;
+      companyMtd += mtd;
+      companyLy += lytd;
+      const cb = categorizeCompanyRevenueBucket(an);
+      if (cb === "management") {
+        mgmtYtd += ytd;
+        mgmtMtd += mtd;
+      } else if (cb === "leasing") {
+        leasingYtd += ytd;
+        leasingMtd += mtd;
+      } else {
+        companyOtherYtd += ytd;
+        companyOtherMtd += mtd;
+      }
+    } else if (isExpenseCoaAccount(an)) {
+      expensesYtd += ytd;
+      expensesLy += lytd;
+    }
+  }
+
+  const profitYtd = companyYtd - expensesYtd;
+  const profitMarginPercent =
+    companyYtd > 0 ? Math.round((profitYtd / companyYtd) * 10000) / 100 : 0;
+
+  const yoyChange =
+    companyLy > 0
+      ? Math.round(((companyYtd - companyLy) / companyLy) * 10000) / 100
+      : companyYtd > 0
+        ? 100
+        : 0;
+
+  return {
+    companyYtd,
+    companyMtd,
+    companyLy,
+    ownerYtd,
+    ownerMtd,
+    expensesYtd,
+    expensesLy,
+    profitYtd,
+    profitMarginPercent,
+    yoyChange,
+    breakdownCompany: { mgmtYtd, mgmtMtd, leasingYtd, leasingMtd, companyOtherYtd, companyOtherMtd },
+    breakdownOwner: { rentYtd, rentMtd, tenantFeesYtd, tenantFeesMtd, ownerOtherYtd, ownerOtherMtd },
+    monthToDateRevenue: companyMtd,
+    lastYearRevenueYtd: companyLy,
+    lastYearExpensesYtd: expensesLy,
   };
 }
 
@@ -255,6 +377,40 @@ function delinquencyDetailFields(d) {
     unit: String(unit).trim(),
     amountReceivable: delinquencyAmountReceivable(o),
   };
+}
+
+function delinquencyTenantUnit(d) {
+  const o = typeof d === "object" ? d : {};
+  const u =
+    o.unit ??
+    o.unit_name ??
+    o.unitName ??
+    o.unit_number ??
+    o.unitNumber ??
+    o.Unit ??
+    "";
+  return String(u).trim();
+}
+
+function daysDelinquentFromRow(d) {
+  const o = typeof d === "object" ? d : {};
+  const raw =
+    o.days_past_due ?? o.DaysPastDue ?? o.days_delinquent ?? o.delinquent_days ?? o.age_days ?? o.AgeDays;
+  if (raw != null && String(raw).trim() !== "") {
+    const n = parseFloat(String(raw).replace(/[$,]/g, ""));
+    if (!Number.isNaN(n)) return Math.round(n);
+  }
+  return 0;
+}
+
+function lastPaymentFromRow(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.last_payment ?? o.LastPayment ?? "").trim();
+}
+
+function inCollectionsFromRow(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.in_collections ?? o.InCollections ?? "").trim();
 }
 
 function workOrderStatus(d) {
@@ -355,44 +511,17 @@ function propertyKeyFromRow(d) {
   );
 }
 
-/**
- * Aggregate income statement rows (strings parsed as floats; COA prefixes 0-4 / 0-5 / 0-6).
- */
+/** @deprecated Use aggregateCoaIncomeStatement — kept name for callers expecting company revenue as "revenueYtd". */
 function aggregateIncomeFromRows(incRows, propertyIds) {
-  let revenueYtd = 0;
-  let expensesYtd = 0;
-  let revenueMtd = 0;
-  let revenueLy = 0;
-  let expensesLy = 0;
-
-  for (const r of incRows) {
-    const d = rowData(r);
-    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
-    const an = incomeStatementAccountNumber(d);
-    if (!an) continue;
-    const { ytd, mtd, lytd } = incomeStatementMoneyFields(d);
-    if (isIncomeCoaAccount(an)) {
-      revenueYtd += ytd;
-      revenueMtd += mtd;
-      revenueLy += lytd;
-    } else if (isExpenseCoaAccount(an)) {
-      expensesYtd += ytd;
-      expensesLy += lytd;
-    }
-  }
-
-  const profitYtd = revenueYtd - expensesYtd;
-  const profitMarginPercent =
-    revenueYtd > 0 ? Math.round((profitYtd / revenueYtd) * 10000) / 100 : 0;
-
+  const coa = aggregateCoaIncomeStatement(incRows, propertyIds);
   return {
-    revenueYtd,
-    expensesYtd,
-    profitYtd,
-    profitMarginPercent,
-    monthToDateRevenue: revenueMtd,
-    lastYearRevenueYtd: revenueLy,
-    lastYearExpensesYtd: expensesLy,
+    revenueYtd: coa.companyYtd,
+    expensesYtd: coa.expensesYtd,
+    profitYtd: coa.profitYtd,
+    profitMarginPercent: coa.profitMarginPercent,
+    monthToDateRevenue: coa.monthToDateRevenue,
+    lastYearRevenueYtd: coa.lastYearRevenueYtd,
+    lastYearExpensesYtd: coa.lastYearExpensesYtd,
   };
 }
 
@@ -707,6 +836,15 @@ export async function getMaintenance(req) {
   };
 }
 
+const FINANCE_GOAL_ANNUAL = 775_000;
+const FINANCE_REV_PER_DOOR_GOAL = 215;
+const FINANCE_MARGIN_GOAL = 20;
+
+function breakdownPercent(part, total) {
+  if (total <= 0) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
+
 /** GET /dashboard/finance */
 export async function getFinance(req) {
   const pool = getPool();
@@ -717,7 +855,7 @@ export async function getFinance(req) {
   );
   const { rows: del } = await pool.query(`SELECT appfolio_data FROM cached_delinquency ORDER BY id`);
 
-  const incomeKpis = aggregateIncomeFromRows(inc, propertyIds);
+  const coa = aggregateCoaIncomeStatement(inc, propertyIds);
   const delKpis = aggregateDelinquencyFromRows(del, propertyIds);
 
   const incomeStatement = [];
@@ -727,59 +865,127 @@ export async function getFinance(req) {
     incomeStatement.push({ ...d, _period: r.period });
   }
 
-  const delinquency = [];
-  for (const r of del) {
-    const d = rowData(r);
-    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
-    const amt = delinquencyAmountReceivable(d);
-    const detail = delinquencyDetailFields(d);
-    const ag = delinquencyAgingSlices(d);
-    const daysPast =
-      d.days_past_due ??
-      d.DaysPastDue ??
-      d.days_delinquent ??
-      d.age_days ??
-      null;
-    delinquency.push({
-      ...d,
-      _computedAmount: amt,
-      _tenantName: detail.tenantName,
-      _propertyName: detail.propertyName,
-      _unit: detail.unit,
-      _aging: ag,
-      _agingDays: daysPast,
-    });
-  }
-
   const { rows: rrCountRows } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
   const rrCountAgg = aggregateRentRollFromRows(rrCountRows, propertyIds);
   const unitCount = rrCountAgg.totalUnits;
 
+  const monthsElapsed = Math.max(1, new Date().getMonth() + 1);
   const revenuePerDoor =
-    unitCount > 0 ? Math.round((incomeKpis.revenueYtd / unitCount) * 100) / 100 : 0;
+    unitCount > 0 ? Math.round((coa.companyYtd / unitCount) * 100) / 100 : 0;
+  const revenuePerDoorMonthlyAvg =
+    unitCount > 0 ? Math.round((coa.companyYtd / monthsElapsed / unitCount) * 100) / 100 : 0;
+
+  const goalProgress =
+    FINANCE_GOAL_ANNUAL > 0 ? Math.round((coa.companyYtd / FINANCE_GOAL_ANNUAL) * 1000) / 10 : 0;
+
+  const bc = coa.breakdownCompany;
+  const bo = coa.breakdownOwner;
+  const companyYtdTotal = coa.companyYtd;
+
+  const companyRevenueBreakdown = [
+    {
+      category: "Management Fees",
+      ytd: roundMoney2(bc.mgmtYtd),
+      mtd: roundMoney2(bc.mgmtMtd),
+      percent: breakdownPercent(bc.mgmtYtd, companyYtdTotal),
+    },
+    {
+      category: "Leasing Fees",
+      ytd: roundMoney2(bc.leasingYtd),
+      mtd: roundMoney2(bc.leasingMtd),
+      percent: breakdownPercent(bc.leasingYtd, companyYtdTotal),
+    },
+    {
+      category: "Other Income",
+      ytd: roundMoney2(bc.companyOtherYtd),
+      mtd: roundMoney2(bc.companyOtherMtd),
+      percent: breakdownPercent(bc.companyOtherYtd, companyYtdTotal),
+    },
+  ];
+
+  const ownerRevenueBreakdown = [
+    {
+      category: "Rent Income",
+      ytd: roundMoney2(bo.rentYtd),
+      mtd: roundMoney2(bo.rentMtd),
+    },
+    {
+      category: "Tenant Fees",
+      ytd: roundMoney2(bo.tenantFeesYtd),
+      mtd: roundMoney2(bo.tenantFeesMtd),
+    },
+    {
+      category: "Other",
+      ytd: roundMoney2(bo.ownerOtherYtd),
+      mtd: roundMoney2(bo.ownerOtherMtd),
+    },
+  ];
+
+  const tenantRows = [];
+  for (const r of del) {
+    const d = rowData(r);
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
+    const amt = delinquencyAmountReceivable(d);
+    if (amt <= 0) continue;
+    const ag = delinquencyAgingSlices(d);
+    tenantRows.push({
+      name: String(d.name ?? d.Name ?? "").trim() || "—",
+      amount: roundMoney2(amt),
+      property: String(d.property_name ?? d.PropertyName ?? "").trim() || "—",
+      unit: delinquencyTenantUnit(d) || "—",
+      lastPayment: lastPaymentFromRow(d) || "—",
+      daysDelinquent: daysDelinquentFromRow(d),
+      aging: {
+        current: roundMoney2(ag.d00to30),
+        days30to60: roundMoney2(ag.d30to60),
+        days60to90: roundMoney2(ag.d60to90),
+        days90plus: roundMoney2(ag.d90plus),
+      },
+      inCollections: inCollectionsFromRow(d) || "—",
+    });
+  }
+  tenantRows.sort((a, b) => b.amount - a.amount);
+
+  const delAccountCount = delKpis.delinquentAccountCount;
+  const avgPerAccount =
+    delAccountCount > 0 ? roundMoney2(delKpis.totalDelinquency / delAccountCount) : 0;
 
   return {
-    finance: {
-      revenueYtd: incomeKpis.revenueYtd,
-      expensesYtd: incomeKpis.expensesYtd,
-      profitYtd: incomeKpis.profitYtd,
-      profitMarginPercent: incomeKpis.profitMarginPercent,
-      monthToDateRevenue: incomeKpis.monthToDateRevenue,
+    companyRevenue: {
+      ytd: roundMoney2(coa.companyYtd),
+      mtd: roundMoney2(coa.companyMtd),
+      lastYearYtd: roundMoney2(coa.companyLy),
+      yoyChange: roundMoney2(coa.yoyChange),
+      goalAnnual: FINANCE_GOAL_ANNUAL,
+      goalProgress,
       revenuePerDoor,
-      lastYearRevenueYtd: incomeKpis.lastYearRevenueYtd,
-      lastYearExpensesYtd: incomeKpis.lastYearExpensesYtd,
+      revenuePerDoorMonthlyAvg,
+      revenuePerDoorGoal: FINANCE_REV_PER_DOOR_GOAL,
     },
-    delinquencyTotals: {
-      totalAmount: delKpis.totalDelinquency,
-      delinquentAccountCount: delKpis.delinquentAccountCount,
-      aging00to30: delKpis.aging00to30,
-      aging30to60: delKpis.aging30to60,
-      aging60to90: delKpis.aging60to90,
-      aging90Plus: delKpis.aging90Plus,
+    companyRevenueBreakdown,
+    ownerRevenue: {
+      ytd: roundMoney2(coa.ownerYtd),
+      mtd: roundMoney2(coa.ownerMtd),
+    },
+    ownerRevenueBreakdown,
+    profitMargin: {
+      current: coa.profitMarginPercent,
+      goal: FINANCE_MARGIN_GOAL,
+    },
+    delinquency: {
+      totalAmount: roundMoney2(delKpis.totalDelinquency),
+      accountCount: delKpis.delinquentAccountCount,
+      aging: {
+        current: roundMoney2(delKpis.aging00to30),
+        days30to60: roundMoney2(delKpis.aging30to60),
+        days60to90: roundMoney2(delKpis.aging60to90),
+        days90plus: roundMoney2(delKpis.aging90Plus),
+      },
+      avgPerAccount,
+      tenants: tenantRows,
     },
     incomeStatement,
-    delinquency,
-    totalRevenueInCache: incomeKpis.revenueYtd,
+    totalRevenueInCache: roundMoney2(coa.companyYtd),
     revenuePerDoor,
     filters: { propertyIds },
   };

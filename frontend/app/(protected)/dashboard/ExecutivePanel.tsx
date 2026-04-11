@@ -45,6 +45,7 @@ type Exec = {
   onNoticeUnits?: number;
   occupancyRatePercent: number;
   totalRevenueYtd: number;
+  profitMarginPercent: number;
   openWorkOrders: number;
   totalDelinquency: number;
   activeLeads: number;
@@ -53,7 +54,7 @@ type Exec = {
 type FinanceRow = Record<string, unknown> & { _period?: string };
 
 type Finance = {
-  incomeStatement: FinanceRow[];
+  incomeStatement?: FinanceRow[];
   totalRevenueInCache?: number;
 };
 
@@ -99,8 +100,24 @@ function delinqColor(n: number) {
   return n > 5000 ? RED : NAVY;
 }
 
-function marginColor(_p: number) {
-  return GREY;
+function marginColor(p: number) {
+  if (p >= 20) return "#1a7f4c";
+  if (p >= 15) return GOLD;
+  return RED;
+}
+
+function accountNumberFromFinanceRow(row: FinanceRow): string {
+  return String(row.account_number ?? row.AccountNumber ?? "").trim();
+}
+
+function monthToDateFromRow(row: FinanceRow): number {
+  const raw = row.month_to_date ?? row.monthToDate;
+  if (raw != null && raw !== "") {
+    if (typeof raw === "number" && !Number.isNaN(raw)) return raw;
+    const n = parseFloat(String(raw).replace(/[$,]/g, ""));
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return pickAmount(row);
 }
 
 function pickAmount(row: FinanceRow): number {
@@ -178,7 +195,8 @@ export default function ExecutivePanel(props: {
     : 0;
 
   const monthly = useMemo(() => {
-    if (!finance?.incomeStatement?.length) {
+    const stmt = finance?.incomeStatement;
+    if (!stmt?.length) {
       return { points: [] as { month: string; revenue: number }[], hasData: false };
     }
     const keys = last12MonthKeys(rangeEnd);
@@ -186,11 +204,12 @@ export default function ExecutivePanel(props: {
     for (const k of keys) amounts.set(k, 0);
     const rs = rangeStart.slice(0, 7);
     const re = rangeEnd.slice(0, 7);
-    for (const row of finance.incomeStatement) {
+    for (const row of stmt) {
+      if (!accountNumberFromFinanceRow(row).startsWith("0-5")) continue;
       const mk = monthKeyFromRow(row);
       if (!mk || !amounts.has(mk)) continue;
       if (mk < rs || mk > re) continue;
-      amounts.set(mk, (amounts.get(mk) ?? 0) + pickAmount(row));
+      amounts.set(mk, (amounts.get(mk) ?? 0) + monthToDateFromRow(row));
     }
     const points = keys.map((m) => ({
       month: m,
@@ -359,8 +378,9 @@ export default function ExecutivePanel(props: {
   return (
     <>
       <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
-        Date context: <strong>{dateLabel}</strong> ({rangeStart} → {rangeEnd}) · Revenue chart uses cached income
-        rows in range.
+        Date context: <strong>{dateLabel}</strong> ({rangeStart} → {rangeEnd}) · Revenue chart uses{" "}
+        <strong>company</strong> accounts (0-5xxxx) <code className={styles.codeInline}>month_to_date</code> by
+        period.
       </p>
 
       <div className={styles.grid4}>
@@ -390,9 +410,9 @@ export default function ExecutivePanel(props: {
         </div>
 
         <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>YTD revenue</div>
+          <div className={styles.kpiLabel}>Company revenue (YTD)</div>
           <div className={styles.kpiValue}>{fmtMoney(executive.totalRevenueYtd)}</div>
-          <div className={styles.kpiSub}>Goal {fmtMoney(REVENUE_GOAL)} · {revPct}% of goal</div>
+          <div className={styles.kpiSub}>Management &amp; fee income (0-5xxxx) · Goal {fmtMoney(REVENUE_GOAL)} · {revPct}% of goal</div>
           <div className={styles.progressTrack}>
             <div className={styles.progressFill} style={{ width: `${revPct}%`, background: BLUE }} />
           </div>
@@ -400,10 +420,10 @@ export default function ExecutivePanel(props: {
 
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Profit margin</div>
-          <div className={styles.kpiValue} style={{ color: marginColor(0) }}>
-            —
+          <div className={styles.kpiValue} style={{ color: marginColor(executive.profitMarginPercent) }}>
+            {executive.profitMarginPercent.toFixed(1)}%
           </div>
-          <div className={styles.kpiSub}>Target {MARGIN_GOAL}% · expense lines not in cache yet</div>
+          <div className={styles.kpiSub}>Company revenue less 0-6xxxx expenses · Target {MARGIN_GOAL}%</div>
         </div>
       </div>
 
@@ -439,7 +459,7 @@ export default function ExecutivePanel(props: {
 
       <div className={styles.chartRow}>
         <div className={styles.chartCard}>
-          <h3 className={styles.chartTitle}>Monthly revenue trend</h3>
+          <h3 className={styles.chartTitle}>Monthly company revenue trend</h3>
           {!monthly.hasData ? (
             <div className={styles.chartPlaceholder}>Revenue data syncing… (no amounts in selected range yet)</div>
           ) : (
