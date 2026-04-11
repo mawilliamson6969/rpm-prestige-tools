@@ -7,13 +7,14 @@ import {
   getUnitsForResponse,
   summarizeOccupancy,
 } from "./lib/appfolio.js";
-import { ensureOwnerTerminationSchema } from "./lib/db.js";
+import { ensureAnnouncementsSchema, ensureOwnerTerminationSchema } from "./lib/db.js";
 import {
   exportOwnerTerminationsCsv,
   listOwnerTerminations,
   patchOwnerTermination,
   postOwnerTermination,
 } from "./routes/ownerTermination.js";
+import { getAnnouncements, postAnnouncement } from "./routes/announcements.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -23,7 +24,7 @@ app.use(express.json({ limit: "12mb" }));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Api-Secret");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -75,6 +76,9 @@ app.get("/appfolio/units", async (_req, res) => {
   }
 });
 
+app.get("/announcements", getAnnouncements);
+app.post("/announcements", postAnnouncement);
+
 app.get("/dashboard/occupancy", async (_req, res) => {
   try {
     const units = await getUnitsForResponse();
@@ -98,6 +102,8 @@ async function start() {
     try {
       await ensureOwnerTerminationSchema();
       console.log("Database schema OK (owner_termination_requests).");
+      await ensureAnnouncementsSchema();
+      console.log("Database schema OK (announcements).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

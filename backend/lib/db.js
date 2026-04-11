@@ -48,3 +48,34 @@ export async function ensureOwnerTerminationSchema() {
     );
   `);
 }
+
+export async function ensureAnnouncementsSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      is_active BOOLEAN NOT NULL DEFAULT true
+    );
+  `);
+
+  const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM announcements`);
+  if (rows[0].c === 0) {
+    await p.query(
+      `INSERT INTO announcements (title, content, is_active) VALUES
+       ($1, $2, true),
+       ($3, $4, true),
+       ($5, $6, true)`,
+      [
+        "April 10, 2026",
+        "Company intranet is live! All internal tools will be consolidated here.",
+        "April 10, 2026",
+        "Owner Termination form is now digital. Use the link in Our Tools.",
+        "April 10, 2026",
+        "KPI Dashboard is pulling live data from AppFolio.",
+      ]
+    );
+  }
+}
