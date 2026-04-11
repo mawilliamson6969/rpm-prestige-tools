@@ -103,14 +103,14 @@
   max-width: 1280px;
   margin: 0 auto;
   width: 100%;
-  padding: 1.5rem clamp(1rem, 3vw, 2rem) 2.5rem;
+  padding: 2.25rem clamp(1rem, 3vw, 2rem) 3rem;
   box-sizing: border-box;
 }
 
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 35%);
-  gap: 1.75rem;
+  gap: 2.5rem;
   align-items: start;
 }
 
@@ -121,7 +121,7 @@
 }
 
 .sectionTitle {
-  margin: 0 0 1rem;
+  margin: 0 0 1.25rem;
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--ih-navy);
@@ -182,7 +182,7 @@
 
 .dashboardLink {
   display: inline-block;
-  margin-top: 0.85rem;
+  margin-top: 1.25rem;
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--ih-light-blue);
@@ -223,11 +223,11 @@
 }
 
 .toolCategory {
-  margin-top: 1.5rem;
+  margin-top: 2.75rem;
 }
 
-.toolCategory:first-of-type {
-  margin-top: 0.5rem;
+.toolCategory > .toolGrid + .catLabel {
+  margin-top: 2.25rem;
 }
 
 .catLabel {
@@ -236,7 +236,7 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ih-light-blue);
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.75rem;
 }
 
 .toolGrid {
@@ -321,6 +321,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 0.65rem;
+  margin-top: 0.35rem;
 }
 
 .teaserCard {
@@ -345,7 +346,7 @@
 }
 
 .sidebarSection {
-  margin-bottom: 1.75rem;
+  margin-bottom: 2.5rem;
 }
 
 .sidebarSection:last-child {
