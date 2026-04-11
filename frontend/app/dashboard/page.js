@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 const NAVY = "#003366";
@@ -23,7 +24,7 @@ function cardStyle() {
   };
 }
 
-export default function Home() {
+export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,12 @@ export default function Home() {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: "clamp(1.35rem, 3vw, 1.85rem)", fontWeight: 700 }}>
+          <p style={{ margin: 0, fontSize: "0.85rem", opacity: 0.9 }}>
+            <Link href="/" style={{ color: GOLD, fontWeight: 600, textDecoration: "none" }}>
+              ← Forms & Documents
+            </Link>
+          </p>
+          <h1 style={{ margin: "0.35rem 0 0", fontSize: "clamp(1.35rem, 3vw, 1.85rem)", fontWeight: 700 }}>
             RPM Prestige — Occupancy
           </h1>
           <p style={{ margin: "0.35rem 0 0", opacity: 0.88, fontSize: "0.95rem" }}>
@@ -128,9 +134,7 @@ export default function Home() {
         </div>
       )}
 
-      {loading && !data && (
-        <p style={{ opacity: 0.85 }}>Loading dashboard…</p>
-      )}
+      {loading && !data && <p style={{ opacity: 0.85 }}>Loading dashboard…</p>}
 
       {data && (
         <>

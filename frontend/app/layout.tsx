@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "RPM Prestige Tools",
-  description: "Internal tools",
+  description: "Forms, documents, and internal tools",
 };
 
 export default function RootLayout({
@@ -12,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, backgroundColor: "#003366" }}>{children}</body>
+      <body style={{ margin: 0, backgroundColor: "#F5F5F5" }}>{children}</body>
     </html>
   );
 }
