@@ -1,13 +1,19 @@
 /**
  * Express API — Nginx serves /api/* from the browser; paths here are without the /api prefix.
  */
+import cron from "node-cron";
 import express from "express";
 import {
   fetchAppfolioUnitsJson,
   getUnitsForResponse,
   summarizeOccupancy,
 } from "./lib/appfolio.js";
-import { ensureAnnouncementsSchema, ensureOwnerTerminationSchema } from "./lib/db.js";
+import {
+  ensureAnnouncementsSchema,
+  ensureCachedDashboardSchema,
+  ensureOwnerTerminationSchema,
+} from "./lib/db.js";
+import { runFullSync } from "./lib/sync-engine.js";
 import {
   exportOwnerTerminationsCsv,
   listOwnerTerminations,
@@ -15,6 +21,16 @@ import {
   postOwnerTermination,
 } from "./routes/ownerTermination.js";
 import { getAnnouncements, postAnnouncement } from "./routes/announcements.js";
+import {
+  getDashboardExecutive,
+  getDashboardFinance,
+  getDashboardLeasing,
+  getDashboardMaintenance,
+  getDashboardPortfolio,
+  getSyncHistoryRoute,
+  getSyncStatus,
+  postSyncRun,
+} from "./routes/kpiCacheRoutes.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -92,6 +108,16 @@ app.get("/dashboard/occupancy", async (_req, res) => {
   }
 });
 
+app.post("/sync/run", postSyncRun);
+app.get("/sync/status", getSyncStatus);
+app.get("/sync/history", getSyncHistoryRoute);
+
+app.get("/dashboard/executive", getDashboardExecutive);
+app.get("/dashboard/leasing", getDashboardLeasing);
+app.get("/dashboard/maintenance", getDashboardMaintenance);
+app.get("/dashboard/finance", getDashboardFinance);
+app.get("/dashboard/portfolio", getDashboardPortfolio);
+
 app.post("/forms/owner-termination", postOwnerTermination);
 app.get("/forms/owner-termination/export.csv", exportOwnerTerminationsCsv);
 app.get("/forms/owner-termination", listOwnerTerminations);
@@ -104,6 +130,8 @@ async function start() {
       console.log("Database schema OK (owner_termination_requests).");
       await ensureAnnouncementsSchema();
       console.log("Database schema OK (announcements).");
+      await ensureCachedDashboardSchema();
+      console.log("Database schema OK (cached dashboard / sync_log).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -114,6 +142,17 @@ async function start() {
   app.listen(port, "0.0.0.0", () => {
     console.log(`API listening on ${port}`);
   });
+
+  if (process.env.DATABASE_URL) {
+    cron.schedule("0 */4 * * *", () => {
+      runFullSync("cron").catch((e) => console.error("[sync cron]", e.message || e));
+    });
+    console.log("Scheduled AppFolio cache sync: 0 */4 * * * (every 4 hours).");
+
+    setTimeout(() => {
+      runFullSync("startup").catch((e) => console.error("[sync startup]", e.message || e));
+    }, 30_000);
+  }
 }
 
 start();

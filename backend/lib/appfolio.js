@@ -170,6 +170,84 @@ export async function fetchAppfolioUnitsJson() {
   return json;
 }
 
+/**
+ * Normalizes AppFolio report JSON to a row array (handles results / array / data).
+ */
+export function normalizeReportResults(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.results)) return json.results;
+  if (json && Array.isArray(json.data)) return json.data;
+  if (json && Array.isArray(json.units)) return json.units;
+  return [];
+}
+
+export function getNextPageUrl(json) {
+  if (!json || typeof json !== "object") return null;
+  const u = json.next_page_url ?? json.nextPageUrl ?? json.next_page ?? null;
+  return typeof u === "string" && u.trim() ? u.trim() : null;
+}
+
+/**
+ * POST to a full AppFolio Reports API URL (used for pagination via next_page_url).
+ */
+export async function postAppfolioReportAbsoluteUrl(url, bodyObj) {
+  const { clientId, clientSecret } = requireAppfolioConfig();
+  const body =
+    typeof bodyObj === "string" ? bodyObj : JSON.stringify(bodyObj ?? {});
+
+  await acquireAppfolioRateSlot();
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: basicAuthHeader(clientId, clientSecret),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+  } catch (e) {
+    const err = new Error(`Could not reach AppFolio: ${e.message || "network error"}`);
+    err.code = "APPFOLIO_NETWORK";
+    err.cause = e;
+    throw err;
+  }
+
+  const text = await res.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const err = new Error("AppFolio returned a non-JSON response.");
+    err.code = "APPFOLIO_PARSE";
+    err.status = res.status;
+    throw err;
+  }
+
+  if (!res.ok) {
+    const err = new Error(
+      json?.error || json?.message || `AppFolio request failed (${res.status})`
+    );
+    err.code = "APPFOLIO_HTTP";
+    err.status = res.status;
+    err.details = json;
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * POST to Reports API v2: /api/v2/reports/{endpoint}.json
+ */
+export async function postAppfolioReport(endpointFilename, bodyObj) {
+  const { subdomain } = requireAppfolioConfig();
+  const url = `https://${subdomain}.appfolio.com/api/v2/reports/${endpointFilename}`;
+  return postAppfolioReportAbsoluteUrl(url, bodyObj);
+}
+
 export function summarizeOccupancy(unitsArray) {
   const units = Array.isArray(unitsArray) ? unitsArray : [];
   const totalUnitCount = units.length;
