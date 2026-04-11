@@ -32,6 +32,7 @@ type Exec = {
   totalUnits: number;
   occupiedUnits: number;
   vacantUnits: number;
+  onNoticeUnits?: number;
   occupancyRatePercent: number;
   totalRevenueYtd: number;
   openWorkOrders: number;
@@ -55,6 +56,7 @@ type PropRow = {
   propertyName: string;
   unitCount: number;
   vacantCount: number;
+  onNoticeCount?: number;
   occupiedCount?: number;
   occupancyRatePercent: number;
 };
@@ -77,8 +79,8 @@ function occupancyColor(p: number) {
 }
 
 function vacantColor(n: number) {
-  if (n === 0) return "#1a7f4c";
-  if (n <= 3) return GOLD;
+  if (n < 5) return "#1a7f4c";
+  if (n <= 10) return GOLD;
   return RED;
 }
 
@@ -137,7 +139,7 @@ function bucketWoStatus(label: string): string {
   return "Other";
 }
 
-type SortKey = "propertyName" | "unitCount" | "occupied" | "vacant" | "occPct" | "wo";
+type SortKey = "propertyName" | "unitCount" | "occupied" | "vacant" | "onNotice" | "occPct" | "wo";
 
 export default function ExecutivePanel(props: {
   executive: Exec | null;
@@ -212,6 +214,7 @@ export default function ExecutivePanel(props: {
     return propsList.map((p) => {
       const occ = p.occupiedCount ?? p.unitCount - p.vacantCount;
       const occPct = p.occupancyRatePercent;
+      const onNotice = p.onNoticeCount ?? 0;
       const woCount =
         wo[p.propertyName] ??
         Object.entries(wo).find(([k]) => k.toLowerCase() === p.propertyName.toLowerCase())?.[1] ??
@@ -221,6 +224,7 @@ export default function ExecutivePanel(props: {
         unitCount: p.unitCount,
         occupied: occ,
         vacant: p.vacantCount,
+        onNotice,
         occPct,
         woCount: typeof woCount === "number" ? woCount : 0,
       };
@@ -250,6 +254,10 @@ export default function ExecutivePanel(props: {
         case "vacant":
           va = a.vacant;
           vb = b.vacant;
+          break;
+        case "onNotice":
+          va = a.onNotice;
+          vb = b.onNotice;
           break;
         case "occPct":
           va = a.occPct;
@@ -347,6 +355,11 @@ export default function ExecutivePanel(props: {
           <div className={styles.kpiSub}>
             {executive.occupiedUnits} occupied · {executive.vacantUnits} vacant
           </div>
+          {(executive.onNoticeUnits ?? 0) > 0 ? (
+            <div className={styles.kpiSub} style={{ marginTop: "0.35rem", fontWeight: 600 }}>
+              {executive.onNoticeUnits} on notice
+            </div>
+          ) : null}
         </div>
 
         <div className={styles.kpiCard}>
@@ -393,7 +406,7 @@ export default function ExecutivePanel(props: {
           <div className={styles.kpiValue} style={{ color: vacantColor(executive.vacantUnits) }}>
             {executive.vacantUnits}
           </div>
-          <div className={styles.kpiSub}>Portfolio-wide</div>
+          <div className={styles.kpiSub}>Rent roll (Vacant-Unrented)</div>
         </div>
       </div>
 
@@ -478,6 +491,7 @@ export default function ExecutivePanel(props: {
                 <th onClick={() => toggleSort("unitCount")}>Units</th>
                 <th onClick={() => toggleSort("occupied")}>Occupied</th>
                 <th onClick={() => toggleSort("vacant")}>Vacant</th>
+                <th onClick={() => toggleSort("onNotice")}>On notice</th>
                 <th onClick={() => toggleSort("occPct")}>Occ %</th>
                 <th onClick={() => toggleSort("wo")}>Open WO</th>
               </tr>
@@ -500,12 +514,13 @@ export default function ExecutivePanel(props: {
                     <td>{row.unitCount}</td>
                     <td>{row.occupied}</td>
                     <td>{row.vacant}</td>
+                    <td>{row.onNotice}</td>
                     <td>{row.occPct}%</td>
                     <td>{row.woCount}</td>
                   </tr>
                   {expanded === row.propertyName && (
                     <tr className={styles.expandRow}>
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <strong>Details</strong>
                         <pre className={styles.expandPre}>{JSON.stringify(expandedDetail, null, 2)}</pre>
                       </td>

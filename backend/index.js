@@ -5,11 +5,8 @@ import cron from "node-cron";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import {
-  fetchAppfolioUnitsJson,
-  getUnitsForResponse,
-  summarizeOccupancy,
-} from "./lib/appfolio.js";
+import { fetchAppfolioUnitsJson } from "./lib/appfolio.js";
+import { getOccupancy } from "./lib/dashboard-cache.js";
 import { requireAdminRole, requireAuth } from "./lib/auth.js";
 import {
   ensureAnnouncementsSchema,
@@ -129,16 +126,20 @@ app.get("/appfolio/units", requireAuth, async (_req, res) => {
   }
 });
 
-app.get("/dashboard/occupancy", requireAuth, async (_req, res) => {
+app.get("/dashboard/occupancy", requireAuth, async (req, res) => {
   try {
-    const units = await getUnitsForResponse();
-    const summary = summarizeOccupancy(units);
+    const summary = await getOccupancy(req);
     res.json({
       ...summary,
       refreshedAt: new Date().toISOString(),
     });
   } catch (err) {
-    sendAppfolioError(res, err);
+    if (err?.message === "DATABASE_URL is not set") {
+      res.status(503).json({ error: "Database not configured." });
+      return;
+    }
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Could not load occupancy." });
   }
 });
 

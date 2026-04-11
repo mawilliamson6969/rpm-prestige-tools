@@ -70,8 +70,15 @@ type OccupancyData = {
   totalUnitCount: number;
   occupancyRatePercent: number;
   vacantCount: number;
+  onNoticeUnits?: number;
   refreshedAt?: string;
 };
+
+function vacantCountColor(n: number) {
+  if (n < 5) return "#1a7f4c";
+  if (n <= 10) return "#c5960c";
+  return "#b32317";
+}
 
 type AnnouncementRow = {
   id: string;
@@ -273,11 +280,21 @@ export default function IntranetHub() {
                   <div className={styles.kpiCard}>
                     <div className={styles.kpiLabel}>Occupancy</div>
                     <div className={styles.kpiValue}>{occupancy.occupancyRatePercent}%</div>
-                    <div className={styles.kpiHint}>Live from AppFolio</div>
+                    <div className={styles.kpiHint}>Rent roll · cached</div>
+                    {(occupancy.onNoticeUnits ?? 0) > 0 ? (
+                      <div className={styles.kpiHint} style={{ marginTop: "0.35rem", fontWeight: 600 }}>
+                        {occupancy.onNoticeUnits} on notice
+                      </div>
+                    ) : null}
                   </div>
                   <div className={styles.kpiCard}>
                     <div className={styles.kpiLabel}>Vacant units</div>
-                    <div className={styles.kpiValue}>{occupancy.vacantCount}</div>
+                    <div
+                      className={styles.kpiValue}
+                      style={{ color: vacantCountColor(occupancy.vacantCount) }}
+                    >
+                      {occupancy.vacantCount}
+                    </div>
                     <div className={styles.kpiHint}>Across portfolio</div>
                   </div>
                 </div>

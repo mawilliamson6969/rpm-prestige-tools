@@ -1,7 +1,7 @@
 /**
  * Read KPI dashboard aggregates from PostgreSQL cache (Phase 1 sync).
  */
-import { isUnitVacant, propertyLabel } from "./appfolio.js";
+import { propertyLabel } from "./appfolio.js";
 import { getPool } from "./db.js";
 
 function parseFilters(req) {
@@ -73,6 +73,114 @@ function parseMoney(v) {
 
 function rowData(r) {
   return r.appfolio_data ?? r;
+}
+
+/** Rent roll `status` values (AppFolio) — occupancy uses cached_rent_roll, not cached_units. */
+const RR_CURRENT = "Current";
+const RR_VACANT = "Vacant-Unrented";
+const RR_NOTICE = "Notice-Unrented";
+
+function rentRollStatus(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.status ?? o.Status ?? "").trim();
+}
+
+function rentRollPropertyName(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.property_name ?? o.PropertyName ?? "").trim() || "Unknown property";
+}
+
+function rentRollUnitLabel(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(
+    o.unit_name ?? o.unitName ?? o.unit ?? o.Unit ?? o.unit_number ?? o.unitNumber ?? ""
+  ).trim();
+}
+
+function rentRollAdvertisedRent(d) {
+  const o = typeof d === "object" ? d : {};
+  return parseMoney(
+    o.advertised_rent ?? o.AdvertisedRent ?? o.advertisedRent ?? o.market_rent ?? o.MarketRent ?? 0
+  );
+}
+
+/**
+ * Occupancy from cached_rent_roll: Current + Notice-Unrented = occupied; Vacant-Unrented = vacant.
+ */
+function aggregateRentRollFromRows(rrRows, propertyIds) {
+  const byProp = new Map();
+
+  function bumpProp(d, bucket) {
+    const name = rentRollPropertyName(d);
+    const cur = byProp.get(name) || {
+      propertyName: name,
+      unitCount: 0,
+      vacantCount: 0,
+      onNoticeCount: 0,
+      currentCount: 0,
+    };
+    cur.unitCount += 1;
+    if (bucket === "vacant") cur.vacantCount += 1;
+    else if (bucket === "notice") cur.onNoticeCount += 1;
+    else if (bucket === "current") cur.currentCount += 1;
+    byProp.set(name, cur);
+  }
+
+  let totalUnits = 0;
+  let vacantUnits = 0;
+  let onNoticeUnits = 0;
+  let currentUnits = 0;
+
+  for (const r of rrRows) {
+    const d = rowData(r);
+    if (!matchesProperty(d, propertyIds)) continue;
+    const st = rentRollStatus(d);
+    totalUnits += 1;
+
+    if (st === RR_VACANT) {
+      vacantUnits += 1;
+      bumpProp(d, "vacant");
+    } else if (st === RR_NOTICE) {
+      onNoticeUnits += 1;
+      bumpProp(d, "notice");
+    } else if (st === RR_CURRENT) {
+      currentUnits += 1;
+      bumpProp(d, "current");
+    } else {
+      bumpProp(d, "other");
+    }
+  }
+
+  const occupiedUnits = currentUnits + onNoticeUnits;
+  const occupancyRatePercent =
+    totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 1000) / 10 : 0;
+
+  const byProperty = Array.from(byProp.values())
+    .map((p) => {
+      const occupiedCount = (p.currentCount ?? 0) + (p.onNoticeCount ?? 0);
+      return {
+        propertyName: p.propertyName,
+        unitCount: p.unitCount,
+        vacantCount: p.vacantCount,
+        onNoticeCount: p.onNoticeCount ?? 0,
+        occupiedCount,
+        occupancyRatePercent:
+          p.unitCount > 0 ? Math.round((occupiedCount / p.unitCount) * 1000) / 10 : 0,
+      };
+    })
+    .sort((a, b) =>
+      a.propertyName.localeCompare(b.propertyName, undefined, { sensitivity: "base" })
+    );
+
+  return {
+    totalUnits,
+    vacantUnits,
+    onNoticeUnits,
+    currentUnits,
+    occupiedUnits,
+    occupancyRatePercent,
+    byProperty,
+  };
 }
 
 /** AppFolio chart strings like "0-40100" — income 40000 series */
@@ -256,25 +364,36 @@ function aggregateDelinquencyFromRows(delRows, propertyIds) {
   };
 }
 
+/** GET /dashboard/occupancy — cached rent roll (hub quick KPIs). */
+export async function getOccupancy(req) {
+  const pool = getPool();
+  const { propertyIds } = parseFilters(req);
+  const { rows } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
+  const agg = aggregateRentRollFromRows(rows, propertyIds);
+  return {
+    totalUnitCount: agg.totalUnits,
+    occupiedCount: agg.occupiedUnits,
+    vacantCount: agg.vacantUnits,
+    onNoticeUnits: agg.onNoticeUnits,
+    occupancyRatePercent: agg.occupancyRatePercent,
+    byProperty: agg.byProperty,
+  };
+}
+
 /** GET /dashboard/executive */
 export async function getExecutive(req) {
   const pool = getPool();
   const { propertyIds } = parseFilters(req);
 
-  const { rows: unitRows } = await pool.query(
-    `SELECT appfolio_data FROM cached_units ORDER BY id`
+  const { rows: rrRows } = await pool.query(
+    `SELECT appfolio_data FROM cached_rent_roll ORDER BY id`
   );
-  let totalUnits = 0;
-  let vacant = 0;
-  for (const r of unitRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    totalUnits += 1;
-    if (isUnitVacant(d)) vacant += 1;
-  }
-  const occupied = totalUnits - vacant;
-  const occupancyRatePercent =
-    totalUnits > 0 ? Math.round((occupied / totalUnits) * 1000) / 10 : 0;
+  const rrAgg = aggregateRentRollFromRows(rrRows, propertyIds);
+  const totalUnits = rrAgg.totalUnits;
+  const vacant = rrAgg.vacantUnits;
+  const occupied = rrAgg.occupiedUnits;
+  const onNoticeUnits = rrAgg.onNoticeUnits;
+  const occupancyRatePercent = rrAgg.occupancyRatePercent;
 
   const { rows: incRows } = await pool.query(
     `SELECT appfolio_data, period FROM cached_income_statement ORDER BY id`
@@ -337,6 +456,7 @@ export async function getExecutive(req) {
       days60to90: delKpis.aging60to90,
       days90Plus: delKpis.aging90Plus,
     },
+    onNoticeUnits,
     activeLeads,
     filters: { propertyIds },
   };
@@ -351,17 +471,25 @@ export async function getLeasing(req) {
   const { rows: ra } = await pool.query(
     `SELECT appfolio_data FROM cached_rental_applications ORDER BY id`
   );
-  const { rows: units } = await pool.query(`SELECT appfolio_data FROM cached_units ORDER BY id`);
+  const { rows: rrVacant } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
   const { rows: le } = await pool.query(
     `SELECT appfolio_data FROM cached_lease_expirations ORDER BY id`
   );
 
   const guestCards = gc.map(rowData).filter((d) => matchesProperty(d, propertyIds));
   const rentalApplications = ra.map(rowData).filter((d) => matchesProperty(d, propertyIds));
-  const vacantUnits = units
-    .map(rowData)
-    .filter((d) => matchesProperty(d, propertyIds))
-    .filter((d) => isUnitVacant(d));
+  const vacantUnits = [];
+  for (const r of rrVacant) {
+    const d = rowData(r);
+    if (!matchesProperty(d, propertyIds)) continue;
+    if (rentRollStatus(d) !== RR_VACANT) continue;
+    vacantUnits.push({
+      ...d,
+      property_name: rentRollPropertyName(d),
+      unit: rentRollUnitLabel(d),
+      advertised_rent: rentRollAdvertisedRent(d),
+    });
+  }
   const leaseExpirations = le.map(rowData).filter((d) => matchesProperty(d, propertyIds));
 
   return {
@@ -466,13 +594,9 @@ export async function getFinance(req) {
     });
   }
 
-  const { rows: unitRows } = await pool.query(`SELECT appfolio_data FROM cached_units`);
-  let unitCount = 0;
-  for (const r of unitRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    unitCount += 1;
-  }
+  const { rows: rrCountRows } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
+  const rrCountAgg = aggregateRentRollFromRows(rrCountRows, propertyIds);
+  const unitCount = rrCountAgg.totalUnits;
 
   const revenuePerDoor =
     unitCount > 0 ? Math.round((incomeKpis.revenueYtd / unitCount) * 100) / 100 : 0;
@@ -510,28 +634,11 @@ export async function getPortfolio(req) {
   const { propertyIds, ownerIds } = parseFilters(req);
 
   const { rows: props } = await pool.query(`SELECT appfolio_data FROM cached_properties ORDER BY id`);
-  const { rows: units } = await pool.query(`SELECT appfolio_data FROM cached_units ORDER BY id`);
   const { rows: owners } = await pool.query(`SELECT appfolio_data FROM cached_owners ORDER BY id`);
   const { rows: rr } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
 
-  const byProp = new Map();
-  for (const r of units) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    const name = propertyLabel(d);
-    const cur = byProp.get(name) || { propertyName: name, unitCount: 0, vacantCount: 0 };
-    cur.unitCount += 1;
-    if (isUnitVacant(d)) cur.vacantCount += 1;
-    byProp.set(name, cur);
-  }
-  const propertiesList = Array.from(byProp.values()).map((p) => ({
-    ...p,
-    occupiedCount: p.unitCount - p.vacantCount,
-    occupancyRatePercent:
-      p.unitCount > 0
-        ? Math.round(((p.unitCount - p.vacantCount) / p.unitCount) * 1000) / 10
-        : 0,
-  }));
+  const rrAgg = aggregateRentRollFromRows(rr, propertyIds);
+  const propertiesList = rrAgg.byProperty;
 
   const ownerDirectory = owners
     .map(rowData)
