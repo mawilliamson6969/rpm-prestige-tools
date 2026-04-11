@@ -40,7 +40,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
-      ADMIN_API_SECRET: ${ADMIN_API_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env for team login}
     depends_on:
       db:
         condition: service_healthy

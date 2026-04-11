@@ -1,8 +1,11 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { ownerTerminationBasePath } from "../../../lib/api";
+import UserMenu from "../../../../components/UserMenu";
+import { useAuth } from "../../../../context/AuthContext";
+import { ownerTerminationBasePath } from "../../../../lib/api";
 
 const NAVY = "#1B2856";
 const LIGHT_BLUE = "#0098D0";
@@ -57,39 +60,22 @@ const card: CSSProperties = {
   marginBottom: "1.25rem",
 };
 
-const STORAGE_KEY = "rpm_admin_api_secret";
-
 export default function AdminTerminations() {
-  const [secret, setSecret] = useState("");
-  const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const { authHeaders } = useAuth();
+  const headers = useMemo(() => authHeaders(), [authHeaders]);
   const [items, setItems] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const s = sessionStorage.getItem(STORAGE_KEY);
-    if (s) setSavedSecret(s);
-  }, []);
-
-  const authHeaders = useMemo((): Record<string, string> => {
-    const token = savedSecret ?? "";
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [savedSecret]);
-
   const load = useCallback(async () => {
-    if (!savedSecret) {
-      setError("Enter the admin API key (same as ADMIN_API_SECRET) and click Save.");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
       const q = statusFilter !== "all" ? `?status=${encodeURIComponent(statusFilter)}` : "";
       const res = await fetch(`${ownerTerminationBasePath()}${q}`, {
-        headers: { ...authHeaders },
+        headers: { ...headers },
         cache: "no-store",
       });
       const body = await res.json().catch(() => ({}));
@@ -103,31 +89,16 @@ export default function AdminTerminations() {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, savedSecret, statusFilter]);
+  }, [headers, statusFilter]);
 
   useEffect(() => {
-    if (savedSecret) load();
-  }, [savedSecret, statusFilter, load]);
-
-  function saveSecret() {
-    const t = secret.trim();
-    if (!t) return;
-    sessionStorage.setItem(STORAGE_KEY, t);
-    setSavedSecret(t);
-    setSecret("");
-  }
-
-  function clearSecret() {
-    sessionStorage.removeItem(STORAGE_KEY);
-    setSavedSecret(null);
-    setItems([]);
-  }
+    load();
+  }, [load]);
 
   async function updateStatus(id: string, status: string) {
-    if (!savedSecret) return;
     const res = await fetch(`${ownerTerminationBasePath()}/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({ status }),
     });
     const body = await res.json().catch(() => ({}));
@@ -139,9 +110,8 @@ export default function AdminTerminations() {
   }
 
   async function exportCsv() {
-    if (!savedSecret) return;
     const res = await fetch(`${ownerTerminationBasePath()}/export.csv`, {
-      headers: { ...authHeaders },
+      headers: { ...headers },
     });
     if (!res.ok) {
       alert("Export failed");
@@ -167,63 +137,32 @@ export default function AdminTerminations() {
       }}
     >
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <header style={{ marginBottom: "1.5rem" }}>
-          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: NAVY }}>Real Property Management Prestige</div>
-          <h1 style={{ margin: "0.35rem 0 0", fontSize: "1.35rem", color: LIGHT_BLUE }}>Termination requests</h1>
+        <header
+          style={{
+            marginBottom: "1.5rem",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: NAVY }}>Real Property Management Prestige</div>
+            <h1 style={{ margin: "0.35rem 0 0", fontSize: "1.35rem", color: LIGHT_BLUE }}>Termination requests</h1>
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.9rem" }}>
+              <Link href="/" style={{ color: LIGHT_BLUE, fontWeight: 600 }}>
+                ← Team Hub
+              </Link>
+            </p>
+          </div>
+          <UserMenu />
         </header>
 
         <section style={card}>
           <p style={{ margin: "0 0 0.75rem", fontSize: "0.95rem", color: GREY, lineHeight: 1.5 }}>
-            Paste the server <strong>ADMIN_API_SECRET</strong> once per browser session. It is stored only in{" "}
-            <code>sessionStorage</code> on this device.
+            Submitted owner termination requests. Use filters and status updates to track progress.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-            <input
-              type="password"
-              placeholder="Admin API secret"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              style={{
-                flex: "1 1 220px",
-                padding: "0.5rem 0.65rem",
-                borderRadius: 8,
-                border: `1px solid ${GREY}`,
-                fontSize: "1rem",
-              }}
-            />
-            <button
-              type="button"
-              onClick={saveSecret}
-              style={{
-                background: LIGHT_BLUE,
-                color: WHITE,
-                border: "none",
-                borderRadius: 8,
-                padding: "0.5rem 1.2rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Save key
-            </button>
-            {savedSecret && (
-              <button
-                type="button"
-                onClick={clearSecret}
-                style={{
-                  background: "transparent",
-                  color: RED,
-                  border: `1px solid ${RED}`,
-                  borderRadius: 8,
-                  padding: "0.5rem 1rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
         </section>
 
         <section style={card}>
@@ -246,7 +185,7 @@ export default function AdminTerminations() {
             <button
               type="button"
               onClick={() => load()}
-              disabled={loading || !savedSecret}
+              disabled={loading}
               style={{
                 background: NAVY,
                 color: WHITE,
@@ -262,7 +201,6 @@ export default function AdminTerminations() {
             <button
               type="button"
               onClick={exportCsv}
-              disabled={!savedSecret}
               style={{
                 background: "transparent",
                 color: NAVY,
@@ -270,7 +208,7 @@ export default function AdminTerminations() {
                 borderRadius: 8,
                 padding: "0.45rem 1rem",
                 fontWeight: 600,
-                cursor: savedSecret ? "pointer" : "not-allowed",
+                cursor: "pointer",
               }}
             >
               Export CSV
@@ -285,7 +223,7 @@ export default function AdminTerminations() {
 
           {loading && <p style={{ color: GREY }}>Loading…</p>}
 
-          {!loading && savedSecret && (
+          {!loading && (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                 <thead>

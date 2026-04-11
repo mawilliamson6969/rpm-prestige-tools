@@ -39,6 +39,14 @@
   font-weight: 500;
 }
 
+.headerAside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
 .clock {
   font-size: 0.95rem;
   font-variant-numeric: tabular-nums;

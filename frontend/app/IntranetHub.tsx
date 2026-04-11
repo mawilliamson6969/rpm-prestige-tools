@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import UserMenu from "../components/UserMenu";
 import AddAnnouncementModal from "./AddAnnouncementModal";
+import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
 import styles from "./intranet-hub.module.css";
 
@@ -137,6 +139,7 @@ function ToolCardSoon({ title, description }: { title: string; description: stri
 }
 
 export default function IntranetHub() {
+  const { authHeaders, isAdmin, token } = useAuth();
   const [now, setNow] = useState(() => new Date());
   const [occupancy, setOccupancy] = useState<OccupancyData | null>(null);
   const [occLoading, setOccLoading] = useState(true);
@@ -146,7 +149,10 @@ export default function IntranetHub() {
 
   const loadAnnouncements = useCallback(async () => {
     try {
-      const res = await fetch(announcementsApiUrl(), { cache: "no-store" });
+      const res = await fetch(announcementsApiUrl(), {
+        cache: "no-store",
+        headers: { ...authHeaders() },
+      });
       const body = await res.json().catch(() => ({}));
       if (res.ok && Array.isArray(body.announcements)) {
         setAnnouncements(body.announcements);
@@ -154,7 +160,7 @@ export default function IntranetHub() {
     } catch {
       setAnnouncements([]);
     }
-  }, []);
+  }, [authHeaders]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -165,7 +171,10 @@ export default function IntranetHub() {
     setOccLoading(true);
     setOccError(null);
     try {
-      const res = await fetch(occupancyApiUrl(), { cache: "no-store" });
+      const res = await fetch(occupancyApiUrl(), {
+        cache: "no-store",
+        headers: { ...authHeaders() },
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg =
@@ -181,15 +190,17 @@ export default function IntranetHub() {
     } finally {
       setOccLoading(false);
     }
-  }, []);
+  }, [authHeaders]);
 
   useEffect(() => {
+    if (!token) return;
     loadOccupancy();
-  }, [loadOccupancy]);
+  }, [loadOccupancy, token]);
 
   useEffect(() => {
+    if (!token) return;
     loadAnnouncements();
-  }, [loadAnnouncements]);
+  }, [loadAnnouncements, token]);
 
   const clockStr = now.toLocaleString("en-US", {
     timeZone: "America/Chicago",
@@ -209,9 +220,12 @@ export default function IntranetHub() {
           <h1 className={styles.brandTitle}>Real Property Management Prestige</h1>
           <p className={styles.brandSub}>Team Hub — Internal Use Only</p>
         </div>
-        <div className={styles.clock}>
-          <span className={styles.clockLabel}>Houston (CT)</span>
-          <span>{clockStr}</span>
+        <div className={styles.headerAside}>
+          <div className={styles.clock}>
+            <span className={styles.clockLabel}>Houston (CT)</span>
+            <span>{clockStr}</span>
+          </div>
+          <UserMenu />
         </div>
       </header>
 
@@ -335,9 +349,11 @@ export default function IntranetHub() {
                 <h2 id="announce-heading" className={styles.sectionTitle}>
                   Team Announcements
                 </h2>
-                <button type="button" className={styles.addAnnounceBtn} onClick={() => setAddOpen(true)}>
-                  + Add
-                </button>
+                {isAdmin ? (
+                  <button type="button" className={styles.addAnnounceBtn} onClick={() => setAddOpen(true)}>
+                    + Add
+                  </button>
+                ) : null}
               </div>
               {announcements.length === 0 ? (
                 <p className={styles.kpiHint}>No announcements yet.</p>

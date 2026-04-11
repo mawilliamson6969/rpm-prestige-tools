@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RequireAdmin } from "../../../../context/AuthContext";
 import AdminTerminations from "./AdminTerminations";
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function AdminTerminationsPage() {
-  return <AdminTerminations />;
+  return (
+    <RequireAdmin>
+      <AdminTerminations />
+    </RequireAdmin>
+  );
 }

@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiUrl } from "../../lib/api";
+import UserMenu from "../../../components/UserMenu";
+import { useAuth } from "../../../context/AuthContext";
+import { apiUrl } from "../../../lib/api";
 import styles from "./dashboard.module.css";
 import { getDateRange, PRESET_OPTIONS, type DatePresetId } from "./dateRange";
 import ExecutivePanel from "./ExecutivePanel";
-
-const STORAGE_KEY = "rpm_admin_api_secret";
 
 type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio";
 
@@ -31,6 +31,7 @@ type SyncLatest = {
 };
 
 export default function DashboardClient() {
+  const { authHeaders, isAdmin } = useAuth();
   const [tab, setTab] = useState<TabId>("executive");
   const [preset, setPreset] = useState<DatePresetId>("ytd");
   const [customStart, setCustomStart] = useState("");
@@ -84,7 +85,10 @@ export default function DashboardClient() {
 
   const loadSyncStatus = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("/sync/status"), { cache: "no-store" });
+      const res = await fetch(apiUrl("/sync/status"), {
+        cache: "no-store",
+        headers: { ...authHeaders() },
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return;
       setSyncLatest(body.latest ?? null);
@@ -92,7 +96,7 @@ export default function DashboardClient() {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [authHeaders]);
 
   const loadExecutiveData = useCallback(async () => {
     setLoading(true);
@@ -102,12 +106,13 @@ export default function DashboardClient() {
       startDate: range.start,
       endDate: range.end,
     });
+    const h = authHeaders();
     try {
       const [rEx, rFi, rMa, rPo] = await Promise.all([
-        fetch(apiUrl(`/dashboard/executive${q}`), { cache: "no-store" }),
-        fetch(apiUrl(`/dashboard/finance${q}`), { cache: "no-store" }),
-        fetch(apiUrl(`/dashboard/maintenance${q}`), { cache: "no-store" }),
-        fetch(apiUrl(`/dashboard/portfolio${q}`), { cache: "no-store" }),
+        fetch(apiUrl(`/dashboard/executive${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl(`/dashboard/finance${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl(`/dashboard/maintenance${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl(`/dashboard/portfolio${q}`), { cache: "no-store", headers: { ...h } }),
       ]);
       const [jEx, jFi, jMa, jPo] = await Promise.all([
         rEx.json().catch(() => ({})),
@@ -132,7 +137,7 @@ export default function DashboardClient() {
     } finally {
       setLoading(false);
     }
-  }, [range.start, range.end, range.label, selectedPropertyIds]);
+  }, [range.start, range.end, range.label, selectedPropertyIds, authHeaders]);
 
   useEffect(() => {
     loadSyncStatus();
@@ -160,20 +165,14 @@ export default function DashboardClient() {
   }, [syncLatest]);
 
   const onRefreshCache = async () => {
-    if (typeof window === "undefined") return;
-    const secret = sessionStorage.getItem(STORAGE_KEY);
-    if (!secret) {
-      window.alert("Set your admin API secret first (same as ADMIN_API_SECRET). Use Admin Terminations page to save it to session, or paste in console: sessionStorage.setItem('rpm_admin_api_secret','YOUR_SECRET')");
-      return;
-    }
+    if (typeof window === "undefined" || !isAdmin) return;
     setAdminBusy(true);
     try {
       const res = await fetch(apiUrl("/sync/run"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Api-Secret": secret,
-          Authorization: `Bearer ${secret}`,
+          ...authHeaders(),
         },
         body: "{}",
       });
@@ -231,20 +230,25 @@ export default function DashboardClient() {
           </Link>
           <h1>RPM Prestige — Executive Dashboard</h1>
         </div>
-        <div className={styles.syncMeta}>
-          <div>
-            Last synced: <strong>{lastSyncedText}</strong>
-            {syncInProgress ? " (sync running…)" : ""}
+        <div className={styles.topBarRight}>
+          <div className={styles.syncMeta}>
+            <div>
+              Last synced: <strong>{lastSyncedText}</strong>
+              {syncInProgress ? " (sync running…)" : ""}
+            </div>
+            <div className={styles.muted}>Cached AppFolio data · Houston (CT)</div>
+            {isAdmin ? (
+              <button
+                type="button"
+                className={styles.refreshBtn}
+                onClick={onRefreshCache}
+                disabled={adminBusy}
+              >
+                {adminBusy ? "Starting…" : "Refresh Data"}
+              </button>
+            ) : null}
           </div>
-          <div className={styles.muted}>Cached AppFolio data · Houston (CT)</div>
-          <button
-            type="button"
-            className={styles.refreshBtn}
-            onClick={onRefreshCache}
-            disabled={adminBusy}
-          >
-            {adminBusy ? "Starting…" : "Refresh Data"}
-          </button>
+          <UserMenu />
         </div>
       </header>
 

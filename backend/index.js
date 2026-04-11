@@ -10,25 +10,31 @@ import {
   getUnitsForResponse,
   summarizeOccupancy,
 } from "./lib/appfolio.js";
+import { requireAdminRole, requireAuth } from "./lib/auth.js";
 import {
   ensureAnnouncementsSchema,
   ensureCachedDashboardSchema,
   ensureOwnerTerminationSchema,
+  ensureUsersSchema,
 } from "./lib/db.js";
 import { runFullSync } from "./lib/sync-engine.js";
+import {
+  getMe,
+  postChangePassword,
+  postLogin,
+} from "./routes/auth.js";
+import {
+  getAnnouncements,
+  postAnnouncement,
+  uploadAnnouncementFile,
+  uploadAnnouncementMiddleware,
+} from "./routes/announcements.js";
 import {
   exportOwnerTerminationsCsv,
   listOwnerTerminations,
   patchOwnerTermination,
   postOwnerTermination,
 } from "./routes/ownerTermination.js";
-import {
-  getAnnouncements,
-  postAnnouncement,
-  requireAdminMiddleware,
-  uploadAnnouncementFile,
-  uploadAnnouncementMiddleware,
-} from "./routes/announcements.js";
 import {
   getDashboardExecutive,
   getDashboardFinance,
@@ -51,7 +57,7 @@ app.use(express.json({ limit: "12mb" }));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Api-Secret");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -94,7 +100,21 @@ app.get("/", (_req, res) => {
   res.json({ message: "RPM Prestige API — use /health for a quick check." });
 });
 
-app.get("/appfolio/units", async (_req, res) => {
+app.post("/auth/login", postLogin);
+app.get("/auth/me", requireAuth, getMe);
+app.post("/auth/change-password", requireAuth, postChangePassword);
+
+app.get("/announcements", requireAuth, getAnnouncements);
+app.post(
+  "/announcements/upload",
+  requireAuth,
+  requireAdminRole,
+  uploadAnnouncementMiddleware,
+  uploadAnnouncementFile
+);
+app.post("/announcements", requireAuth, requireAdminRole, postAnnouncement);
+
+app.get("/appfolio/units", requireAuth, async (_req, res) => {
   try {
     const json = await fetchAppfolioUnitsJson();
     res.json(json);
@@ -103,16 +123,7 @@ app.get("/appfolio/units", async (_req, res) => {
   }
 });
 
-app.get("/announcements", getAnnouncements);
-app.post(
-  "/announcements/upload",
-  requireAdminMiddleware,
-  uploadAnnouncementMiddleware,
-  uploadAnnouncementFile
-);
-app.post("/announcements", postAnnouncement);
-
-app.get("/dashboard/occupancy", async (_req, res) => {
+app.get("/dashboard/occupancy", requireAuth, async (_req, res) => {
   try {
     const units = await getUnitsForResponse();
     const summary = summarizeOccupancy(units);
@@ -125,20 +136,20 @@ app.get("/dashboard/occupancy", async (_req, res) => {
   }
 });
 
-app.post("/sync/run", postSyncRun);
-app.get("/sync/status", getSyncStatus);
-app.get("/sync/history", getSyncHistoryRoute);
+app.post("/sync/run", requireAuth, requireAdminRole, postSyncRun);
+app.get("/sync/status", requireAuth, getSyncStatus);
+app.get("/sync/history", requireAuth, getSyncHistoryRoute);
 
-app.get("/dashboard/executive", getDashboardExecutive);
-app.get("/dashboard/leasing", getDashboardLeasing);
-app.get("/dashboard/maintenance", getDashboardMaintenance);
-app.get("/dashboard/finance", getDashboardFinance);
-app.get("/dashboard/portfolio", getDashboardPortfolio);
+app.get("/dashboard/executive", requireAuth, getDashboardExecutive);
+app.get("/dashboard/leasing", requireAuth, getDashboardLeasing);
+app.get("/dashboard/maintenance", requireAuth, getDashboardMaintenance);
+app.get("/dashboard/finance", requireAuth, getDashboardFinance);
+app.get("/dashboard/portfolio", requireAuth, getDashboardPortfolio);
 
 app.post("/forms/owner-termination", postOwnerTermination);
-app.get("/forms/owner-termination/export.csv", exportOwnerTerminationsCsv);
-app.get("/forms/owner-termination", listOwnerTerminations);
-app.patch("/forms/owner-termination/:id", patchOwnerTermination);
+app.get("/forms/owner-termination/export.csv", requireAuth, requireAdminRole, exportOwnerTerminationsCsv);
+app.get("/forms/owner-termination", requireAuth, requireAdminRole, listOwnerTerminations);
+app.patch("/forms/owner-termination/:id", requireAuth, requireAdminRole, patchOwnerTermination);
 
 async function start() {
   if (process.env.DATABASE_URL) {
@@ -149,6 +160,8 @@ async function start() {
       console.log("Database schema OK (announcements).");
       await ensureCachedDashboardSchema();
       console.log("Database schema OK (cached dashboard / sync_log).");
+      await ensureUsersSchema();
+      console.log("Database schema OK (users).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

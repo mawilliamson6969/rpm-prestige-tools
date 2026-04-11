@@ -12,28 +12,7 @@ import {
   startSyncInBackground,
 } from "../lib/sync-engine.js";
 
-function adminTokenFromRequest(req) {
-  const auth = req.headers.authorization ?? "";
-  if (auth.startsWith("Bearer ")) return auth.slice(7);
-  const raw = req.headers["x-admin-api-secret"];
-  return typeof raw === "string" ? raw : "";
-}
-
-function requireAdmin(req, res) {
-  const secret = process.env.ADMIN_API_SECRET;
-  if (!secret) {
-    res.status(503).json({ error: "Admin API not configured (ADMIN_API_SECRET)." });
-    return false;
-  }
-  if (adminTokenFromRequest(req) !== secret) {
-    res.status(401).json({ error: "Unauthorized." });
-    return false;
-  }
-  return true;
-}
-
 export async function postSyncRun(req, res) {
-  if (!requireAdmin(req, res)) return;
   try {
     const { syncId } = await startSyncInBackground("manual");
     res.json({ message: "Sync started", syncId });

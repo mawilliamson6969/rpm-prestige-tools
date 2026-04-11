@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
-import IntranetHub from "./IntranetHub";
+import IntranetHub from "../IntranetHub";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],

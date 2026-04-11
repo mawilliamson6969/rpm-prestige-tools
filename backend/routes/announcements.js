@@ -26,31 +26,6 @@ export const uploadMiddleware = multer({
   limits: { fileSize: 8 * 1024 * 1024 },
 });
 
-export function adminTokenFromRequest(req) {
-  const auth = req.headers.authorization ?? "";
-  if (auth.startsWith("Bearer ")) return auth.slice(7);
-  const raw = req.headers["x-admin-api-secret"];
-  return typeof raw === "string" ? raw : "";
-}
-
-function requireAdmin(req, res) {
-  const secret = process.env.ADMIN_API_SECRET;
-  if (!secret) {
-    res.status(503).json({ error: "Admin API not configured (ADMIN_API_SECRET)." });
-    return false;
-  }
-  if (adminTokenFromRequest(req) !== secret) {
-    res.status(401).json({ error: "Unauthorized." });
-    return false;
-  }
-  return true;
-}
-
-export function requireAdminMiddleware(req, res, next) {
-  if (!requireAdmin(req, res)) return;
-  next();
-}
-
 function wrapUpload(req, res, next) {
   uploadMiddleware.single("file")(req, res, (err) => {
     if (err) {
@@ -100,7 +75,6 @@ export async function getAnnouncements(req, res) {
 }
 
 export async function postAnnouncement(req, res) {
-  if (!requireAdmin(req, res)) return;
   const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!title || !content) {

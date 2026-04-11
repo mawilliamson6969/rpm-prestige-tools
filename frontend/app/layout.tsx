@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "../context/AuthContext";
 
 export const metadata: Metadata = {
   title: "RPM Prestige Tools",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, backgroundColor: "#F5F5F5" }}>{children}</body>
+      <body style={{ margin: 0, backgroundColor: "#F5F5F5" }}>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

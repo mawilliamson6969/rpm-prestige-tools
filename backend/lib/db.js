@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -153,4 +154,38 @@ export async function ensureCachedDashboardSchema() {
       triggered_by VARCHAR(64) NOT NULL
     );
   `);
+}
+
+export async function ensureUsersSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(64) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      display_name VARCHAR(255) NOT NULL,
+      role VARCHAR(16) NOT NULL CHECK (role IN ('admin', 'viewer')),
+      email VARCHAR(255),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM users`);
+  if (rows[0].c > 0) return;
+
+  const password_hash = await bcrypt.hash("RpmPrestige2026!", 12);
+  const seeds = [
+    ["mike", "Mike Williamson", "admin", "mike@rpmhouston.com"],
+    ["lori", "Lori", "admin", "lori@rpmhouston.com"],
+    ["leslie", "Leslie", "viewer", "leslie@rpmhouston.com"],
+    ["amanda", "Amanda", "viewer", "amanda@rpmhouston.com"],
+    ["amelia", "Amelia", "viewer", "amelia@rpmhouston.com"],
+  ];
+  for (const [username, display_name, role, email] of seeds) {
+    await p.query(
+      `INSERT INTO users (username, password_hash, display_name, role, email)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [username, password_hash, display_name, role, email]
+    );
+  }
 }

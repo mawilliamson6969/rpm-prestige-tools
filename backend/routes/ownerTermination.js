@@ -17,21 +17,6 @@ const REASONS = new Set([
 
 const STATUSES = new Set(["pending", "retained", "in_progress", "completed", "cancelled"]);
 
-function requireAdmin(req, res) {
-  const secret = process.env.ADMIN_API_SECRET;
-  if (!secret) {
-    res.status(503).json({ error: "Admin API not configured (ADMIN_API_SECRET)." });
-    return false;
-  }
-  const auth = req.headers.authorization ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (token !== secret) {
-    res.status(401).json({ error: "Unauthorized." });
-    return false;
-  }
-  return true;
-}
-
 function startOfTodayUtc() {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -252,7 +237,6 @@ export async function postOwnerTermination(req, res) {
 }
 
 export async function listOwnerTerminations(req, res) {
-  if (!requireAdmin(req, res)) return;
   let pool;
   try {
     pool = getPool();
@@ -277,7 +261,6 @@ export async function listOwnerTerminations(req, res) {
 }
 
 export async function patchOwnerTermination(req, res) {
-  if (!requireAdmin(req, res)) return;
   let pool;
   try {
     pool = getPool();
@@ -313,7 +296,6 @@ function csvEscape(s) {
 }
 
 export async function exportOwnerTerminationsCsv(req, res) {
-  if (!requireAdmin(req, res)) return;
   let pool;
   try {
     pool = getPool();

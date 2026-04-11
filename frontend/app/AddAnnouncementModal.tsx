@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useState, type FormEvent } from "react";
+import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
 import styles from "./add-announcement.module.css";
-
-const STORAGE_KEY = "rpm_admin_api_secret";
 
 function formatTitleFromDate(isoDate: string): string {
   const d = new Date(`${isoDate}T12:00:00`);
@@ -19,6 +18,7 @@ type Props = {
 };
 
 export default function AddAnnouncementModal({ open, onClose, onSaved }: Props) {
+  const { authHeaders } = useAuth();
   const [dateStr, setDateStr] = useState(() => new Date().toISOString().slice(0, 10));
   const [content, setContent] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -48,12 +48,6 @@ export default function AddAnnouncementModal({ open, onClose, onSaved }: Props) 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const secret =
-      typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
-    if (!secret) {
-      setError("Save your admin API key first (Admin Terminations page), or run: sessionStorage.setItem('rpm_admin_api_secret','…')");
-      return;
-    }
     const text = content.trim();
     if (!text) {
       setError("Enter announcement text.");
@@ -70,10 +64,7 @@ export default function AddAnnouncementModal({ open, onClose, onSaved }: Props) 
         fd.append("file", file);
         const up = await fetch(apiUrl("/announcements/upload"), {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${secret}`,
-            "X-Admin-Api-Secret": secret,
-          },
+          headers: { ...authHeaders() },
           body: fd,
         });
         const uj = await up.json().catch(() => ({}));
@@ -92,8 +83,7 @@ export default function AddAnnouncementModal({ open, onClose, onSaved }: Props) 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${secret}`,
-          "X-Admin-Api-Secret": secret,
+          ...authHeaders(),
         },
         body: JSON.stringify({
           title,
