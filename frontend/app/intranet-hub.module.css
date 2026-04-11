@@ -357,6 +357,36 @@
   margin-bottom: 0;
 }
 
+.announceHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.announceHeader .sectionTitle {
+  margin-bottom: 0;
+}
+
+.addAnnounceBtn {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 152, 208, 0.45);
+  background: rgba(0, 152, 208, 0.12);
+  color: var(--ih-navy);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.addAnnounceBtn:hover {
+  background: rgba(0, 152, 208, 0.22);
+}
+
 .announceList {
   list-style: none;
   margin: 0;
@@ -380,6 +410,21 @@
 .announceItem strong {
   color: var(--ih-navy);
   font-weight: 600;
+}
+
+.announceAttach {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.announceAttach a {
+  color: var(--ih-light-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.announceAttach a:hover {
+  text-decoration: underline;
 }
 
 .directoryGrid {

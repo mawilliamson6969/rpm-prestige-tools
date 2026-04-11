@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import AddAnnouncementModal from "./AddAnnouncementModal";
+import { apiUrl } from "../lib/api";
 import styles from "./intranet-hub.module.css";
 
 const DOOR_GOAL = 300;
@@ -74,7 +76,14 @@ type AnnouncementRow = {
   title: string;
   content: string;
   created_at: string;
+  attachment_url?: string | null;
+  attachment_label?: string | null;
 };
+
+function attachmentHref(url: string) {
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return apiUrl(url);
+}
 
 function ToolCardLive({
   href,
@@ -133,6 +142,19 @@ export default function IntranetHub() {
   const [occLoading, setOccLoading] = useState(true);
   const [occError, setOccError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const loadAnnouncements = useCallback(async () => {
+    try {
+      const res = await fetch(announcementsApiUrl(), { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(body.announcements)) {
+        setAnnouncements(body.announcements);
+      }
+    } catch {
+      setAnnouncements([]);
+    }
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -166,22 +188,8 @@ export default function IntranetHub() {
   }, [loadOccupancy]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(announcementsApiUrl(), { cache: "no-store" });
-        const body = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok && Array.isArray(body.announcements)) {
-          setAnnouncements(body.announcements);
-        }
-      } catch {
-        if (!cancelled) setAnnouncements([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    loadAnnouncements();
+  }, [loadAnnouncements]);
 
   const clockStr = now.toLocaleString("en-US", {
     timeZone: "America/Chicago",
@@ -329,9 +337,14 @@ export default function IntranetHub() {
 
           <aside>
             <section className={styles.sidebarSection} aria-labelledby="announce-heading">
-              <h2 id="announce-heading" className={styles.sectionTitle}>
-                Team Announcements
-              </h2>
+              <div className={styles.announceHeader}>
+                <h2 id="announce-heading" className={styles.sectionTitle}>
+                  Team Announcements
+                </h2>
+                <button type="button" className={styles.addAnnounceBtn} onClick={() => setAddOpen(true)}>
+                  + Add
+                </button>
+              </div>
               {announcements.length === 0 ? (
                 <p className={styles.kpiHint}>No announcements yet.</p>
               ) : (
@@ -339,6 +352,17 @@ export default function IntranetHub() {
                   {announcements.map((a) => (
                     <li key={a.id} className={styles.announceItem}>
                       <strong>{a.title}</strong> — {a.content}
+                      {a.attachment_url ? (
+                        <div className={styles.announceAttach}>
+                          <a
+                            href={attachmentHref(a.attachment_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {a.attachment_label?.trim() || "View attachment"}
+                          </a>
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -381,6 +405,12 @@ export default function IntranetHub() {
           </aside>
         </div>
       </div>
+
+      <AddAnnouncementModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSaved={() => loadAnnouncements()}
+      />
 
       <footer className={styles.footer}>
         <p>© 2026 Real Property Management Prestige — A Neighborly® Company</p>

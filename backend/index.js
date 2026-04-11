@@ -3,6 +3,8 @@
  */
 import cron from "node-cron";
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 import {
   fetchAppfolioUnitsJson,
   getUnitsForResponse,
@@ -20,7 +22,13 @@ import {
   patchOwnerTermination,
   postOwnerTermination,
 } from "./routes/ownerTermination.js";
-import { getAnnouncements, postAnnouncement } from "./routes/announcements.js";
+import {
+  getAnnouncements,
+  postAnnouncement,
+  requireAdminMiddleware,
+  uploadAnnouncementFile,
+  uploadAnnouncementMiddleware,
+} from "./routes/announcements.js";
 import {
   getDashboardExecutive,
   getDashboardFinance,
@@ -34,6 +42,9 @@ import {
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use(express.json({ limit: "12mb" }));
 
@@ -93,6 +104,12 @@ app.get("/appfolio/units", async (_req, res) => {
 });
 
 app.get("/announcements", getAnnouncements);
+app.post(
+  "/announcements/upload",
+  requireAdminMiddleware,
+  uploadAnnouncementMiddleware,
+  uploadAnnouncementFile
+);
 app.post("/announcements", postAnnouncement);
 
 app.get("/dashboard/occupancy", async (_req, res) => {
