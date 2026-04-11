@@ -47,6 +47,16 @@ function matchesProperty(data, propertyIds) {
   return pid != null && propertyIds.includes(String(pid));
 }
 
+/**
+ * Income/delinquency report rows often omit property_id (portfolio-level). Include those rows when filtering.
+ */
+function matchesPropertyFilterForReportRows(data, propertyIds) {
+  if (!propertyIds.length) return true;
+  const pid = extractPropertyId(data);
+  if (pid == null) return true;
+  return propertyIds.includes(String(pid));
+}
+
 function matchesOwner(data, ownerIds) {
   if (!ownerIds.length) return true;
   const oid = extractOwnerId(data);
@@ -65,10 +75,35 @@ function rowData(r) {
   return r.appfolio_data ?? r;
 }
 
-function delinquencyAmount(d) {
+/** AppFolio chart strings like "0-40100" — income 40000 series */
+function incomeStatementAccountNumber(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.account_number ?? o.AccountNumber ?? "").trim();
+}
+
+function isIncomeCoaAccount(accountNumber) {
+  return accountNumber.startsWith("0-4");
+}
+
+function isExpenseCoaAccount(accountNumber) {
+  return accountNumber.startsWith("0-5") || accountNumber.startsWith("0-6");
+}
+
+function incomeStatementMoneyFields(d) {
+  const o = typeof d === "object" ? d : {};
+  return {
+    ytd: parseMoney(o.year_to_date ?? o.yearToDate),
+    mtd: parseMoney(o.month_to_date ?? o.monthToDate),
+    lytd: parseMoney(o.last_year_to_date ?? o.lastYearToDate),
+  };
+}
+
+function delinquencyAmountReceivable(d) {
   const o = typeof d === "object" ? d : {};
   return parseMoney(
-    o.balance ??
+    o.amount_receivable ??
+      o.AmountReceivable ??
+      o.balance ??
       o.Balance ??
       o.amount_due ??
       o.AmountDue ??
@@ -79,19 +114,32 @@ function delinquencyAmount(d) {
   );
 }
 
-function incomeRowAmount(d) {
+function delinquencyAgingSlices(d) {
   const o = typeof d === "object" ? d : {};
-  const v =
-    o.amount ??
-    o.Amount ??
-    o.net_amount ??
-    o.NetAmount ??
-    o.total ??
-    o.Total ??
-    o.credit ??
-    o.debit ??
-    0;
-  return parseMoney(v);
+  return {
+    d00to30: parseMoney(o["00_to30"] ?? o["00To30"]),
+    d30to60: parseMoney(o["30_to60"] ?? o["30To60"]),
+    d60to90: parseMoney(o["60_to90"] ?? o["60To90"]),
+    d90plus: parseMoney(o["90_plus"] ?? o["90Plus"]),
+  };
+}
+
+function delinquencyDetailFields(d) {
+  const o = typeof d === "object" ? d : {};
+  const unit =
+    o.unit_name ??
+    o.unitName ??
+    o.unit_number ??
+    o.unitNumber ??
+    o.unit ??
+    o.Unit ??
+    "";
+  return {
+    tenantName: String(o.name ?? o.Name ?? o.tenant_name ?? o.tenantName ?? "").trim(),
+    propertyName: String(o.property_name ?? o.PropertyName ?? "").trim(),
+    unit: String(unit).trim(),
+    amountReceivable: delinquencyAmountReceivable(o),
+  };
 }
 
 function workOrderStatus(d) {
@@ -112,6 +160,8 @@ function isOpenWorkOrderStatus(status) {
   if (/\b(open|pending|new|assigned|scheduled|in\s*progress|active)\b/.test(u)) return true;
   return !/\b(complete|closed|cancel)\b/.test(u);
 }
+
+let workOrderSampleKeysLogged = false;
 
 function vendorKeyFromWorkOrder(d) {
   const o = typeof d === "object" ? d : {};
@@ -134,6 +184,78 @@ function propertyKeyFromRow(d) {
   );
 }
 
+/**
+ * Aggregate income statement rows (strings parsed as floats; COA prefixes 0-4 / 0-5 / 0-6).
+ */
+function aggregateIncomeFromRows(incRows, propertyIds) {
+  let revenueYtd = 0;
+  let expensesYtd = 0;
+  let revenueMtd = 0;
+  let revenueLy = 0;
+  let expensesLy = 0;
+
+  for (const r of incRows) {
+    const d = rowData(r);
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
+    const an = incomeStatementAccountNumber(d);
+    if (!an) continue;
+    const { ytd, mtd, lytd } = incomeStatementMoneyFields(d);
+    if (isIncomeCoaAccount(an)) {
+      revenueYtd += ytd;
+      revenueMtd += mtd;
+      revenueLy += lytd;
+    } else if (isExpenseCoaAccount(an)) {
+      expensesYtd += ytd;
+      expensesLy += lytd;
+    }
+  }
+
+  const profitYtd = revenueYtd - expensesYtd;
+  const profitMarginPercent =
+    revenueYtd > 0 ? Math.round((profitYtd / revenueYtd) * 10000) / 100 : 0;
+
+  return {
+    revenueYtd,
+    expensesYtd,
+    profitYtd,
+    profitMarginPercent,
+    monthToDateRevenue: revenueMtd,
+    lastYearRevenueYtd: revenueLy,
+    lastYearExpensesYtd: expensesLy,
+  };
+}
+
+function aggregateDelinquencyFromRows(delRows, propertyIds) {
+  let totalDelinquency = 0;
+  let delinquentAccountCount = 0;
+  let aging00to30 = 0;
+  let aging30to60 = 0;
+  let aging60to90 = 0;
+  let aging90Plus = 0;
+
+  for (const r of delRows) {
+    const d = rowData(r);
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
+    const amt = delinquencyAmountReceivable(d);
+    totalDelinquency += amt;
+    if (amt > 0) delinquentAccountCount += 1;
+    const ag = delinquencyAgingSlices(d);
+    aging00to30 += ag.d00to30;
+    aging30to60 += ag.d30to60;
+    aging60to90 += ag.d60to90;
+    aging90Plus += ag.d90plus;
+  }
+
+  return {
+    totalDelinquency,
+    delinquentAccountCount,
+    aging00to30,
+    aging30to60,
+    aging60to90,
+    aging90Plus,
+  };
+}
+
 /** GET /dashboard/executive */
 export async function getExecutive(req) {
   const pool = getPool();
@@ -154,22 +276,21 @@ export async function getExecutive(req) {
   const occupancyRatePercent =
     totalUnits > 0 ? Math.round((occupied / totalUnits) * 1000) / 10 : 0;
 
-  const cy = String(new Date().getUTCFullYear());
   const { rows: incRows } = await pool.query(
     `SELECT appfolio_data, period FROM cached_income_statement ORDER BY id`
   );
-  let totalRevenueYtd = 0;
-  for (const r of incRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    const per = r.period != null ? String(r.period) : "";
-    if (per && !per.startsWith(cy)) continue;
-    totalRevenueYtd += Math.abs(incomeRowAmount(d));
-  }
+  const incomeKpis = aggregateIncomeFromRows(incRows, propertyIds);
+  const revenuePerDoor =
+    totalUnits > 0 ? Math.round((incomeKpis.revenueYtd / totalUnits) * 100) / 100 : 0;
 
   const { rows: woRows } = await pool.query(
     `SELECT appfolio_data FROM cached_work_orders ORDER BY id`
   );
+  if (!workOrderSampleKeysLogged && woRows.length > 0) {
+    const sample = rowData(woRows[0]);
+    console.log("[dashboard-cache] work_orders sample row keys:", Object.keys(sample));
+    workOrderSampleKeysLogged = true;
+  }
   let openWorkOrders = 0;
   for (const r of woRows) {
     const d = rowData(r);
@@ -180,12 +301,7 @@ export async function getExecutive(req) {
   const { rows: delRows } = await pool.query(
     `SELECT appfolio_data FROM cached_delinquency ORDER BY id`
   );
-  let totalDelinquency = 0;
-  for (const r of delRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    totalDelinquency += delinquencyAmount(d);
-  }
+  const delKpis = aggregateDelinquencyFromRows(delRows, propertyIds);
 
   const { rows: gcRows } = await pool.query(
     `SELECT appfolio_data FROM cached_guest_cards ORDER BY id`
@@ -204,9 +320,23 @@ export async function getExecutive(req) {
     occupiedUnits: occupied,
     vacantUnits: vacant,
     occupancyRatePercent,
-    totalRevenueYtd,
+    totalRevenueYtd: incomeKpis.revenueYtd,
+    totalExpensesYtd: incomeKpis.expensesYtd,
+    profitYtd: incomeKpis.profitYtd,
+    profitMarginPercent: incomeKpis.profitMarginPercent,
+    monthToDateRevenue: incomeKpis.monthToDateRevenue,
+    revenuePerDoor,
+    lastYearRevenueYtd: incomeKpis.lastYearRevenueYtd,
+    lastYearExpensesYtd: incomeKpis.lastYearExpensesYtd,
     openWorkOrders,
-    totalDelinquency,
+    totalDelinquency: delKpis.totalDelinquency,
+    delinquentAccountCount: delKpis.delinquentAccountCount,
+    delinquencyAging: {
+      current0to30: delKpis.aging00to30,
+      days30to60: delKpis.aging30to60,
+      days60to90: delKpis.aging60to90,
+      days90Plus: delKpis.aging90Plus,
+    },
     activeLeads,
     filters: { propertyIds },
   };
@@ -251,6 +381,11 @@ export async function getMaintenance(req) {
   const { rows: woRows } = await pool.query(
     `SELECT appfolio_data FROM cached_work_orders ORDER BY id`
   );
+  if (!workOrderSampleKeysLogged && woRows.length > 0) {
+    const sample = rowData(woRows[0]);
+    console.log("[dashboard-cache] work_orders sample row keys:", Object.keys(sample));
+    workOrderSampleKeysLogged = true;
+  }
   const byStatus = {};
   const byProperty = {};
   const vendorCounts = {};
@@ -271,7 +406,15 @@ export async function getMaintenance(req) {
     .slice(0, 15)
     .map(([name, count]) => ({ name, workOrderCount: count }));
 
+  let openWorkOrders = 0;
+  for (const r of woRows) {
+    const d = rowData(r);
+    if (!matchesProperty(d, propertyIds)) continue;
+    if (isOpenWorkOrderStatus(workOrderStatus(d))) openWorkOrders += 1;
+  }
+
   return {
+    openWorkOrders,
     workOrdersByStatus: byStatus,
     workOrdersByProperty: byProperty,
     topVendors,
@@ -289,19 +432,24 @@ export async function getFinance(req) {
   );
   const { rows: del } = await pool.query(`SELECT appfolio_data FROM cached_delinquency ORDER BY id`);
 
+  const incomeKpis = aggregateIncomeFromRows(inc, propertyIds);
+  const delKpis = aggregateDelinquencyFromRows(del, propertyIds);
+
   const incomeStatement = [];
   for (const r of inc) {
     const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
     incomeStatement.push({ ...d, _period: r.period });
   }
 
   const delinquency = [];
   for (const r of del) {
     const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    const amt = delinquencyAmount(d);
-    const days =
+    if (!matchesPropertyFilterForReportRows(d, propertyIds)) continue;
+    const amt = delinquencyAmountReceivable(d);
+    const detail = delinquencyDetailFields(d);
+    const ag = delinquencyAgingSlices(d);
+    const daysPast =
       d.days_past_due ??
       d.DaysPastDue ??
       d.days_delinquent ??
@@ -310,7 +458,11 @@ export async function getFinance(req) {
     delinquency.push({
       ...d,
       _computedAmount: amt,
-      _agingDays: days,
+      _tenantName: detail.tenantName,
+      _propertyName: detail.propertyName,
+      _unit: detail.unit,
+      _aging: ag,
+      _agingDays: daysPast,
     });
   }
 
@@ -322,17 +474,32 @@ export async function getFinance(req) {
     unitCount += 1;
   }
 
-  let revenueSum = 0;
-  for (const row of incomeStatement) {
-    revenueSum += Math.abs(incomeRowAmount(row));
-  }
-  const revenuePerDoor = unitCount > 0 ? Math.round((revenueSum / unitCount) * 100) / 100 : 0;
+  const revenuePerDoor =
+    unitCount > 0 ? Math.round((incomeKpis.revenueYtd / unitCount) * 100) / 100 : 0;
 
   return {
+    finance: {
+      revenueYtd: incomeKpis.revenueYtd,
+      expensesYtd: incomeKpis.expensesYtd,
+      profitYtd: incomeKpis.profitYtd,
+      profitMarginPercent: incomeKpis.profitMarginPercent,
+      monthToDateRevenue: incomeKpis.monthToDateRevenue,
+      revenuePerDoor,
+      lastYearRevenueYtd: incomeKpis.lastYearRevenueYtd,
+      lastYearExpensesYtd: incomeKpis.lastYearExpensesYtd,
+    },
+    delinquencyTotals: {
+      totalAmount: delKpis.totalDelinquency,
+      delinquentAccountCount: delKpis.delinquentAccountCount,
+      aging00to30: delKpis.aging00to30,
+      aging30to60: delKpis.aging30to60,
+      aging60to90: delKpis.aging60to90,
+      aging90Plus: delKpis.aging90Plus,
+    },
     incomeStatement,
     delinquency,
+    totalRevenueInCache: incomeKpis.revenueYtd,
     revenuePerDoor,
-    totalRevenueInCache: revenueSum,
     filters: { propertyIds },
   };
 }

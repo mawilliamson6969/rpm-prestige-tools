@@ -44,9 +44,9 @@ function currentMonthYyyyMm() {
   return `${y}-${m}`;
 }
 
-function sixMonthsAgoYyyyMmDd() {
+function twelveMonthsAgoYyyyMmDd() {
   const d = new Date();
-  d.setUTCMonth(d.getUTCMonth() - 6);
+  d.setUTCMonth(d.getUTCMonth() - 12);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
@@ -61,9 +61,13 @@ async function reportHttp(runFetch) {
   return runFetch();
 }
 
+/**
+ * @returns {{ rows: unknown[], firstResponse: unknown }}
+ */
 async function fetchAllReportRows(endpointFilename, initialBody) {
   const collected = [];
   let nextUrl = null;
+  let firstResponse = null;
 
   for (;;) {
     const json = await reportHttp(() =>
@@ -71,12 +75,13 @@ async function fetchAllReportRows(endpointFilename, initialBody) {
         ? postAppfolioReportAbsoluteUrl(nextUrl, {})
         : postAppfolioReport(endpointFilename, initialBody)
     );
+    if (firstResponse === null) firstResponse = json;
     collected.push(...normalizeReportResults(json));
     const nxt = getNextPageUrl(json);
     if (!nxt) break;
     nextUrl = nxt;
   }
-  return collected;
+  return { rows: collected, firstResponse };
 }
 
 async function insertJsonRows(client, tableName, rows, { period } = {}) {
@@ -161,7 +166,7 @@ const ENDPOINTS = [
     file: "guest_cards.json",
     table: TABLES.guest_cards,
     body: () => ({
-      from_date: sixMonthsAgoYyyyMmDd(),
+      from_date: twelveMonthsAgoYyyyMmDd(),
       paginate_results: false,
     }),
   },
@@ -170,7 +175,7 @@ const ENDPOINTS = [
     file: "rental_applications.json",
     table: TABLES.rental_applications,
     body: () => ({
-      from_date: sixMonthsAgoYyyyMmDd(),
+      from_date: twelveMonthsAgoYyyyMmDd(),
       paginate_results: false,
     }),
   },
@@ -197,12 +202,33 @@ export function isSyncRunning() {
 async function syncOneEndpoint(def, syncErrors) {
   const client = await getPool().connect();
   try {
-    const rows = await fetchAllReportRows(def.file, def.body());
+    const { rows, firstResponse } = await fetchAllReportRows(def.file, def.body());
     const period = typeof def.period === "function" ? def.period() : null;
     await client.query("BEGIN");
     await client.query(`DELETE FROM ${def.table}`);
     await insertJsonRows(client, def.table, rows, { period: period ?? undefined });
     await client.query("COMMIT");
+
+    console.log(`[sync] ${def.key}: ${rows.length} rows cached`);
+    if (def.key === "guest_cards") {
+      const fr = firstResponse;
+      const meta =
+        fr && typeof fr === "object" && !Array.isArray(fr)
+          ? { keys: Object.keys(fr), resultsLen: Array.isArray(fr.results) ? fr.results.length : null }
+          : typeof fr;
+      console.log(`[sync] guest_cards: detail`, meta);
+    }
+    if (rows.length === 0) {
+      try {
+        console.log(
+          `[sync] ${def.key}: empty result, full first response:`,
+          JSON.stringify(firstResponse)
+        );
+      } catch {
+        console.log(`[sync] ${def.key}: empty result (response not JSON-serializable)`);
+      }
+    }
+
     return { rowCount: rows.length, endpoint: def.key };
   } catch (e) {
     try {
