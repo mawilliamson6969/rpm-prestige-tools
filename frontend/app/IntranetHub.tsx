@@ -268,14 +268,9 @@ export default function IntranetHub() {
                   </div>
                 </div>
               )}
-              <a
-                href="https://dashboard.prestigedash.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.dashboardLink}
-              >
+              <Link href="/dashboard" className={styles.dashboardLink}>
                 View Full Dashboard →
-              </a>
+              </Link>
             </section>
 
             <section className={styles.toolCategory} aria-labelledby="tools-heading">
@@ -286,10 +281,9 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Dashboards</p>
               <div className={styles.toolGrid}>
                 <ToolCardLive
-                  href="https://dashboard.prestigedash.com"
+                  href="/dashboard"
                   title="KPI Dashboard"
                   description="Live AppFolio data: doors, occupancy, property breakdown"
-                  external
                 />
               </div>
 
