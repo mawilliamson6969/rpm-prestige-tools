@@ -192,3 +192,37 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   }
   return <>{children}</>;
 }
+
+/** Admins only; non-admins are redirected to /dashboard (use for admin-only tools). */
+export function RequireAdminRedirect({ children }: { children: ReactNode }) {
+  const { user, loading, token } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading || !token) return;
+    if (user?.role !== "admin") {
+      router.replace("/dashboard");
+    }
+  }, [loading, token, user, router]);
+
+  if (loading || !token) {
+    return (
+      <div
+        style={{
+          minHeight: "40vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#6a737b",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        Loading…
+      </div>
+    );
+  }
+  if (user?.role !== "admin") {
+    return null;
+  }
+  return <>{children}</>;
+}

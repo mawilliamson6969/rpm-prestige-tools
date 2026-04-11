@@ -58,6 +58,16 @@ export default function UserMenu({ variant = "dark" }: Props) {
             <Link href="/" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
               Team Hub
             </Link>
+            {user?.role === "admin" ? (
+              <Link
+                href="/admin/users"
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+              >
+                User Management
+              </Link>
+            ) : null}
             <button
               type="button"
               className={styles.menuItem}

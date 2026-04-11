@@ -45,6 +45,7 @@ import {
   getSyncStatus,
   postSyncRun,
 } from "./routes/kpiCacheRoutes.js";
+import { createUser, deleteUser, listUsers, updateUser } from "./routes/users.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -56,7 +57,7 @@ app.use(express.json({ limit: "12mb" }));
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
@@ -103,6 +104,11 @@ app.get("/", (_req, res) => {
 app.post("/auth/login", postLogin);
 app.get("/auth/me", requireAuth, getMe);
 app.post("/auth/change-password", requireAuth, postChangePassword);
+
+app.get("/users", requireAuth, requireAdminRole, listUsers);
+app.post("/users", requireAuth, requireAdminRole, createUser);
+app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
+app.delete("/users/:id", requireAuth, requireAdminRole, deleteUser);
 
 app.get("/announcements", requireAuth, getAnnouncements);
 app.post(

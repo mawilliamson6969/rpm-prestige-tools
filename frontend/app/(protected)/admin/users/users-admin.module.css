@@ -1,0 +1,360 @@
+.page {
+  --navy: #1b2856;
+  --blue: #0098d0;
+  --grey: #6a737b;
+  --white: #ffffff;
+  --off: #f5f5f5;
+
+  min-height: 100vh;
+  background: var(--off);
+  color: var(--grey);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.topBar {
+  background: var(--navy);
+  color: var(--white);
+  padding: 1rem clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.titleBlock h1 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  font-weight: 700;
+  color: var(--white);
+}
+
+.titleBlock .sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.backLink {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  color: #c5960c;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.topBarRight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 4vw, 2rem) 3rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.addBtn {
+  background: var(--blue);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1.15rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.addBtn:hover {
+  filter: brightness(1.06);
+}
+
+.card {
+  background: var(--white);
+  border-radius: 12px;
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  padding: 0;
+  overflow: hidden;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  min-width: 640px;
+}
+
+.table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: rgba(27, 40, 86, 0.06);
+  color: var(--navy);
+  font-weight: 700;
+  border-bottom: 2px solid var(--blue);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+  vertical-align: middle;
+  color: #333;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.rolePill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.roleAdmin {
+  background: rgba(0, 152, 208, 0.15);
+  color: var(--navy);
+}
+
+.roleViewer {
+  background: rgba(106, 115, 123, 0.15);
+  color: var(--grey);
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.actionBtn {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--navy);
+  background: var(--white);
+  color: var(--navy);
+}
+
+.actionBtn:hover {
+  background: rgba(27, 40, 86, 0.06);
+}
+
+.actionDanger {
+  border-color: #b32317;
+  color: #b32317;
+  background: var(--white);
+}
+
+.actionDanger:hover {
+  background: rgba(179, 35, 23, 0.08);
+}
+
+.empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--grey);
+}
+
+.errorBanner {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(179, 35, 23, 0.1);
+  color: #b32317;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Modal */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 80;
+  overflow-y: auto;
+}
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  margin: auto;
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(27, 40, 86, 0.2);
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--navy);
+  color: var(--white);
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: var(--white);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.form {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.field input,
+.field select {
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.2);
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.field input:disabled,
+.field select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: var(--off);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--grey);
+}
+
+.formError {
+  padding: 0.65rem;
+  border-radius: 8px;
+  background: rgba(179, 35, 23, 0.08);
+  color: #b32317;
+  font-size: 0.88rem;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.btnCancel {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.25);
+  background: var(--white);
+  color: var(--navy);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btnSubmit {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--blue);
+  color: var(--white);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btnSubmit:disabled,
+.btnCancel:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Toasts */
+.toastHost {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  max-width: min(90vw, 420px);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  padding: 0.75rem 1.1rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(27, 40, 86, 0.18);
+}
+
+.toastSuccess {
+  background: var(--white);
+  color: var(--navy);
+  border: 1px solid rgba(0, 152, 208, 0.45);
+}
+
+.toastError {
+  background: #fff5f5;
+  color: #b32317;
+  border: 1px solid rgba(179, 35, 23, 0.35);
+}

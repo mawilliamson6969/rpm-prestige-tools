@@ -326,6 +326,13 @@ export default function IntranetHub() {
                   title="Termination Requests"
                   description="Manage submitted termination requests"
                 />
+                {isAdmin ? (
+                  <ToolCardLive
+                    href="/admin/users"
+                    title="User Management"
+                    description="Add and edit team accounts and roles"
+                  />
+                ) : null}
               </div>
 
               <p className={styles.catLabel}>Coming Soon</p>
