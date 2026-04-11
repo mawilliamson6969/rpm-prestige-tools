@@ -8,6 +8,7 @@ import { apiUrl } from "../../../lib/api";
 import styles from "./dashboard.module.css";
 import { getDateRange, PRESET_OPTIONS, type DatePresetId } from "./dateRange";
 import ExecutivePanel from "./ExecutivePanel";
+import MaintenancePanel from "./MaintenancePanel";
 
 type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio";
 
@@ -146,10 +147,19 @@ export default function DashboardClient() {
   }, [loadSyncStatus]);
 
   useEffect(() => {
-    if (tab === "executive") {
-      loadExecutiveData();
-    }
-  }, [tab, loadExecutiveData]);
+    loadExecutiveData();
+  }, [loadExecutiveData]);
+
+  const tabTitle = useMemo(() => {
+    const m: Record<TabId, string> = {
+      executive: "Executive",
+      leasing: "Leasing",
+      maintenance: "Maintenance",
+      finance: "Finance",
+      portfolio: "Portfolio",
+    };
+    return m[tab];
+  }, [tab]);
 
   const lastSyncedText = useMemo(() => {
     const t = syncLatest?.completed_at ?? syncLatest?.started_at;
@@ -181,7 +191,7 @@ export default function DashboardClient() {
         throw new Error(typeof body.error === "string" ? body.error : `HTTP ${res.status}`);
       }
       await loadSyncStatus();
-      if (tab === "executive") await loadExecutiveData();
+      await loadExecutiveData();
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "Sync request failed.");
     } finally {
@@ -228,7 +238,7 @@ export default function DashboardClient() {
           <Link href="/" className={styles.backLink}>
             ← Team Hub
           </Link>
-          <h1>RPM Prestige — Executive Dashboard</h1>
+          <h1>RPM Prestige — {tabTitle} Dashboard</h1>
         </div>
         <div className={styles.topBarRight}>
           <div className={styles.syncMeta}>
@@ -365,13 +375,23 @@ export default function DashboardClient() {
             />
           </div>
         )}
-        {tab !== "executive" && (
+        {tab === "maintenance" && (
+          <div className={styles.tabPanel}>
+            <MaintenancePanel
+              maintenance={maintenance as never}
+              executive={executive as never}
+              loading={loading}
+              error={error}
+            />
+          </div>
+        )}
+        {tab !== "executive" && tab !== "maintenance" && (
           <div className={`${styles.tabPanel} ${styles.comingSoon}`}>
             <p>
               <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong> dashboard coming in a later phase.
             </p>
             <p style={{ fontSize: "0.9rem", marginTop: "0.5rem" }}>
-              Executive summary above uses live cached endpoints today.
+              Executive and Maintenance tabs use live cached endpoints today.
             </p>
           </div>
         )}

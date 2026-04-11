@@ -53,6 +53,15 @@ function twelveMonthsAgoYyyyMmDd() {
   return `${y}-${m}-${day}`;
 }
 
+function ninetyDaysAgoYyyyMmDd() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 90);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 let httpCallIndex = 0;
 
 async function reportHttp(runFetch) {
@@ -147,7 +156,11 @@ const ENDPOINTS = [
     key: "work_order",
     file: "work_order.json",
     table: TABLES.work_orders,
-    body: () => ({ property_visibility: "active", paginate_results: false }),
+    body: () => ({
+      property_visibility: "active",
+      from_date: ninetyDaysAgoYyyyMmDd(),
+      paginate_results: false,
+    }),
   },
   {
     key: "delinquency",

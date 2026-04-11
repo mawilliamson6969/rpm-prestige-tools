@@ -28,6 +28,16 @@ const MARGIN_GOAL = 20;
 
 const PIE_COLORS = [BLUE, NAVY, GREY, GOLD, RED];
 
+/** AppFolio work order status colors (aligned with Maintenance tab). */
+const WO_STATUS_PIE_FILL: Record<string, string> = {
+  New: RED,
+  Assigned: BLUE,
+  Estimated: GOLD,
+  Scheduled: "#2d8b4e",
+  Completed: GREY,
+  Canceled: GREY,
+};
+
 type Exec = {
   totalUnits: number;
   occupiedUnits: number;
@@ -48,6 +58,7 @@ type Finance = {
 };
 
 type Maintenance = {
+  summary?: { byStatus?: Record<string, number> };
   workOrdersByStatus: Record<string, number>;
   workOrdersByProperty: Record<string, number>;
 };
@@ -190,7 +201,23 @@ export default function ExecutivePanel(props: {
   }, [finance, rangeStart, rangeEnd]);
 
   const pieData = useMemo(() => {
-    const raw = maintenance?.workOrdersByStatus ?? {};
+    const raw =
+      maintenance?.summary?.byStatus ?? maintenance?.workOrdersByStatus ?? {};
+    const appfolioKeys = new Set([
+      "New",
+      "Assigned",
+      "Estimated",
+      "Scheduled",
+      "Completed",
+      "Canceled",
+    ]);
+    const keys = Object.keys(raw);
+    const looksAppfolio = keys.some((k) => appfolioKeys.has(k));
+    if (looksAppfolio) {
+      return Object.entries(raw)
+        .filter(([, v]) => v > 0)
+        .map(([name, value]) => ({ name, value }));
+    }
     const agg: Record<string, number> = {
       Open: 0,
       "In Progress": 0,
@@ -457,8 +484,11 @@ export default function ExecutivePanel(props: {
                     outerRadius={88}
                     paddingAngle={2}
                   >
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    {pieData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={WO_STATUS_PIE_FILL[entry.name] ?? PIE_COLORS[i % PIE_COLORS.length]}
+                      />
                     ))}
                   </Pie>
                   <Tooltip />

@@ -22,6 +22,13 @@ function parseFilters(req) {
   return { propertyIds, ownerIds };
 }
 
+function parseQueryWithDates(req) {
+  const base = parseFilters(req);
+  const startDate = String(req.query?.startDate ?? req.query?.start_date ?? "").trim();
+  const endDate = String(req.query?.endDate ?? req.query?.end_date ?? "").trim();
+  return { ...base, startDate, endDate };
+}
+
 function extractPropertyId(data) {
   if (!data || typeof data !== "object") return null;
   return (
@@ -262,6 +269,61 @@ function workOrderStatus(d) {
   return String(s).trim() || "unknown";
 }
 
+/** Open = not Completed/Canceled and no completion date (AppFolio work_order.json). */
+function isAppfolioWorkOrderOpen(d) {
+  const o = typeof d === "object" ? d : {};
+  const st = String(o.status ?? "").trim();
+  if (/^(completed|canceled)$/i.test(st)) return false;
+  const co = o.completed_on ?? o.work_completed_on ?? "";
+  if (co != null && String(co).trim() !== "") return false;
+  return true;
+}
+
+function workOrderCreatedYmd(d) {
+  const o = typeof d === "object" ? d : {};
+  const raw = o.created_at ?? o.createdAt ?? "";
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
+  return "";
+}
+
+function woMatchesCreatedDateRange(ymd, startDate, endDate) {
+  if (!ymd) return true;
+  if (startDate && ymd < startDate) return false;
+  if (endDate && ymd > endDate) return false;
+  return true;
+}
+
+function daysOpenFromYmd(createdYmd) {
+  if (!createdYmd) return 0;
+  const c = new Date(`${createdYmd}T12:00:00`);
+  const now = new Date();
+  return Math.max(0, Math.floor((now.getTime() - c.getTime()) / 86400000));
+}
+
+function workOrderVendorName(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.vendor ?? o.vendor_name ?? o.VendorName ?? "").trim() || "—";
+}
+
+function workOrderVendorTrade(d) {
+  const o = typeof d === "object" ? d : {};
+  return String(o.vendor_trade ?? o.vendorTrade ?? "").trim() || "—";
+}
+
+function workOrderAmountString(d) {
+  const o = typeof d === "object" ? d : {};
+  const n = parseMoney(o.amount ?? o.Amount ?? 0);
+  return n === 0 ? "" : n.toFixed(2);
+}
+
+function workOrderBilledAmount(d) {
+  const o = typeof d === "object" ? d : {};
+  return parseMoney(o.vendor_bill_amount ?? o.VendorBillAmount ?? o.amount ?? o.Amount ?? 0);
+}
+
 function isOpenWorkOrderStatus(status) {
   const u = status.toLowerCase();
   if (/\b(complete|closed|cancel|void|resolved)\b/.test(u)) return false;
@@ -274,6 +336,7 @@ let workOrderSampleKeysLogged = false;
 function vendorKeyFromWorkOrder(d) {
   const o = typeof d === "object" ? d : {};
   const name =
+    o.vendor ??
     o.vendor_name ??
     o.VendorName ??
     o.vendor?.name ??
@@ -414,7 +477,7 @@ export async function getExecutive(req) {
   for (const r of woRows) {
     const d = rowData(r);
     if (!matchesProperty(d, propertyIds)) continue;
-    if (isOpenWorkOrderStatus(workOrderStatus(d))) openWorkOrders += 1;
+    if (isAppfolioWorkOrderOpen(d)) openWorkOrders += 1;
   }
 
   const { rows: delRows } = await pool.query(
@@ -504,7 +567,7 @@ export async function getLeasing(req) {
 /** GET /dashboard/maintenance */
 export async function getMaintenance(req) {
   const pool = getPool();
-  const { propertyIds } = parseFilters(req);
+  const { propertyIds, startDate, endDate } = parseQueryWithDates(req);
 
   const { rows: woRows } = await pool.query(
     `SELECT appfolio_data FROM cached_work_orders ORDER BY id`
@@ -514,39 +577,133 @@ export async function getMaintenance(req) {
     console.log("[dashboard-cache] work_orders sample row keys:", Object.keys(sample));
     workOrderSampleKeysLogged = true;
   }
-  const byStatus = {};
-  const byProperty = {};
-  const vendorCounts = {};
 
+  const openRows = [];
   for (const r of woRows) {
     const d = rowData(r);
     if (!matchesProperty(d, propertyIds)) continue;
+    if (!isAppfolioWorkOrderOpen(d)) continue;
+    const createdYmd = workOrderCreatedYmd(d);
+    if (!woMatchesCreatedDateRange(createdYmd, startDate, endDate)) continue;
+    openRows.push(d);
+  }
+
+  const byStatus = {};
+  const byPriority = {};
+  const daysOpens = [];
+  const byPropertyMap = new Map();
+  const vendorAgg = new Map();
+
+  for (const d of openRows) {
     const st = workOrderStatus(d);
     byStatus[st] = (byStatus[st] || 0) + 1;
-    const pk = propertyKeyFromRow(d);
-    byProperty[pk] = (byProperty[pk] || 0) + 1;
-    const vk = vendorKeyFromWorkOrder(d);
-    vendorCounts[vk] = (vendorCounts[vk] || 0) + 1;
+    const pr = String(d.priority ?? d.Priority ?? "Normal").trim() || "Normal";
+    byPriority[pr] = (byPriority[pr] || 0) + 1;
+
+    const createdYmd = workOrderCreatedYmd(d);
+    const daysOpen = daysOpenFromYmd(createdYmd);
+    daysOpens.push(daysOpen);
+
+    const pName = String(d.property_name ?? d.PropertyName ?? propertyKeyFromRow(d)).trim() || "Unknown";
+    const curP = byPropertyMap.get(pName) || { propertyName: pName, openCount: 0 };
+    curP.openCount += 1;
+    byPropertyMap.set(pName, curP);
+
+    const vName = workOrderVendorName(d);
+    const trade = workOrderVendorTrade(d);
+    const curV = vendorAgg.get(vName) || {
+      vendor: vName,
+      trade: trade || "—",
+      openCount: 0,
+      totalBilled: 0,
+    };
+    curV.openCount += 1;
+    curV.totalBilled += workOrderBilledAmount(d);
+    if (trade && curV.trade === "—") curV.trade = trade;
+    vendorAgg.set(vName, curV);
   }
 
-  const topVendors = Object.entries(vendorCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15)
-    .map(([name, count]) => ({ name, workOrderCount: count }));
+  const totalOpen = openRows.length;
+  const avgDaysOpen =
+    daysOpens.length > 0
+      ? Math.round((daysOpens.reduce((a, b) => a + b, 0) / daysOpens.length) * 10) / 10
+      : 0;
 
-  let openWorkOrders = 0;
-  for (const r of woRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    if (isOpenWorkOrderStatus(workOrderStatus(d))) openWorkOrders += 1;
-  }
+  const workOrders = openRows.map((d) => {
+    const createdYmd = workOrderCreatedYmd(d);
+    const issue =
+      String(d.work_order_issue ?? d.workOrderIssue ?? d.work_order_type ?? d.issue ?? "").trim() ||
+      "—";
+    const desc =
+      String(d.job_description ?? d.jobDescription ?? d.service_request_description ?? "").trim() || "—";
+    const vb = parseMoney(d.vendor_bill_amount ?? d.VendorBillAmount ?? 0);
+    const est = parseMoney(d.estimate_amount ?? d.EstimateAmount ?? 0);
+    return {
+      workOrderNumber: String(d.work_order_number ?? d.workOrderNumber ?? "").trim() || "—",
+      status: workOrderStatus(d),
+      priority: String(d.priority ?? d.Priority ?? "Normal").trim() || "Normal",
+      propertyName: String(d.property_name ?? d.PropertyName ?? "").trim() || "—",
+      unitName: String(d.unit_name ?? d.unitName ?? "").trim() || "",
+      vendor: workOrderVendorName(d),
+      vendorTrade: workOrderVendorTrade(d),
+      issue,
+      description: desc,
+      createdAt: createdYmd,
+      daysOpen: daysOpenFromYmd(createdYmd),
+      amount: workOrderAmountString(d),
+      tenant: String(d.primary_tenant ?? d.primaryTenant ?? "").trim() || "—",
+      assignedUser: String(d.assigned_user ?? d.assignedUser ?? "").trim() || "—",
+      detail: {
+        jobDescription: String(d.job_description ?? "").trim(),
+        serviceRequestDescription: String(d.service_request_description ?? "").trim(),
+        scheduledStart: String(d.scheduled_start ?? d.scheduledStart ?? "").trim(),
+        scheduledEnd: String(d.scheduled_end ?? d.scheduledEnd ?? "").trim(),
+        workOrderType: String(d.work_order_type ?? "").trim(),
+        submittedByTenant: d.submitted_by_tenant ?? d.submittedByTenant,
+        vendorBillAmount: vb === 0 ? "" : vb.toFixed(2),
+        estimateAmount: est === 0 ? "" : est.toFixed(2),
+      },
+    };
+  });
+
+  const byProperty = Array.from(byPropertyMap.values()).sort((a, b) => b.openCount - a.openCount);
+
+  const byVendor = Array.from(vendorAgg.values())
+    .map((v) => ({
+      vendor: v.vendor,
+      trade: v.trade,
+      openCount: v.openCount,
+      totalBilled: Math.round(v.totalBilled * 100) / 100,
+    }))
+    .sort((a, b) => b.openCount - a.openCount);
+
+  const urgentCount = Object.entries(byPriority).reduce(
+    (s, [k, v]) => s + (/^urgent$/i.test(String(k).trim()) ? v : 0),
+    0
+  );
+  const newCount = Object.entries(byStatus).reduce((s, [k, v]) => s + (k === "New" ? v : 0), 0);
+
+  const summary = {
+    totalOpen,
+    byStatus,
+    byPriority,
+    avgDaysOpen,
+    urgentCount,
+    newCount,
+  };
 
   return {
-    openWorkOrders,
+    summary,
+    workOrders,
+    byProperty,
+    byVendor,
+    openWorkOrders: totalOpen,
     workOrdersByStatus: byStatus,
-    workOrdersByProperty: byProperty,
-    topVendors,
-    filters: { propertyIds },
+    workOrdersByProperty: Object.fromEntries(
+      byProperty.map((p) => [p.propertyName, p.openCount])
+    ),
+    topVendors: byVendor.slice(0, 15).map((v) => ({ name: v.vendor, workOrderCount: v.openCount })),
+    filters: { propertyIds, startDate, endDate },
   };
 }
 
