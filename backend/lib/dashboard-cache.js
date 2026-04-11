@@ -1217,19 +1217,269 @@ export async function getFinance(req) {
   };
 }
 
+function portfolioPropString(d, ...keys) {
+  const o = typeof d === "object" ? d : {};
+  for (const k of keys) {
+    if (o[k] != null && String(o[k]).trim() !== "") return String(o[k]).trim();
+  }
+  return "";
+}
+
+function portfolioNormalizeName(name) {
+  return String(name ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function portfolioOccupancyAggregate(rrRows, propertyName) {
+  const target = portfolioNormalizeName(propertyName);
+  let hasVac = false;
+  let hasNotice = false;
+  for (const r of rrRows) {
+    const d = rowData(r);
+    if (portfolioNormalizeName(rentRollPropertyName(d)) !== target) continue;
+    const st = rentRollStatus(d);
+    if (st === RR_VACANT) hasVac = true;
+    else if (st === RR_NOTICE) hasNotice = true;
+  }
+  if (hasVac) return "Vacant";
+  if (hasNotice) return "Notice";
+  return "Current";
+}
+
+function portfolioCountOpenWo(woRows, propertyName) {
+  const target = portfolioNormalizeName(propertyName);
+  let n = 0;
+  for (const r of woRows) {
+    const d = rowData(r);
+    if (!isAppfolioWorkOrderOpen(d)) continue;
+    const pn = portfolioNormalizeName(String(d.property_name ?? d.PropertyName ?? "").trim());
+    if (pn !== target) continue;
+    n += 1;
+  }
+  return n;
+}
+
+function portfolioSumDelinquency(delRows, propertyName) {
+  const target = portfolioNormalizeName(propertyName);
+  let s = 0;
+  for (const r of delRows) {
+    const d = rowData(r);
+    if (portfolioNormalizeName(String(d.property_name ?? d.PropertyName ?? "").trim()) !== target)
+      continue;
+    s += delinquencyAmountReceivable(d);
+  }
+  return roundMoney2(s);
+}
+
+function portfolioListOpenWos(woRows, propertyName) {
+  const target = portfolioNormalizeName(propertyName);
+  const out = [];
+  for (const r of woRows) {
+    const d = rowData(r);
+    if (!isAppfolioWorkOrderOpen(d)) continue;
+    if (portfolioNormalizeName(String(d.property_name ?? d.PropertyName ?? "").trim()) !== target)
+      continue;
+    out.push({
+      workOrderNumber: String(d.work_order_number ?? d.workOrderNumber ?? "").trim() || "—",
+      status: workOrderStatus(d),
+      priority: String(d.priority ?? d.Priority ?? "Normal").trim(),
+      issue:
+        String(d.work_order_issue ?? d.work_order_type ?? "").trim() || "—",
+      vendor: workOrderVendorName(d),
+      createdAt: workOrderCreatedYmd(d),
+    });
+  }
+  return out;
+}
+
+function portfolioListDelinquentTenants(delRows, propertyName) {
+  const target = portfolioNormalizeName(propertyName);
+  const out = [];
+  for (const r of delRows) {
+    const d = rowData(r);
+    if (portfolioNormalizeName(String(d.property_name ?? d.PropertyName ?? "").trim()) !== target)
+      continue;
+    const amt = delinquencyAmountReceivable(d);
+    if (amt <= 0) continue;
+    out.push({
+      name: String(d.name ?? d.Name ?? "").trim() || "—",
+      unit: delinquencyTenantUnit(d) || "—",
+      amount: roundMoney2(amt),
+    });
+  }
+  return out.sort((a, b) => b.amount - a.amount);
+}
+
+function portfolioFormatAddress(d) {
+  const line = portfolioPropString(d, "property_address", "PropertyAddress");
+  const city = portfolioPropString(d, "property_city", "propertyCity");
+  const st = portfolioPropString(d, "property_state", "propertyState");
+  const zip = portfolioPropString(d, "property_zip", "propertyZip");
+  if (line && city) return `${line} ${city}, ${st} ${zip}`.replace(/\s+/g, " ").trim();
+  if (line) return line;
+  return [city, st, zip].filter(Boolean).join(", ");
+}
+
+/** @returns { "ok" | "expired" | "expiring90" | "none" } */
+function portfolioExpiryFlag(isoRaw) {
+  const s = String(isoRaw ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return "none";
+  const t = Date.parse(`${s}T12:00:00`);
+  if (Number.isNaN(t)) return "none";
+  const now = Date.now();
+  const end90 = now + 90 * 86400000;
+  if (t < now) return "expired";
+  if (t <= end90) return "expiring90";
+  return "ok";
+}
+
+function portfolioCountOwnedFromText(propertiesOwnedText) {
+  const s = String(propertiesOwnedText ?? "").trim();
+  if (!s) return 0;
+  return s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean).length;
+}
+
+function portfolioParseOwnershipLines(propertiesOwnedText) {
+  const s = String(propertiesOwnedText ?? "");
+  const out = [];
+  const re = /([^,]+?)\s*\(([^)]+)\)/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    out.push({ propertyName: m[1].trim(), ownershipPercent: m[2].trim() });
+  }
+  return out;
+}
+
+function portfolioFirstPhone(phoneRaw) {
+  const s = String(phoneRaw ?? "").trim();
+  if (!s) return "";
+  const first = s.split(",")[0];
+  return first ? first.trim() : "";
+}
+
 /** GET /dashboard/portfolio */
 export async function getPortfolio(req) {
   const pool = getPool();
   const { propertyIds, ownerIds } = parseFilters(req);
 
-  const { rows: props } = await pool.query(`SELECT appfolio_data FROM cached_properties ORDER BY id`);
-  const { rows: owners } = await pool.query(`SELECT appfolio_data FROM cached_owners ORDER BY id`);
+  const { rows: propsRows } = await pool.query(
+    `SELECT appfolio_data FROM cached_properties ORDER BY id`
+  );
+  const { rows: ownersRows } = await pool.query(`SELECT appfolio_data FROM cached_owners ORDER BY id`);
   const { rows: rr } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
+  const { rows: woRows } = await pool.query(`SELECT appfolio_data FROM cached_work_orders ORDER BY id`);
+  const { rows: delRows } = await pool.query(`SELECT appfolio_data FROM cached_delinquency ORDER BY id`);
+
+  const propertyDirectory = propsRows.map(rowData).filter((d) => matchesProperty(d, propertyIds));
 
   const rrAgg = aggregateRentRollFromRows(rr, propertyIds);
-  const propertiesList = rrAgg.byProperty;
 
-  const ownerDirectory = owners
+  const byType = {};
+  let mgmtSum = 0;
+  let mgmtN = 0;
+  let insuranceExpiring90 = 0;
+  let insuranceExpired = 0;
+  let warrantyExpiring90 = 0;
+  let warrantyExpired = 0;
+  let propertiesOnNotice = 0;
+
+  const properties = [];
+
+  for (const d of propertyDirectory) {
+    const propertyName = portfolioPropString(d, "property_name", "PropertyName");
+    if (!propertyName) continue;
+
+    const propertyType = portfolioPropString(d, "property_type", "propertyType") || "Unknown";
+    byType[propertyType] = (byType[propertyType] || 0) + 1;
+
+    const mfp = portfolioPropString(d, "management_fee_percent", "managementFeePercent");
+    if (mfp !== "") {
+      const n = parseMoney(mfp);
+      mgmtSum += n;
+      mgmtN += 1;
+    }
+
+    const occ = portfolioOccupancyAggregate(rr, propertyName);
+    if (occ === "Notice") propertiesOnNotice += 1;
+
+    const insFlag = portfolioExpiryFlag(d.insurance_expiration ?? d.insuranceExpiration);
+    if (insFlag === "expiring90") insuranceExpiring90 += 1;
+    if (insFlag === "expired") insuranceExpired += 1;
+
+    const warFlag = portfolioExpiryFlag(d.home_warranty_expiration ?? d.homeWarrantyExpiration);
+    if (warFlag === "expiring90") warrantyExpiring90 += 1;
+    if (warFlag === "expired") warrantyExpired += 1;
+
+    const pid =
+      extractPropertyId(d) ??
+      d.property_id ??
+      d.PropertyId ??
+      d.propertyId ??
+      null;
+
+    const openWo = portfolioCountOpenWo(woRows, propertyName);
+    const delSum = portfolioSumDelinquency(delRows, propertyName);
+
+    const insExp = portfolioPropString(d, "insurance_expiration", "insuranceExpiration");
+    const warExp = portfolioPropString(d, "home_warranty_expiration", "homeWarrantyExpiration");
+
+    properties.push({
+      propertyId: pid != null ? pid : propertyName,
+      propertyName,
+      address: portfolioFormatAddress(d),
+      city: portfolioPropString(d, "property_city", "propertyCity"),
+      state: portfolioPropString(d, "property_state", "propertyState"),
+      zip: portfolioPropString(d, "property_zip", "propertyZip"),
+      propertyType,
+      units: parseMoney(d.units ?? d.Units ?? 0) || 0,
+      sqft: portfolioPropString(d, "sqft", "Sqft"),
+      yearBuilt: portfolioPropString(d, "year_built", "yearBuilt"),
+      marketRent: portfolioPropString(d, "market_rent", "marketRent"),
+      managementFeePercent: mfp,
+      managementStartDate: portfolioPropString(d, "management_start_date", "managementStartDate"),
+      maintenanceLimit: portfolioPropString(d, "maintenance_limit", "maintenanceLimit"),
+      reserve: portfolioPropString(d, "reserve", "Reserve"),
+      owners: portfolioPropString(d, "owners", "Owners"),
+      insuranceExpiration: insExp,
+      homeWarrantyExpiration: warExp,
+      insuranceExpiryFlag: insFlag,
+      warrantyExpiryFlag: warFlag,
+      occupancy: occ,
+      openWorkOrders: openWo,
+      delinquency: delSum,
+      expandDetails: {
+        propertyAddressFull: portfolioFormatAddress(d),
+        sqft: portfolioPropString(d, "sqft", "Sqft"),
+        yearBuilt: portfolioPropString(d, "year_built", "yearBuilt"),
+        managementFeeType: portfolioPropString(d, "management_fee_type", "managementFeeType"),
+        managementFlatFee: portfolioPropString(d, "management_flat_fee", "managementFlatFee"),
+        managementEndDate: portfolioPropString(d, "management_end_date", "managementEndDate"),
+        leaseFeePercent: portfolioPropString(d, "lease_fee_percent", "leaseFeePercent"),
+        leaseFeeType: portfolioPropString(d, "lease_fee_type", "leaseFeeType"),
+        leaseFlatFee: portfolioPropString(d, "lease_flat_fee", "leaseFlatFee"),
+        renewalFeePercent: portfolioPropString(d, "renewal_fee_percent", "renewalFeePercent"),
+        renewalFeeType: portfolioPropString(d, "renewal_fee_type", "renewalFeeType"),
+        renewalFlatFee: portfolioPropString(d, "renewal_flat_fee", "renewalFlatFee"),
+        lateFeeType: portfolioPropString(d, "late_fee_type", "lateFeeType"),
+        lateFeeBaseAmount: portfolioPropString(d, "late_fee_base_amount", "lateFeeBaseAmount"),
+        lateFeeGracePeriod: portfolioPropString(d, "late_fee_grace_period", "lateFeeGracePeriod"),
+        portfolio: portfolioPropString(d, "portfolio", "Portfolio"),
+        visibility: portfolioPropString(d, "visibility", "Visibility"),
+        openWorkOrdersList: portfolioListOpenWos(woRows, propertyName),
+        delinquentTenants: portfolioListDelinquentTenants(delRows, propertyName),
+      },
+    });
+  }
+
+  properties.sort((a, b) =>
+    String(a.propertyName).localeCompare(b.propertyName, undefined, { sensitivity: "base" })
+  );
+
+  const ownerRowsFiltered = ownersRows
     .map(rowData)
     .filter((d) => matchesOwner(d, ownerIds))
     .filter((d) => {
@@ -1239,15 +1489,48 @@ export async function getPortfolio(req) {
       return propertyIds.includes(String(pid));
     });
 
-  const rentRoll = rr
-    .map(rowData)
-    .filter((d) => matchesProperty(d, propertyIds));
+  const owners = ownerRowsFiltered.map((d) => {
+    const oid = d.owner_id ?? d.OwnerId ?? d.ownerId ?? null;
+    const propsOwned = portfolioPropString(d, "properties_owned", "propertiesOwned");
+    const pc = portfolioCountOwnedFromText(propsOwned);
+    return {
+      ownerId: oid != null ? oid : portfolioPropString(d, "name", "Name"),
+      name: portfolioPropString(d, "name", "Name") || "—",
+      email: portfolioPropString(d, "email", "Email"),
+      phone: portfolioFirstPhone(d.phone_numbers ?? d.phoneNumbers ?? d.phone),
+      propertiesOwned: propsOwned,
+      propertyCount: pc > 0 ? pc : portfolioParseOwnershipLines(propsOwned).length,
+      lastPaymentDate: portfolioPropString(d, "last_payment_date", "lastPaymentDate"),
+      tags: portfolioPropString(d, "tags", "Tags"),
+      ownershipLines: portfolioParseOwnershipLines(propsOwned),
+    };
+  });
+
+  owners.sort((a, b) =>
+    String(a.name).localeCompare(b.name, undefined, { sensitivity: "base" })
+  );
+
+  const avgManagementFee = mgmtN > 0 ? Math.round((mgmtSum / mgmtN) * 100) / 100 : 0;
+
+  const summary = {
+    totalProperties: properties.length,
+    totalUnits: rrAgg.totalUnits,
+    byType,
+    totalOwners: owners.length,
+    avgManagementFee,
+    insuranceExpiringNext90Days: insuranceExpiring90,
+    insuranceExpiredCount: insuranceExpired,
+    warrantyExpiringNext90Days: warrantyExpiring90,
+    warrantyExpiredCount: warrantyExpired,
+    propertiesOnNotice,
+  };
 
   return {
-    properties: propertiesList,
-    propertyDirectory: props.map(rowData).filter((d) => matchesProperty(d, propertyIds)),
-    ownerDirectory,
-    rentRoll,
+    summary,
+    properties,
+    owners,
+    occupancyByProperty: rrAgg.byProperty,
+    propertyDirectory,
     filters: { propertyIds, ownerIds },
   };
 }

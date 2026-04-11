@@ -74,6 +74,8 @@ type PropRow = {
 };
 
 type Portfolio = {
+  /** Rent-roll aggregates by property (occupancy / units). */
+  occupancyByProperty?: PropRow[];
   properties: PropRow[];
   propertyDirectory?: Record<string, unknown>[];
 };
@@ -256,7 +258,7 @@ export default function ExecutivePanel(props: {
   }, [maintenance]);
 
   const tableRows = useMemo(() => {
-    const propsList = portfolio?.properties ?? [];
+    const propsList = portfolio?.occupancyByProperty ?? portfolio?.properties ?? [];
     const wo = maintenance?.workOrdersByProperty ?? {};
     return propsList.map((p) => {
       const occ = p.occupiedCount ?? p.unitCount - p.vacantCount;

@@ -542,3 +542,58 @@
   padding: 0.1em 0.35em;
   border-radius: 4px;
 }
+
+.portfolioExpand {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--grey);
+}
+
+.portfolioExpandGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.portfolioExpandTitle {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--navy);
+}
+
+.portfolioExpand p {
+  margin: 0.25rem 0;
+}
+
+.portfolioWoList {
+  margin: 0.35rem 0 0.75rem;
+  padding-left: 1.1rem;
+}
+
+.portfolioOwnerDetails {
+  margin-top: 1.5rem;
+  background: var(--white);
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  box-shadow: 0 2px 12px rgba(27, 40, 86, 0.06);
+}
+
+.portfolioOwnerSummary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--navy);
+  list-style: none;
+}
+
+.portfolioOwnerSummary::-webkit-details-marker {
+  display: none;
+}
+
+.portfolioOwnerDetails[open] .portfolioOwnerSummary {
+  margin-bottom: 0.5rem;
+}
