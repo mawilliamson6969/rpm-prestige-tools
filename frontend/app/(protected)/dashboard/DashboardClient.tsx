@@ -9,6 +9,7 @@ import styles from "./dashboard.module.css";
 import { getDateRange, PRESET_OPTIONS, type DatePresetId } from "./dateRange";
 import ExecutivePanel from "./ExecutivePanel";
 import FinancePanel from "./FinancePanel";
+import LeasingPanel from "./LeasingPanel";
 import MaintenancePanel from "./MaintenancePanel";
 import PortfolioPanel from "./PortfolioPanel";
 
@@ -47,6 +48,7 @@ export default function DashboardClient() {
 
   const [executive, setExecutive] = useState<Record<string, unknown> | null>(null);
   const [finance, setFinance] = useState<Record<string, unknown> | null>(null);
+  const [leasing, setLeasing] = useState<Record<string, unknown> | null>(null);
   const [maintenance, setMaintenance] = useState<Record<string, unknown> | null>(null);
   const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,29 +113,34 @@ export default function DashboardClient() {
     });
     const h = authHeaders();
     try {
-      const [rEx, rFi, rMa, rPo] = await Promise.all([
+      const [rEx, rFi, rLe, rMa, rPo] = await Promise.all([
         fetch(apiUrl(`/dashboard/executive${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/finance${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl(`/dashboard/leasing${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/maintenance${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/portfolio${q}`), { cache: "no-store", headers: { ...h } }),
       ]);
-      const [jEx, jFi, jMa, jPo] = await Promise.all([
+      const [jEx, jFi, jLe, jMa, jPo] = await Promise.all([
         rEx.json().catch(() => ({})),
         rFi.json().catch(() => ({})),
+        rLe.json().catch(() => ({})),
         rMa.json().catch(() => ({})),
         rPo.json().catch(() => ({})),
       ]);
       if (!rEx.ok) throw new Error(typeof jEx.error === "string" ? jEx.error : `Executive ${rEx.status}`);
       if (!rFi.ok) throw new Error(typeof jFi.error === "string" ? jFi.error : `Finance ${rFi.status}`);
+      if (!rLe.ok) throw new Error(typeof jLe.error === "string" ? jLe.error : `Leasing ${rLe.status}`);
       if (!rMa.ok) throw new Error(typeof jMa.error === "string" ? jMa.error : `Maintenance ${rMa.status}`);
       if (!rPo.ok) throw new Error(typeof jPo.error === "string" ? jPo.error : `Portfolio ${rPo.status}`);
       setExecutive(jEx);
       setFinance(jFi);
+      setLeasing(jLe);
       setMaintenance(jMa);
       setPortfolio(jPo);
     } catch (e) {
       setExecutive(null);
       setFinance(null);
+      setLeasing(null);
       setMaintenance(null);
       setPortfolio(null);
       setError(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -362,6 +369,11 @@ export default function DashboardClient() {
       </div>
 
       <main className={styles.main}>
+        {tab === "leasing" && (
+          <div className={styles.tabPanel}>
+            <LeasingPanel leasing={leasing as never} loading={loading} error={error} />
+          </div>
+        )}
         {tab === "executive" && (
           <div className={styles.tabPanel}>
             <ExecutivePanel
@@ -395,16 +407,6 @@ export default function DashboardClient() {
         {tab === "portfolio" && (
           <div className={styles.tabPanel}>
             <PortfolioPanel portfolio={portfolio as never} loading={loading} error={error} />
-          </div>
-        )}
-        {tab !== "executive" && tab !== "maintenance" && tab !== "finance" && tab !== "portfolio" && (
-          <div className={`${styles.tabPanel} ${styles.comingSoon}`}>
-            <p>
-              <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong> dashboard coming in a later phase.
-            </p>
-            <p style={{ fontSize: "0.9rem", marginTop: "0.5rem" }}>
-              Executive, Maintenance, Finance, and Portfolio tabs use live cached endpoints today.
-            </p>
           </div>
         )}
       </main>

@@ -756,41 +756,215 @@ export async function getExecutive(req) {
   };
 }
 
+function leasingStrField(d, ...keys) {
+  const o = typeof d === "object" ? d : {};
+  for (const k of keys) {
+    if (o[k] != null && String(o[k]).trim() !== "") return String(o[k]).trim();
+  }
+  return "";
+}
+
+function leasingParseYmd(s) {
+  const raw = String(s ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return null;
+  const t = Date.parse(`${raw}T12:00:00`);
+  return Number.isNaN(t) ? null : t;
+}
+
+function leasingCanonicalMonthLabel(dt) {
+  const d = dt instanceof Date ? dt : new Date(dt);
+  return `${d.toLocaleString("en-US", { month: "short" })} ${d.getFullYear()}`;
+}
+
+function leasingNextTwelveMonthLabels() {
+  const now = new Date();
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    out.push(leasingCanonicalMonthLabel(d));
+  }
+  return out;
+}
+
+function leasingParseMonthLabelToTime(label) {
+  const s = String(label ?? "").trim();
+  if (!s) return null;
+  const t = Date.parse(`${s} 01`);
+  return Number.isNaN(t) ? null : t;
+}
+
 /** GET /dashboard/leasing */
 export async function getLeasing(req) {
   const pool = getPool();
   const { propertyIds } = parseFilters(req);
 
-  const { rows: gc } = await pool.query(`SELECT appfolio_data FROM cached_guest_cards ORDER BY id`);
-  const { rows: ra } = await pool.query(
+  const { rows: rrRows } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
+  const { rows: raRows } = await pool.query(
     `SELECT appfolio_data FROM cached_rental_applications ORDER BY id`
   );
-  const { rows: rrVacant } = await pool.query(`SELECT appfolio_data FROM cached_rent_roll ORDER BY id`);
-  const { rows: le } = await pool.query(
-    `SELECT appfolio_data FROM cached_lease_expirations ORDER BY id`
-  );
+  const { rows: leRows } = await pool.query(`SELECT appfolio_data FROM cached_lease_expirations ORDER BY id`);
 
-  const guestCards = gc.map(rowData).filter((d) => matchesProperty(d, propertyIds));
-  const rentalApplications = ra.map(rowData).filter((d) => matchesProperty(d, propertyIds));
-  const vacantUnits = [];
-  for (const r of rrVacant) {
+  let vacantUnitCount = 0;
+  let onNoticeCount = 0;
+  const vacantList = [];
+
+  for (const r of rrRows) {
     const d = rowData(r);
     if (!matchesProperty(d, propertyIds)) continue;
-    if (rentRollStatus(d) !== RR_VACANT) continue;
-    vacantUnits.push({
-      ...d,
-      property_name: rentRollPropertyName(d),
-      unit: rentRollUnitLabel(d),
-      advertised_rent: rentRollAdvertisedRent(d),
+    const st = rentRollStatus(d);
+    if (st === RR_VACANT) {
+      vacantUnitCount += 1;
+      vacantList.push({
+        propertyName: rentRollPropertyName(d),
+        unit: rentRollUnitLabel(d),
+        advertisedRent: leasingStrField(d, "advertised_rent", "advertisedRent", "rent", "Rent"),
+        marketRent: leasingStrField(d, "market_rent", "marketRent"),
+        sqft: leasingStrField(d, "sqft", "Sqft"),
+        bdBa: leasingStrField(d, "bd_ba", "bdBa", "bed_bath"),
+        rent: leasingStrField(d, "rent", "Rent"),
+        status: "Vacant-Unrented",
+      });
+    } else if (st === RR_NOTICE) {
+      onNoticeCount += 1;
+      vacantList.push({
+        propertyName: rentRollPropertyName(d),
+        unit: rentRollUnitLabel(d),
+        advertisedRent: leasingStrField(d, "advertised_rent", "advertisedRent", "rent", "Rent"),
+        marketRent: leasingStrField(d, "market_rent", "marketRent"),
+        sqft: leasingStrField(d, "sqft", "Sqft"),
+        bdBa: leasingStrField(d, "bd_ba", "bdBa", "bed_bath"),
+        rent: leasingStrField(d, "rent", "Rent"),
+        status: "Notice-Unrented",
+      });
+    }
+  }
+
+  vacantList.sort((a, b) => {
+    const c = a.propertyName.localeCompare(b.propertyName, undefined, { sensitivity: "base" });
+    if (c !== 0) return c;
+    return a.unit.localeCompare(b.unit, undefined, { sensitivity: "base" });
+  });
+
+  const monthLabels = leasingNextTwelveMonthLabels();
+  const monthMap = new Map(monthLabels.map((m) => [m, 0]));
+  for (const r of rrRows) {
+    const d = rowData(r);
+    if (!matchesProperty(d, propertyIds)) continue;
+    const lm = leasingStrField(d, "lease_expires_month", "leaseExpiresMonth");
+    if (!lm) continue;
+    const tt = leasingParseMonthLabelToTime(lm);
+    if (tt == null) continue;
+    const canon = leasingCanonicalMonthLabel(new Date(tt));
+    if (monthMap.has(canon)) monthMap.set(canon, (monthMap.get(canon) ?? 0) + 1);
+  }
+
+  const nowMs = Date.now();
+  const ms90 = 90 * 86400000;
+  const byMonth = monthLabels.map((month) => {
+    const tt = leasingParseMonthLabelToTime(month);
+    const mid = tt != null ? tt + 15 * 86400000 : null;
+    const within90 =
+      mid != null && mid >= nowMs && mid <= nowMs + ms90;
+    return { month, count: monthMap.get(month) ?? 0, within90 };
+  });
+
+  const apps = raRows.map(rowData).filter((d) => matchesProperty(d, propertyIds));
+  const ytdStart = new Date(new Date().getFullYear(), 0, 1).getTime();
+  const appsYtd = apps.filter((d) => {
+    const rec = leasingParseYmd(d.received ?? d.Received);
+    return rec != null && rec >= ytdStart;
+  });
+  const byAppStatus = {};
+  for (const d of apps) {
+    const s = leasingStrField(d, "status", "Status") || "Unknown";
+    byAppStatus[s] = (byAppStatus[s] || 0) + 1;
+  }
+  const convertedYtd = appsYtd.filter((d) => leasingStrField(d, "status", "Status") === "Converted").length;
+  const conversionRatePct =
+    appsYtd.length > 0 ? Math.round((convertedYtd / appsYtd.length) * 10000) / 100 : 0;
+
+  const ttcVals = apps
+    .filter((d) => leasingStrField(d, "status", "Status") === "Converted")
+    .map((d) => parseMoney(d.time_to_conversion ?? d.timeToConversion))
+    .filter((n) => n > 0);
+  const avgTimeToConversion =
+    ttcVals.length > 0
+      ? Math.round((ttcVals.reduce((a, b) => a + b, 0) / ttcVals.length) * 10) / 10
+      : 0;
+
+  const recentApplications = apps
+    .map((d) => ({
+      applicants: leasingStrField(d, "applicants", "Applicants"),
+      propertyName: leasingStrField(d, "property_name", "propertyName"),
+      unit: leasingStrField(d, "unit_name", "unitName", "unit"),
+      status: leasingStrField(d, "status", "Status"),
+      received: leasingStrField(d, "received", "Received"),
+      moveInDate: leasingStrField(d, "move_in_date", "moveInDate"),
+      leadSource: leasingStrField(d, "lead_source", "leadSource"),
+      timeToConversion: parseMoney(d.time_to_conversion ?? d.timeToConversion) || null,
+    }))
+    .sort((a, b) => (leasingParseYmd(b.received) ?? 0) - (leasingParseYmd(a.received) ?? 0));
+
+  const leList = leRows.map(rowData).filter((d) => matchesProperty(d, propertyIds));
+  const byLeStatus = {};
+  for (const d of leList) {
+    const s = leasingStrField(d, "status", "Status") || "Unknown";
+    byLeStatus[s] = (byLeStatus[s] || 0) + 1;
+  }
+  const renewed = byLeStatus["Renewed"] ?? 0;
+  const notEligible = byLeStatus["Not Eligible"] ?? 0;
+  const renewalRatePct =
+    renewed + notEligible > 0 ? Math.round((renewed / (renewed + notEligible)) * 10000) / 100 : 0;
+
+  const upcoming90Days = [];
+  let leaseExpiringNext90Days = 0;
+  const horizon = nowMs + ms90;
+  for (const d of leList) {
+    const exp = leasingParseYmd(d.lease_expires ?? d.leaseExpires);
+    if (exp == null) continue;
+    if (exp < nowMs || exp > horizon) continue;
+    leaseExpiringNext90Days += 1;
+    const daysUntil = Math.max(0, Math.ceil((exp - nowMs) / 86400000));
+    upcoming90Days.push({
+      tenantName: leasingStrField(d, "tenant_name", "tenantName", "name"),
+      propertyName: leasingStrField(d, "property_name", "propertyName"),
+      unit: leasingStrField(d, "unit", "Unit", "unit_name"),
+      leaseExpires: String(d.lease_expires ?? d.leaseExpires ?? "").trim().slice(0, 10),
+      rent: leasingStrField(d, "rent", "Rent"),
+      marketRent: leasingStrField(d, "market_rent", "marketRent"),
+      status: leasingStrField(d, "status", "Status"),
+      daysUntilExpiration: daysUntil,
     });
   }
-  const leaseExpirations = le.map(rowData).filter((d) => matchesProperty(d, propertyIds));
+  upcoming90Days.sort((a, b) => {
+    const ta = leasingParseYmd(a.leaseExpires) ?? 0;
+    const tb = leasingParseYmd(b.leaseExpires) ?? 0;
+    return ta - tb;
+  });
 
   return {
-    guestCards,
-    rentalApplications,
-    vacantUnits,
-    leaseExpirations,
+    dataSources: { appfolio: true, rentengine: false, boom: false },
+    vacancy: {
+      vacantUnits: vacantUnitCount,
+      onNotice: onNoticeCount,
+      vacantList,
+    },
+    applications: {
+      total: apps.length,
+      ytdTotal: appsYtd.length,
+      conversionRatePercent: conversionRatePct,
+      byStatus: byAppStatus,
+      avgTimeToConversion,
+      recentApplications,
+    },
+    leaseExpirations: {
+      total: leList.length,
+      byStatus: byLeStatus,
+      byMonth,
+      upcoming90Days,
+      leaseExpiringNext90Days,
+      renewalRatePercent: renewalRatePct,
+    },
     filters: { propertyIds },
   };
 }
