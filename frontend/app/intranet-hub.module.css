@@ -122,6 +122,8 @@
 
 .sectionTitle {
   margin: 0 0 1.25rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.14);
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--ih-navy);
@@ -237,6 +239,8 @@
   letter-spacing: 0.08em;
   color: var(--ih-light-blue);
   margin: 0 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(0, 152, 208, 0.22);
 }
 
 .toolGrid {
