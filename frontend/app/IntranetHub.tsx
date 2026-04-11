@@ -21,7 +21,6 @@ const TEAM = [
   { name: "Lori", role: "Client Success Manager", initials: "Lo", color: "#B32317" },
   { name: "Leslie", role: "Business Development / Leasing", initials: "Le", color: "#1B2856" },
   { name: "Amanda", role: "Maintenance Coordinator", initials: "AM", color: "#2E7D6B" },
-  { name: "Amelia", role: "Operations Support", initials: "Ai", color: "#6A4C93" },
 ] as const;
 
 const USEFUL_LINKS = [
