@@ -12,58 +12,6 @@ function mapRow(r) {
   };
 }
 
-export async function getMySignature(req, res) {
-  let pool;
-  try {
-    pool = getPool();
-  } catch {
-    res.status(503).json({ error: "Database is not configured." });
-    return;
-  }
-  try {
-    const { rows } = await pool.query(`SELECT signature_html FROM users WHERE id = $1`, [req.user.id]);
-    res.json({ signatureHtml: rows[0]?.signature_html ?? null });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Could not load signature." });
-  }
-}
-
-export async function putMySignature(req, res) {
-  if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, "signatureHtml")) {
-    res.status(400).json({ error: "signatureHtml is required (use empty string to clear)." });
-    return;
-  }
-  const raw = req.body.signatureHtml;
-  const signatureHtml = typeof raw === "string" ? raw : null;
-  if (signatureHtml === null) {
-    res.status(400).json({ error: "signatureHtml must be a string." });
-    return;
-  }
-
-  let pool;
-  try {
-    pool = getPool();
-  } catch {
-    res.status(503).json({ error: "Database is not configured." });
-    return;
-  }
-
-  try {
-    await pool.query(`UPDATE users SET signature_html = $1 WHERE id = $2`, [
-      signatureHtml.trim() === "" ? null : signatureHtml,
-      req.user.id,
-    ]);
-    res.json({
-      ok: true,
-      signatureHtml: signatureHtml.trim() === "" ? null : signatureHtml,
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Could not save signature." });
-  }
-}
-
 export async function listUsers(_req, res) {
   try {
     const pool = getPool();

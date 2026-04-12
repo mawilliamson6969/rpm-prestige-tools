@@ -172,19 +172,6 @@ export async function ensureUsersSchema() {
 
   await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_html TEXT`);
 
-  const mikeSignature = `<p>Best regards,</p>
-<p><strong>Mike Williamson</strong><br>
-Owner/Operator<br>
-Real Property Management Prestige<br>
-A Neighborly® Company<br>
-<a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>
-Houston, TX</p>`;
-  await p.query(
-    `UPDATE users SET signature_html = $1
-     WHERE lower(username) = 'mike' AND (signature_html IS NULL OR trim(signature_html) = '')`,
-    [mikeSignature]
-  );
-
   const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM users`);
   if (rows[0].c > 0) return;
 
@@ -287,6 +274,17 @@ export async function ensureInboxSchema() {
 
     CREATE INDEX IF NOT EXISTS ticket_responses_ticket_idx ON ticket_responses (ticket_id);
 
+    CREATE TABLE IF NOT EXISTS email_signatures (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      signature_html TEXT NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS email_signatures_user_idx ON email_signatures (user_id);
+
     CREATE TABLE IF NOT EXISTS email_sync_state (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -298,4 +296,47 @@ export async function ensureInboxSchema() {
       UNIQUE (user_id)
     );
   `);
+
+  await seedEmailSignatures(p);
+}
+
+const TEAM_SIGNATURE_HTML = {
+  mike: `<p>Best regards,</p>
+<p><strong>Mike Williamson</strong><br>Owner/Operator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,
+  lori: `<p>Best regards,</p>
+<p><strong>Lori</strong><br>Client Success Manager<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,
+  leslie: `<p>Best regards,</p>
+<p><strong>Leslie</strong><br>Business Development Manager<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,
+  amanda: `<p>Best regards,</p>
+<p><strong>Amanda</strong><br>Maintenance Coordinator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,
+  amelia: `<p>Best regards,</p>
+<p><strong>Amelia</strong><br>Operations Support<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,
+};
+
+async function seedEmailSignatures(p) {
+  await p.query(
+    `INSERT INTO email_signatures (user_id, name, signature_html, is_default)
+     SELECT u.id, 'Imported', trim(u.signature_html), true
+     FROM users u
+     WHERE u.signature_html IS NOT NULL AND trim(u.signature_html) <> ''
+       AND NOT EXISTS (SELECT 1 FROM email_signatures es WHERE es.user_id = u.id)`
+  );
+
+  const { rows: users } = await p.query(
+    `SELECT id, lower(username) AS u FROM users WHERE lower(username) = ANY($1::text[])`,
+    [["mike", "lori", "leslie", "amanda", "amelia"]]
+  );
+  for (const row of users) {
+    const { rows: cnt } = await p.query(`SELECT COUNT(*)::int AS c FROM email_signatures WHERE user_id = $1`, [
+      row.id,
+    ]);
+    if (cnt[0].c > 0) continue;
+    const html = TEAM_SIGNATURE_HTML[row.u];
+    if (!html) continue;
+    await p.query(
+      `INSERT INTO email_signatures (user_id, name, signature_html, is_default, updated_at)
+       VALUES ($1, 'Standard', $2, true, NOW())`,
+      [row.id, html]
+    );
+  }
 }

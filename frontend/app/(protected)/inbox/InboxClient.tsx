@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { apiUrl } from "../../../lib/api";
+import { sanitizeEmailHtml } from "../../../lib/sanitizeEmailHtml";
 import styles from "./inbox.module.css";
+
+type EmailSignatureRow = {
+  id: number;
+  name: string;
+  signatureHtml: string;
+  isDefault: boolean;
+};
 
 type TicketRow = {
   id: number;
@@ -103,13 +111,6 @@ function initials(name: string | null | undefined, email: string | null | undefi
   return s.slice(0, 2).toUpperCase();
 }
 
-function sanitizeEmailHtml(html: string) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "")
-    .replace(/\shref\s*=\s*["']\s*javascript:[^"']*["']/gi, "");
-}
-
 function escapeHtmlText(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -160,9 +161,9 @@ export default function InboxClient() {
   const [composeBody, setComposeBody] = useState("");
   const [composeBusy, setComposeBusy] = useState(false);
   const [composeExpanded, setComposeExpanded] = useState(false);
-  const [signatureHtml, setSignatureHtml] = useState<string | null>(null);
-  /** Per-reply signature (editable); initialized from saved signature. */
-  const [replySigDraft, setReplySigDraft] = useState("");
+  const [signatures, setSignatures] = useState<EmailSignatureRow[]>([]);
+  /** Selected signature for reply: id, "none", or null before load. */
+  const [selectedSigId, setSelectedSigId] = useState<number | "none" | null>(null);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -208,13 +209,13 @@ export default function InboxClient() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(apiUrl("/users/me/signature"), {
+      const res = await fetch(apiUrl("/inbox/signatures"), {
         cache: "no-store",
         headers: { ...authHeaders() },
       });
       const body = await res.json().catch(() => ({}));
-      if (res.ok && "signatureHtml" in body) {
-        setSignatureHtml(typeof body.signatureHtml === "string" ? body.signatureHtml : null);
+      if (res.ok && Array.isArray(body.signatures)) {
+        setSignatures(body.signatures as EmailSignatureRow[]);
       }
     })();
   }, [authHeaders]);
@@ -225,8 +226,13 @@ export default function InboxClient() {
   }, [selectedId]);
 
   useEffect(() => {
-    setReplySigDraft(signatureHtml ?? "");
-  }, [signatureHtml, selectedId]);
+    if (!signatures.length) {
+      setSelectedSigId("none");
+      return;
+    }
+    const def = signatures.find((s) => s.isDefault);
+    setSelectedSigId(def?.id ?? signatures[0].id);
+  }, [selectedId, signatures]);
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
@@ -358,9 +364,15 @@ export default function InboxClient() {
     setComposeBusy(true);
     try {
       const path = composeMode === "reply" ? "reply" : "note";
+      let replySigHtml: string | null = null;
+      if (composeMode === "reply" && selectedSigId !== "none" && selectedSigId !== null) {
+        const row = signatures.find((s) => s.id === selectedSigId);
+        const raw = row?.signatureHtml?.trim();
+        replySigHtml = raw ? raw : null;
+      }
       const payload =
         composeMode === "reply"
-          ? { body: buildReplyEmailHtml(composeBody, replySigDraft.trim() ? replySigDraft : null) }
+          ? { body: buildReplyEmailHtml(composeBody, replySigHtml) }
           : { body: composeBody.trim() };
       const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/${path}`), {
         method: "POST",
@@ -841,6 +853,43 @@ export default function InboxClient() {
                       Internal note
                     </button>
                   </div>
+                  {composeMode === "reply" ? (
+                    <div className={styles.sigSelectRow}>
+                      <label className={styles.sigSelectLabel} htmlFor="inbox-signature-select">
+                        Signature:
+                      </label>
+                      <select
+                        id="inbox-signature-select"
+                        className={styles.sigSelect}
+                        value={
+                          selectedSigId === null
+                            ? ""
+                            : selectedSigId === "none"
+                              ? "none"
+                              : String(selectedSigId)
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "none") setSelectedSigId("none");
+                          else setSelectedSigId(Number(v));
+                        }}
+                        aria-label="Email signature"
+                      >
+                        {selectedSigId === null ? (
+                          <option value="" disabled>
+                            Loading…
+                          </option>
+                        ) : null}
+                        {signatures.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                            {s.isDefault ? " (default)" : ""}
+                          </option>
+                        ))}
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                  ) : null}
                   <textarea
                     className={!composeExpanded ? styles.composeCollapsed : undefined}
                     value={composeBody}
@@ -855,47 +904,22 @@ export default function InboxClient() {
                     rows={composeExpanded ? 6 : 1}
                     aria-label={composeMode === "reply" ? "Reply" : "Internal note"}
                   />
-                  {composeMode === "reply" && composeExpanded ? (
-                    <>
-                      <label className={styles.sigEditLabel} htmlFor="inbox-reply-sig">
-                        Signature (this reply)
-                      </label>
-                      <textarea
-                        id="inbox-reply-sig"
-                        className={styles.sigEditArea}
-                        value={replySigDraft}
-                        onChange={(e) => setReplySigDraft(e.target.value)}
-                        placeholder="Optional — HTML signature appended after --"
-                        spellCheck={false}
-                        aria-label="Email signature for this reply"
-                      />
-                      {replySigDraft.trim() ? (
-                        <div className={styles.replyPreview}>
-                          <div style={{ fontSize: "0.72rem", color: "#6a737b", marginBottom: "0.35rem" }}>
-                            Preview
-                          </div>
-                          <div style={{ marginBottom: "0.35rem", color: "#1b2856", fontSize: "0.88rem" }}>
-                            {composeBody.trim() ? (
-                              composeBody.trim().split("\n").map((line, i) => (
-                                <span key={i}>
-                                  {i > 0 ? <br /> : null}
-                                  {line}
-                                </span>
-                              ))
-                            ) : (
-                              <span style={{ fontStyle: "italic", color: "#9aa0a6" }}>Your message</span>
-                            )}
-                          </div>
-                          <p style={{ margin: "0.25rem 0", fontSize: "0.75rem", color: "#9aa0a6" }}>--</p>
+                  {composeMode === "reply" && composeExpanded && selectedSigId !== "none" && selectedSigId !== null ? (
+                    (() => {
+                      const row = signatures.find((s) => s.id === selectedSigId);
+                      const sig = row?.signatureHtml?.trim();
+                      if (!sig) return null;
+                      return (
+                        <div className={styles.replySignaturePreview}>
+                          <div className={styles.replySigDivider} aria-hidden />
+                          <p className={styles.replySigDash}>--</p>
                           <div
-                            className={styles.replyPreviewMuted}
-                            dangerouslySetInnerHTML={{
-                              __html: sanitizeEmailHtml(replySigDraft),
-                            }}
+                            className={styles.replySigRendered}
+                            dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(sig) }}
                           />
                         </div>
-                      ) : null}
-                    </>
+                      );
+                    })()
                   ) : null}
                   {composeExpanded ? (
                     <button

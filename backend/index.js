@@ -49,11 +49,21 @@ import {
 import {
   createUser,
   deleteUser,
-  getMySignature,
   listUsers,
-  putMySignature,
   updateUser,
 } from "./routes/users.js";
+import {
+  deleteAdminSignature,
+  deleteInboxSignature,
+  getAdminSignatures,
+  getInboxSignatures,
+  postAdminSignature,
+  postInboxSignature,
+  putAdminSignature,
+  putAdminSignatureDefault,
+  putInboxSignature,
+  putInboxSignatureDefault,
+} from "./routes/emailSignatures.js";
 import { getAskHistory, postAsk } from "./routes/ask.js";
 import {
   deleteL10Issue,
@@ -168,8 +178,6 @@ app.post("/auth/change-password", requireAuth, postChangePassword);
 app.get("/auth/microsoft/callback", getMicrosoftCallback);
 app.get("/auth/microsoft/connect", requireAuth, getMicrosoftConnect);
 
-app.get("/users/me/signature", requireAuth, getMySignature);
-app.put("/users/me/signature", requireAuth, putMySignature);
 app.get("/users", requireAuth, requireAdminRole, listUsers);
 app.post("/users", requireAuth, requireAdminRole, createUser);
 app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
@@ -278,6 +286,18 @@ app.post("/inbox/tickets/:id/assign", requireAuth, postInboxTicketAssign);
 app.get("/inbox/stats", requireAuth, getInboxStats);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
+
+app.get("/inbox/signatures", requireAuth, getInboxSignatures);
+app.post("/inbox/signatures", requireAuth, postInboxSignature);
+app.put("/inbox/signatures/:id/default", requireAuth, putInboxSignatureDefault);
+app.put("/inbox/signatures/:id", requireAuth, putInboxSignature);
+app.delete("/inbox/signatures/:id", requireAuth, deleteInboxSignature);
+
+app.get("/admin/signatures", requireAuth, requireAdminRole, getAdminSignatures);
+app.post("/admin/signatures", requireAuth, requireAdminRole, postAdminSignature);
+app.put("/admin/signatures/:id/default", requireAuth, requireAdminRole, putAdminSignatureDefault);
+app.put("/admin/signatures/:id", requireAuth, requireAdminRole, putAdminSignature);
+app.delete("/admin/signatures/:id", requireAuth, requireAdminRole, deleteAdminSignature);
 
 async function start() {
   if (process.env.DATABASE_URL) {

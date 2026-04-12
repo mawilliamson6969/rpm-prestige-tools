@@ -818,6 +818,59 @@
   font-family: ui-monospace, monospace;
 }
 
+.sigSelectRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.sigSelectLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--grey);
+}
+
+.sigSelect {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  background: #fff;
+  color: var(--navy);
+}
+
+.replySignaturePreview {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+}
+
+.replySigDivider {
+  border: none;
+  border-top: 1px solid #d0d4db;
+  margin: 0 0 0.35rem;
+}
+
+.replySigDash {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  color: #9aa0a6;
+}
+
+.replySigRendered {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #3d4a5c;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.replySigRendered :global(a) {
+  color: var(--blue);
+}
+
 .sendBtn {
   margin-top: 0.5rem;
   padding: 0.5rem 1rem;

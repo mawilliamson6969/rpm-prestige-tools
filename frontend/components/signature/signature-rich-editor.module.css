@@ -1,0 +1,78 @@
+.wrap {
+  --sig-navy: #1b2856;
+  --sig-blue: #0098d0;
+  --sig-border: #cfd4dc;
+  border: 1px solid var(--sig-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #e2e4e8;
+  background: #fafbfc;
+}
+
+.toolbar button {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--sig-navy);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  border-color: var(--sig-blue);
+  color: var(--sig-blue);
+}
+
+.toolbar .italicBtn {
+  font-style: italic;
+}
+
+.colorWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: #6a737b;
+}
+
+.colorInput {
+  width: 2rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid var(--sig-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editable {
+  min-height: 120px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.65rem 0.75rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--sig-navy);
+  outline: none;
+}
+
+.editable:focus {
+  box-shadow: inset 0 0 0 1px rgba(0, 152, 208, 0.35);
+}
+
+.editable :global(a) {
+  color: var(--sig-blue);
+}
