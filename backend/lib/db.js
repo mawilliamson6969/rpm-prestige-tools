@@ -206,3 +206,81 @@ export async function ensureAskAiSchema() {
     CREATE INDEX IF NOT EXISTS ask_ai_history_user_created_idx ON ask_ai_history (user_id, created_at DESC);
   `);
 }
+
+export async function ensureInboxSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS email_connections (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      email_address VARCHAR(255),
+      access_token TEXT,
+      refresh_token TEXT,
+      token_expires_at TIMESTAMPTZ,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_sync_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, email_address)
+    );
+
+    CREATE TABLE IF NOT EXISTS tickets (
+      id SERIAL PRIMARY KEY,
+      channel VARCHAR(20) NOT NULL DEFAULT 'email',
+      external_id VARCHAR(500),
+      thread_id VARCHAR(500),
+      subject VARCHAR(500),
+      body_preview TEXT,
+      body_html TEXT,
+      sender_name VARCHAR(255),
+      sender_email VARCHAR(255),
+      recipient_emails TEXT,
+      priority INTEGER NOT NULL DEFAULT 50,
+      category VARCHAR(50) NOT NULL DEFAULT 'other',
+      ai_summary TEXT,
+      assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'open',
+      linked_property_name VARCHAR(255),
+      linked_tenant_name VARCHAR(255),
+      linked_owner_name VARCHAR(255),
+      has_attachments BOOLEAN NOT NULL DEFAULT false,
+      is_read BOOLEAN NOT NULL DEFAULT false,
+      is_starred BOOLEAN NOT NULL DEFAULT false,
+      received_at TIMESTAMPTZ,
+      first_response_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS tickets_external_id_uq ON tickets (external_id);
+    CREATE INDEX IF NOT EXISTS tickets_status_received_idx ON tickets (status, received_at DESC);
+    CREATE INDEX IF NOT EXISTS tickets_assigned_idx ON tickets (assigned_to);
+
+    CREATE TABLE IF NOT EXISTS ticket_responses (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      response_type VARCHAR(20) NOT NULL DEFAULT 'note',
+      body TEXT,
+      body_html TEXT,
+      sent_via VARCHAR(20),
+      responded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      external_id VARCHAR(500),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS ticket_responses_ticket_idx ON ticket_responses (ticket_id);
+
+    CREATE TABLE IF NOT EXISTS email_sync_state (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      last_sync_at TIMESTAMPTZ,
+      last_message_received_at TIMESTAMPTZ,
+      sync_status VARCHAR(20) NOT NULL DEFAULT 'idle',
+      messages_synced INTEGER NOT NULL DEFAULT 0,
+      error_log TEXT,
+      UNIQUE (user_id)
+    );
+  `);
+}

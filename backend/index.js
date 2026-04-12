@@ -11,11 +11,13 @@ import { requireAdminRole, requireAuth } from "./lib/auth.js";
 import {
   ensureAnnouncementsSchema,
   ensureCachedDashboardSchema,
+  ensureInboxSchema,
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
   ensureAskAiSchema,
 } from "./lib/db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
+import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
 import {
   getMe,
@@ -81,6 +83,22 @@ import {
   putScorecardEntry,
   putScorecardMetric,
 } from "./routes/eos.js";
+import {
+  deleteInboxConnection,
+  getInboxConnections,
+  getInboxStats,
+  getInboxSyncStatus,
+  getInboxTicket,
+  getInboxTickets,
+  getMicrosoftCallback,
+  getMicrosoftConnect,
+  postInboxSyncTrigger,
+  postInboxTicketAssign,
+  postInboxTicketNote,
+  postInboxTicketReply,
+  postMicrosoftAuthorizeUrl,
+  putInboxTicket,
+} from "./routes/inbox.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -139,6 +157,9 @@ app.get("/", (_req, res) => {
 app.post("/auth/login", postLogin);
 app.get("/auth/me", requireAuth, getMe);
 app.post("/auth/change-password", requireAuth, postChangePassword);
+
+app.get("/auth/microsoft/callback", getMicrosoftCallback);
+app.get("/auth/microsoft/connect", requireAuth, getMicrosoftConnect);
 
 app.get("/users", requireAuth, requireAdminRole, listUsers);
 app.post("/users", requireAuth, requireAdminRole, createUser);
@@ -236,6 +257,19 @@ app.delete("/eos/l10/issues/:id", requireAuth, deleteL10Issue);
 app.post("/ask", requireAuth, postAsk);
 app.get("/ask/history", requireAuth, getAskHistory);
 
+app.post("/inbox/microsoft/authorize-url", requireAuth, postMicrosoftAuthorizeUrl);
+app.get("/inbox/connections", requireAuth, getInboxConnections);
+app.delete("/inbox/connections/:id", requireAuth, deleteInboxConnection);
+app.get("/inbox/tickets", requireAuth, getInboxTickets);
+app.get("/inbox/tickets/:id", requireAuth, getInboxTicket);
+app.put("/inbox/tickets/:id", requireAuth, putInboxTicket);
+app.post("/inbox/tickets/:id/reply", requireAuth, postInboxTicketReply);
+app.post("/inbox/tickets/:id/note", requireAuth, postInboxTicketNote);
+app.post("/inbox/tickets/:id/assign", requireAuth, postInboxTicketAssign);
+app.get("/inbox/stats", requireAuth, getInboxStats);
+app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
+app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -251,6 +285,8 @@ async function start() {
       console.log("Database schema OK (EOS).");
       await ensureAskAiSchema();
       console.log("Database schema OK (ask_ai_history).");
+      await ensureInboxSchema();
+      console.log("Database schema OK (inbox / tickets).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -271,6 +307,11 @@ async function start() {
     setTimeout(() => {
       runFullSync("startup").catch((e) => console.error("[sync startup]", e.message || e));
     }, 30_000);
+
+    cron.schedule("*/2 * * * *", () => {
+      runEmailSyncOnce().catch((e) => console.error("[inbox sync cron]", e.message || e));
+    });
+    console.log("Scheduled inbox email sync: */2 * * * * (every 2 minutes).");
   }
 }
 

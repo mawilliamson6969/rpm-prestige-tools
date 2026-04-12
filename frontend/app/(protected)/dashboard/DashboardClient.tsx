@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import EosNavDropdown from "../../../components/EosNavDropdown";
+import InboxNavLink from "../../../components/InboxNavLink";
 import UserMenu from "../../../components/UserMenu";
 import { useAuth } from "../../../context/AuthContext";
 import { apiUrl } from "../../../lib/api";
@@ -269,6 +270,7 @@ export default function DashboardClient() {
               </button>
             ) : null}
           </div>
+          <InboxNavLink />
           <UserMenu />
         </div>
       </header>

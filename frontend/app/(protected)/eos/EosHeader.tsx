@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import InboxNavLink from "../../../components/InboxNavLink";
 import UserMenu from "../../../components/UserMenu";
 import EosNavDropdown from "../../../components/EosNavDropdown";
 import styles from "./eos.module.css";
@@ -34,6 +35,7 @@ export default function EosHeader() {
           </Link>
         ))}
       </nav>
+      <InboxNavLink />
       <UserMenu />
     </header>
   );

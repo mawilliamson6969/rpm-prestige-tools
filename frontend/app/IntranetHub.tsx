@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import InboxNavLink from "../components/InboxNavLink";
+import SharedInboxHubCard from "../components/SharedInboxHubCard";
 import UserMenu from "../components/UserMenu";
 import AddAnnouncementModal from "./AddAnnouncementModal";
 import { useAuth } from "../context/AuthContext";
@@ -39,10 +41,6 @@ const TEASERS = [
   {
     title: "AI Chatbot",
     desc: "AppFolio-connected chatbot for tenants and owners",
-  },
-  {
-    title: "Shared Inbox",
-    desc: "Unified communications hub",
   },
   {
     title: "Scheduling",
@@ -228,6 +226,7 @@ export default function IntranetHub() {
             <span className={styles.clockLabel}>Houston (CT)</span>
             <span>{clockStr}</span>
           </div>
+          <InboxNavLink />
           <UserMenu />
         </div>
       </header>
@@ -321,6 +320,11 @@ export default function IntranetHub() {
                   title="Ask the AI"
                   description="Ask any question about your properties, tenants, work orders, or finances and get instant answers"
                 />
+              </div>
+
+              <p className={styles.catLabel}>Communications</p>
+              <div className={styles.toolGrid}>
+                <SharedInboxHubCard />
               </div>
 
               <p className={styles.catLabel}>EOS</p>
