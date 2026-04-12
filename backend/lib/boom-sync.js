@@ -79,6 +79,8 @@ async function authenticateBoom(accessKey, secretKey) {
     );
   }
   const token =
+    json.auth_token ??
+    json.data?.auth_token ??
     json.access_token ??
     json.token ??
     json.bearer_token ??
@@ -163,8 +165,12 @@ async function fetchAllPages(accessKey, secretKey, path) {
 
 /**
  * Runs after RentEngine sync. Skips if credentials unset.
+ * @param {string} [triggeredBy] — e.g. 'cron' | 'manual' | 'startup' (defaults for sync_log if missing)
  */
 export async function runBoomSync(triggeredBy) {
+  const syncTriggeredBy =
+    typeof triggeredBy === "string" && triggeredBy.trim() !== "" ? triggeredBy.trim() : "sync";
+
   const accessKey = process.env.BOOM_ACCESS_KEY?.trim();
   const secretKey = process.env.BOOM_SECRET_KEY?.trim();
   if (!accessKey || !secretKey) {
@@ -182,7 +188,7 @@ export async function runBoomSync(triggeredBy) {
   } catch (e) {
     const msg = e?.message || String(e);
     console.error("[sync] boom authenticate failed:", msg);
-    await logBoomSync(triggeredBy, "failed", 0, 0, [{ step: "authenticate", error: msg }]);
+    await logBoomSync(syncTriggeredBy, "failed", 0, 0, [{ step: "authenticate", error: msg }]);
     return { skipped: true, error: msg };
   }
 
@@ -193,7 +199,7 @@ export async function runBoomSync(triggeredBy) {
     const msg = e?.message || String(e);
     syncErrors.push({ step: "applications", error: msg });
     console.error("[sync] boom applications failed:", msg);
-    await logBoomSync(triggeredBy, "failed", 0, 0, syncErrors);
+    await logBoomSync(syncTriggeredBy, "failed", 0, 0, syncErrors);
     return { applications: 0, failed: true };
   }
 
@@ -232,14 +238,14 @@ export async function runBoomSync(triggeredBy) {
       /* ignore */
     }
     syncErrors.push({ step: "database", error: e?.message || String(e) });
-    await logBoomSync(triggeredBy, "failed", 3, 0, syncErrors);
+    await logBoomSync(syncTriggeredBy, "failed", 3, 0, syncErrors);
     throw e;
   } finally {
     client.release();
   }
 
   const totalRows = applications.length + properties.length + units.length;
-  await logBoomSync(triggeredBy, "completed", 3, totalRows, syncErrors.length ? syncErrors : null);
+  await logBoomSync(syncTriggeredBy, "completed", 3, totalRows, syncErrors.length ? syncErrors : null);
 
   return {
     applications: applications.length,
