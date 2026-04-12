@@ -170,6 +170,21 @@ export async function ensureUsersSchema() {
     );
   `);
 
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_html TEXT`);
+
+  const mikeSignature = `<p>Best regards,</p>
+<p><strong>Mike Williamson</strong><br>
+Owner/Operator<br>
+Real Property Management Prestige<br>
+A Neighborly® Company<br>
+<a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>
+Houston, TX</p>`;
+  await p.query(
+    `UPDATE users SET signature_html = $1
+     WHERE lower(username) = 'mike' AND (signature_html IS NULL OR trim(signature_html) = '')`,
+    [mikeSignature]
+  );
+
   const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM users`);
   if (rows[0].c > 0) return;
 

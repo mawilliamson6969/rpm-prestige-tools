@@ -7,6 +7,12 @@ import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
 import styles from "../inbox.module.css";
 
+function sanitizePreview(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "");
+}
+
 type Conn = {
   id: number;
   user_id: number;
@@ -26,18 +32,31 @@ export default function InboxSettingsClient() {
   const [connections, setConnections] = useState<Conn[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
+  const [signatureDraft, setSignatureDraft] = useState("");
+  const [signatureLoading, setSignatureLoading] = useState(true);
+  const [signatureSaving, setSignatureSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const cRes = await fetch(apiUrl("/inbox/connections"), {
-        cache: "no-store",
-        headers: { ...authHeaders() },
-      });
+      const [cRes, sRes] = await Promise.all([
+        fetch(apiUrl("/inbox/connections"), {
+          cache: "no-store",
+          headers: { ...authHeaders() },
+        }),
+        fetch(apiUrl("/users/me/signature"), {
+          cache: "no-store",
+          headers: { ...authHeaders() },
+        }),
+      ]);
       const cBody = await cRes.json().catch(() => ({}));
+      const sBody = await sRes.json().catch(() => ({}));
       if (cRes.ok && Array.isArray(cBody.connections)) setConnections(cBody.connections);
+      if (sRes.ok && typeof sBody.signatureHtml === "string") setSignatureDraft(sBody.signatureHtml);
+      else if (sRes.ok && sBody.signatureHtml === null) setSignatureDraft("");
     } finally {
       setLoading(false);
+      setSignatureLoading(false);
     }
   }, [authHeaders]);
 
@@ -66,6 +85,27 @@ export default function InboxSettingsClient() {
       return;
     }
     setMsg(typeof body.error === "string" ? body.error : "Could not start Microsoft sign-in.");
+  };
+
+  const saveSignature = async () => {
+    setSignatureSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/users/me/signature"), {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ signatureHtml: signatureDraft }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMsg("Signature saved.");
+        if (typeof body.signatureHtml === "string") setSignatureDraft(body.signatureHtml);
+      } else {
+        setMsg(typeof body.error === "string" ? body.error : "Could not save signature.");
+      }
+    } finally {
+      setSignatureSaving(false);
+    }
   };
 
   const disconnect = async (id: number) => {
@@ -170,6 +210,43 @@ export default function InboxSettingsClient() {
             );
           })}
         </ul>
+
+        <section className={styles.signatureSection} aria-labelledby="sig-heading">
+          <h2 id="sig-heading" className={styles.signatureLabel}>
+            Email signature
+          </h2>
+          <p className={styles.signatureHint}>
+            Appended below a “-- ” line on every reply. Use HTML (paragraphs, links, bold). Same styling as outgoing
+            email.
+          </p>
+          {signatureLoading ? (
+            <p style={{ color: "#6a737b" }}>Loading signature…</p>
+          ) : (
+            <>
+              <textarea
+                className={styles.signatureEditor}
+                value={signatureDraft}
+                onChange={(e) => setSignatureDraft(e.target.value)}
+                spellCheck={false}
+                aria-label="Email signature HTML"
+              />
+              <p className={styles.signaturePreviewTitle}>Preview</p>
+              <div
+                className={styles.signaturePreviewBox}
+                dangerouslySetInnerHTML={{ __html: sanitizePreview(signatureDraft || "<p>(empty)</p>") }}
+              />
+              <button
+                type="button"
+                className={styles.sendBtn}
+                style={{ marginTop: "0.75rem" }}
+                disabled={signatureSaving}
+                onClick={saveSignature}
+              >
+                {signatureSaving ? "Saving…" : "Save signature"}
+              </button>
+            </>
+          )}
+        </section>
       </div>
     </div>
   );

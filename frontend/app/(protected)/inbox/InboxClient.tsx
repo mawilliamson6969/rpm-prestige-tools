@@ -110,6 +110,20 @@ function sanitizeEmailHtml(html: string) {
     .replace(/\shref\s*=\s*["']\s*javascript:[^"']*["']/gi, "");
 }
 
+function escapeHtmlText(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Builds HTML for Graph API reply: message + optional `--` + signature HTML. */
+function buildReplyEmailHtml(message: string, signatureHtml: string | null) {
+  const t = message.trim();
+  const main = escapeHtmlText(t).replace(/\r\n/g, "\n").split("\n").join("<br/>");
+  const body = `<div style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">${main}</div>`;
+  const sig = signatureHtml?.trim();
+  if (!sig) return body;
+  return `${body}<p style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">-- </p><div style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">${sig}</div>`;
+}
+
 function priorityTier(p: number) {
   if (p >= 85) return 95;
   if (p >= 60) return 75;
@@ -145,6 +159,10 @@ export default function InboxClient() {
   const [composeMode, setComposeMode] = useState<"reply" | "note">("reply");
   const [composeBody, setComposeBody] = useState("");
   const [composeBusy, setComposeBusy] = useState(false);
+  const [composeExpanded, setComposeExpanded] = useState(false);
+  const [signatureHtml, setSignatureHtml] = useState<string | null>(null);
+  /** Per-reply signature (editable); initialized from saved signature. */
+  const [replySigDraft, setReplySigDraft] = useState("");
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -187,6 +205,28 @@ export default function InboxClient() {
       }
     })();
   }, [authHeaders]);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch(apiUrl("/users/me/signature"), {
+        cache: "no-store",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && "signatureHtml" in body) {
+        setSignatureHtml(typeof body.signatureHtml === "string" ? body.signatureHtml : null);
+      }
+    })();
+  }, [authHeaders]);
+
+  useEffect(() => {
+    setComposeExpanded(false);
+    setComposeBody("");
+  }, [selectedId]);
+
+  useEffect(() => {
+    setReplySigDraft(signatureHtml ?? "");
+  }, [signatureHtml, selectedId]);
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
@@ -318,13 +358,18 @@ export default function InboxClient() {
     setComposeBusy(true);
     try {
       const path = composeMode === "reply" ? "reply" : "note";
+      const payload =
+        composeMode === "reply"
+          ? { body: buildReplyEmailHtml(composeBody, replySigDraft.trim() ? replySigDraft : null) }
+          : { body: composeBody.trim() };
       const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/${path}`), {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ body: composeBody.trim() }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setComposeBody("");
+        setComposeExpanded(false);
         loadDetail(selectedId);
         loadList(0, false);
       }
@@ -643,7 +688,7 @@ export default function InboxClient() {
               <p className={styles.emptyDetail}>{detailLoading ? "Loading…" : "Select a ticket to view details"}</p>
             </div>
           ) : (
-            <>
+            <div className={styles.detailBodyColumn}>
               <div className={styles.detailScroll}>
                 <div className={styles.detailHead}>
                   <h2>{detail.subject || "(No subject)"}</h2>
@@ -770,38 +815,99 @@ export default function InboxClient() {
                 </label>
               </div>
 
-              <div className={styles.compose}>
-                <div className={styles.tabs}>
-                  <button
-                    type="button"
-                    className={`${styles.tabBtn} ${composeMode === "reply" ? styles.active : ""}`}
-                    onClick={() => setComposeMode("reply")}
-                  >
-                    Reply
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.tabBtn} ${composeMode === "note" ? styles.active : ""}`}
-                    onClick={() => setComposeMode("note")}
-                  >
-                    Internal note
-                  </button>
+              <div className={styles.composeDock}>
+                <div className={styles.compose}>
+                  <div className={styles.tabs}>
+                    <button
+                      type="button"
+                      className={`${styles.tabBtn} ${composeMode === "reply" ? styles.active : ""}`}
+                      onClick={() => {
+                        setComposeMode("reply");
+                        setComposeExpanded(false);
+                      }}
+                    >
+                      Reply
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.tabBtn} ${composeMode === "note" ? styles.active : ""}`}
+                      onClick={() => {
+                        setComposeMode("note");
+                        setComposeExpanded(false);
+                      }}
+                    >
+                      Internal note
+                    </button>
+                  </div>
+                  <textarea
+                    className={!composeExpanded ? styles.composeCollapsed : undefined}
+                    value={composeBody}
+                    onChange={(e) => {
+                      setComposeBody(e.target.value);
+                      if (e.target.value.length > 0) setComposeExpanded(true);
+                    }}
+                    onFocus={() => setComposeExpanded(true)}
+                    placeholder={
+                      composeMode === "reply" ? "Reply…" : "Internal note (not emailed)…"
+                    }
+                    rows={composeExpanded ? 6 : 1}
+                    aria-label={composeMode === "reply" ? "Reply" : "Internal note"}
+                  />
+                  {composeMode === "reply" && composeExpanded ? (
+                    <>
+                      <label className={styles.sigEditLabel} htmlFor="inbox-reply-sig">
+                        Signature (this reply)
+                      </label>
+                      <textarea
+                        id="inbox-reply-sig"
+                        className={styles.sigEditArea}
+                        value={replySigDraft}
+                        onChange={(e) => setReplySigDraft(e.target.value)}
+                        placeholder="Optional — HTML signature appended after --"
+                        spellCheck={false}
+                        aria-label="Email signature for this reply"
+                      />
+                      {replySigDraft.trim() ? (
+                        <div className={styles.replyPreview}>
+                          <div style={{ fontSize: "0.72rem", color: "#6a737b", marginBottom: "0.35rem" }}>
+                            Preview
+                          </div>
+                          <div style={{ marginBottom: "0.35rem", color: "#1b2856", fontSize: "0.88rem" }}>
+                            {composeBody.trim() ? (
+                              composeBody.trim().split("\n").map((line, i) => (
+                                <span key={i}>
+                                  {i > 0 ? <br /> : null}
+                                  {line}
+                                </span>
+                              ))
+                            ) : (
+                              <span style={{ fontStyle: "italic", color: "#9aa0a6" }}>Your message</span>
+                            )}
+                          </div>
+                          <p style={{ margin: "0.25rem 0", fontSize: "0.75rem", color: "#9aa0a6" }}>--</p>
+                          <div
+                            className={styles.replyPreviewMuted}
+                            dangerouslySetInnerHTML={{
+                              __html: sanitizeEmailHtml(replySigDraft),
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {composeExpanded ? (
+                    <button
+                      type="button"
+                      className={styles.sendBtn}
+                      disabled={composeBusy || !composeBody.trim()}
+                      onClick={sendCompose}
+                    >
+                      {composeMode === "reply" ? "Send reply" : "Add note"}
+                    </button>
+                  ) : null}
                 </div>
-                <textarea
-                  value={composeBody}
-                  onChange={(e) => setComposeBody(e.target.value)}
-                  placeholder={composeMode === "reply" ? "Write a reply…" : "Internal note (not emailed)…"}
-                />
-                <button
-                  type="button"
-                  className={styles.sendBtn}
-                  disabled={composeBusy || !composeBody.trim()}
-                  onClick={sendCompose}
-                >
-                  {composeMode === "reply" ? "Send reply" : "Add note"}
-                </button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>

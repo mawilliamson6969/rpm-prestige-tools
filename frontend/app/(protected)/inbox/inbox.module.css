@@ -475,6 +475,15 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+.detailBodyColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .detailBack {
@@ -503,8 +512,9 @@
 
 .detailScroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 0.75rem 1rem 0.5rem;
 }
 
 .emptyDetail {
@@ -596,10 +606,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 1rem 0;
-  padding: 0.75rem 0;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
   border-top: 1px solid #e2e4e8;
-  border-bottom: 1px solid #e2e4e8;
+  background: #fff;
 }
 
 .actionBar label {
@@ -619,17 +630,27 @@
   min-width: 8rem;
 }
 
+.composeDock {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  border-top: 1px solid #d8dde4;
+  box-shadow: 0 -6px 16px rgba(27, 40, 86, 0.09);
+  background: #fff;
+  padding: 0.45rem 0.75rem 0.65rem;
+}
+
 .compose {
-  margin-top: auto;
-  padding: 1rem;
-  border-top: 1px solid #e2e4e8;
-  background: #fafbfc;
+  margin: 0;
+  padding: 0;
+  background: transparent;
 }
 
 .tabs {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.4rem;
 }
 
 .tabBtn {
@@ -656,6 +677,105 @@
   font-size: 0.9rem;
   resize: vertical;
   box-sizing: border-box;
+}
+
+.composeCollapsed {
+  min-height: 2.35rem !important;
+  max-height: 2.35rem;
+  overflow: hidden;
+  resize: none;
+  line-height: 1.35;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.replyPreview {
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed #cfd4dc;
+  font-size: 0.82rem;
+  color: var(--grey);
+}
+
+.replyPreviewMuted {
+  opacity: 0.85;
+  color: #6a737b;
+}
+
+.replyPreviewMuted :global(a) {
+  color: #0098d0;
+}
+
+.signatureSection {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e4e8;
+}
+
+.signatureLabel {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0 0 0.35rem;
+}
+
+.signatureHint {
+  font-size: 0.85rem;
+  color: var(--grey);
+  margin: 0 0 0.75rem;
+}
+
+.signatureEditor {
+  width: 100%;
+  min-height: 140px;
+  padding: 0.65rem;
+  border: 1px solid #cfd4dc;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: ui-monospace, monospace;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.signaturePreviewBox {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  background: #fafbfc;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.signaturePreviewTitle {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey);
+  margin-bottom: 0.5rem;
+}
+
+.sigEditLabel {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--grey);
+  margin: 0.5rem 0 0.25rem;
+}
+
+.sigEditArea {
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+  resize: vertical;
+  background: #fafbfc;
+  color: #6a737b;
+  font-family: ui-monospace, monospace;
 }
 
 .sendBtn {

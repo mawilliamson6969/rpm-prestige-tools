@@ -46,7 +46,14 @@ import {
   getSyncStatus,
   postSyncRun,
 } from "./routes/kpiCacheRoutes.js";
-import { createUser, deleteUser, listUsers, updateUser } from "./routes/users.js";
+import {
+  createUser,
+  deleteUser,
+  getMySignature,
+  listUsers,
+  putMySignature,
+  updateUser,
+} from "./routes/users.js";
 import { getAskHistory, postAsk } from "./routes/ask.js";
 import {
   deleteL10Issue,
@@ -161,6 +168,8 @@ app.post("/auth/change-password", requireAuth, postChangePassword);
 app.get("/auth/microsoft/callback", getMicrosoftCallback);
 app.get("/auth/microsoft/connect", requireAuth, getMicrosoftConnect);
 
+app.get("/users/me/signature", requireAuth, getMySignature);
+app.put("/users/me/signature", requireAuth, putMySignature);
 app.get("/users", requireAuth, requireAdminRole, listUsers);
 app.post("/users", requireAuth, requireAdminRole, createUser);
 app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
