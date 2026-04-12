@@ -168,6 +168,41 @@ export async function ensureCachedDashboardSchema() {
       appfolio_data JSONB NOT NULL,
       synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_deals (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_contacts (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_pipelines (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_tasks (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_processes (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_properties (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS cached_leadsimple_conversations (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS sync_log (
       id SERIAL PRIMARY KEY,
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -1,4 +1,5 @@
 import {
+  getCrm,
   getExecutive,
   getFinance,
   getLeasing,
@@ -114,5 +115,16 @@ export async function getDashboardPortfolio(req, res) {
     if (dbErr(res, e)) return;
     console.error(e);
     res.status(500).json({ error: e?.message || "Could not load portfolio dashboard." });
+  }
+}
+
+export async function getDashboardCrm(req, res) {
+  try {
+    const data = await getCrm(req);
+    res.json(data);
+  } catch (e) {
+    if (dbErr(res, e)) return;
+    console.error(e);
+    res.status(500).json({ error: e?.message || "Could not load CRM dashboard." });
   }
 }

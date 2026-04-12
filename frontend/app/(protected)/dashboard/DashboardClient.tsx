@@ -14,8 +14,9 @@ import FinancePanel from "./FinancePanel";
 import LeasingPanel from "./LeasingPanel";
 import MaintenancePanel from "./MaintenancePanel";
 import PortfolioPanel from "./PortfolioPanel";
+import CrmPanel from "./CrmPanel";
 
-type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio";
+type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio" | "crm";
 
 function buildQuery(params: {
   propertyIds: string[];
@@ -53,6 +54,7 @@ export default function DashboardClient() {
   const [leasing, setLeasing] = useState<Record<string, unknown> | null>(null);
   const [maintenance, setMaintenance] = useState<Record<string, unknown> | null>(null);
   const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
+  const [crm, setCrm] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,19 +117,21 @@ export default function DashboardClient() {
     });
     const h = authHeaders();
     try {
-      const [rEx, rFi, rLe, rMa, rPo] = await Promise.all([
+      const [rEx, rFi, rLe, rMa, rPo, rCr] = await Promise.all([
         fetch(apiUrl(`/dashboard/executive${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/finance${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/leasing${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/maintenance${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/portfolio${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl(`/dashboard/crm${q}`), { cache: "no-store", headers: { ...h } }),
       ]);
-      const [jEx, jFi, jLe, jMa, jPo] = await Promise.all([
+      const [jEx, jFi, jLe, jMa, jPo, jCr] = await Promise.all([
         rEx.json().catch(() => ({})),
         rFi.json().catch(() => ({})),
         rLe.json().catch(() => ({})),
         rMa.json().catch(() => ({})),
         rPo.json().catch(() => ({})),
+        rCr.json().catch(() => ({})),
       ]);
       if (!rEx.ok) throw new Error(typeof jEx.error === "string" ? jEx.error : `Executive ${rEx.status}`);
       if (!rFi.ok) throw new Error(typeof jFi.error === "string" ? jFi.error : `Finance ${rFi.status}`);
@@ -139,12 +143,19 @@ export default function DashboardClient() {
       setLeasing(jLe);
       setMaintenance(jMa);
       setPortfolio(jPo);
+      if (rCr.ok) {
+        setCrm(jCr);
+      } else {
+        setCrm(null);
+        console.warn("CRM dashboard:", typeof jCr.error === "string" ? jCr.error : rCr.status);
+      }
     } catch (e) {
       setExecutive(null);
       setFinance(null);
       setLeasing(null);
       setMaintenance(null);
       setPortfolio(null);
+      setCrm(null);
       setError(e instanceof Error ? e.message : "Failed to load dashboard.");
     } finally {
       setLoading(false);
@@ -168,6 +179,7 @@ export default function DashboardClient() {
       maintenance: "Maintenance",
       finance: "Finance",
       portfolio: "Portfolio",
+      crm: "CRM",
     };
     return m[tab];
   }, [tab]);
@@ -283,6 +295,7 @@ export default function DashboardClient() {
             ["maintenance", "Maintenance"],
             ["finance", "Finance"],
             ["portfolio", "Portfolio"],
+            ["crm", "CRM"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -411,6 +424,11 @@ export default function DashboardClient() {
         {tab === "portfolio" && (
           <div className={styles.tabPanel}>
             <PortfolioPanel portfolio={portfolio as never} loading={loading} error={error} />
+          </div>
+        )}
+        {tab === "crm" && (
+          <div className={styles.tabPanel}>
+            <CrmPanel crm={crm as never} loading={loading} error={error} />
           </div>
         )}
       </main>

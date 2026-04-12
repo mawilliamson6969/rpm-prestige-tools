@@ -82,6 +82,43 @@ function rowData(r) {
   return r.appfolio_data ?? r;
 }
 
+/** LeadSimple JSON timestamps / booleans (cached_leadsimple_* tables). */
+function lsParseTimeMs(val) {
+  if (val == null) return null;
+  if (typeof val === "number") {
+    if (val > 1e12) return val;
+    if (val > 1e9) return val * 1000;
+    return val < 1e11 ? val * 1000 : val;
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, mo, d] = s.split("-").map((x) => parseInt(x, 10));
+    return new Date(y, mo - 1, d).getTime();
+  }
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    return n > 1e12 ? n : n * 1000;
+  }
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : t;
+}
+
+function lsStartOfLocalTodayMs() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function lsIsCompleted(d) {
+  const o = typeof d === "object" && d ? d : {};
+  const c = o.completed ?? o.Completed;
+  if (c === true || c === 1) return true;
+  if (c === false || c === 0) return false;
+  const s = String(c ?? "").toLowerCase();
+  return s === "true" || s === "1" || s === "yes";
+}
+
 /** Rent roll `status` values (AppFolio) — occupancy uses cached_rent_roll, not cached_units. */
 const RR_CURRENT = "Current";
 const RR_VACANT = "Vacant-Unrented";
@@ -718,6 +755,22 @@ export async function getExecutive(req) {
   const { rows: boomCountRows } = await pool.query(`SELECT COUNT(*)::int AS c FROM cached_boom_applications`);
   const screeningsTotal = boomCountRows[0]?.c ?? 0;
 
+  const { rows: lsTaskExecRows } = await pool.query(`SELECT appfolio_data FROM cached_leadsimple_tasks`);
+  const { rows: lsDealExecRows } = await pool.query(`SELECT appfolio_data FROM cached_leadsimple_deals`);
+  const today0 = lsStartOfLocalTodayMs();
+  let leadSimpleOverdueTasks = 0;
+  for (const r of lsTaskExecRows) {
+    const d = rowData(r);
+    if (lsIsCompleted(d)) continue;
+    const due = lsParseTimeMs(d.due_date ?? d.dueDate);
+    if (due != null && due < today0) leadSimpleOverdueTasks += 1;
+  }
+  let leadSimpleOpenDeals = 0;
+  for (const r of lsDealExecRows) {
+    const d = rowData(r);
+    if (String(d.status ?? "").trim().toLowerCase() === "open") leadSimpleOpenDeals += 1;
+  }
+
   const { rows: gcRows } = await pool.query(
     `SELECT appfolio_data FROM cached_guest_cards ORDER BY id`
   );
@@ -763,6 +816,8 @@ export async function getExecutive(req) {
     onNoticeUnits,
     activeLeads,
     screeningsTotal,
+    leadSimpleOverdueTasks,
+    leadSimpleOpenDeals,
     filters: { propertyIds },
   };
 }
@@ -1995,5 +2050,133 @@ export async function getPortfolio(req) {
     occupancyByProperty: rrAgg.byProperty,
     propertyDirectory,
     filters: { propertyIds, ownerIds },
+  };
+}
+
+/** GET /dashboard/crm — LeadSimple aggregates (company-wide; ignores property filters). */
+export async function getCrm(_req) {
+  const pool = getPool();
+  const [
+    { rows: dealRows },
+    { rows: taskRows },
+    { rows: contactRows },
+    { rows: processRows },
+    { rows: convRows },
+  ] = await Promise.all([
+    pool.query(`SELECT appfolio_data FROM cached_leadsimple_deals`),
+    pool.query(`SELECT appfolio_data FROM cached_leadsimple_tasks`),
+    pool.query(`SELECT appfolio_data FROM cached_leadsimple_contacts`),
+    pool.query(`SELECT appfolio_data FROM cached_leadsimple_processes`),
+    pool.query(`SELECT appfolio_data FROM cached_leadsimple_conversations`),
+  ]);
+
+  const deals = dealRows.map((r) => rowData(r));
+  const tasks = taskRows.map((r) => rowData(r));
+  const contacts = contactRows.map((r) => rowData(r));
+  const processes = processRows.map((r) => rowData(r));
+  const conversations = convRows.map((r) => rowData(r));
+
+  const byDealStatus = { open: 0, won: 0, lost: 0, cancelled: 0 };
+  let dealOther = 0;
+  for (const d of deals) {
+    let k = String(d.status ?? "").trim().toLowerCase();
+    if (k === "canceled") k = "cancelled";
+    if (k in byDealStatus) byDealStatus[k] += 1;
+    else dealOther += 1;
+  }
+  const byStatusOut = { ...byDealStatus };
+  if (dealOther > 0) byStatusOut.other = dealOther;
+
+  const recentDeals = [...deals]
+    .sort((a, b) => (lsParseTimeMs(b.updated_at ?? b.updatedAt) ?? 0) - (lsParseTimeMs(a.updated_at ?? a.updatedAt) ?? 0))
+    .slice(0, 20);
+
+  const todayStart = lsStartOfLocalTodayMs();
+  const weekEnd = todayStart + 7 * 86400000;
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  let overdue = 0;
+  let dueThisWeek = 0;
+  let completedThisMonth = 0;
+  for (const d of tasks) {
+    const due = lsParseTimeMs(d.due_date ?? d.dueDate);
+    if (lsIsCompleted(d)) {
+      const doneAt = lsParseTimeMs(d.completed_at ?? d.completedAt) ?? lsParseTimeMs(d.updated_at ?? d.updatedAt);
+      if (doneAt != null && doneAt >= monthStart) completedThisMonth += 1;
+      continue;
+    }
+    if (due != null && due < todayStart) overdue += 1;
+    if (due != null && due >= todayStart && due < weekEnd) dueThisWeek += 1;
+  }
+
+  const incompleteTasks = tasks.filter((d) => !lsIsCompleted(d));
+  const recentTasks = [...incompleteTasks]
+    .sort((a, b) => {
+      const da = lsParseTimeMs(a.due_date ?? a.dueDate);
+      const db = lsParseTimeMs(b.due_date ?? b.dueDate);
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da - db;
+    })
+    .slice(0, 20);
+
+  const byType = { owner: 0, tenant: 0, vendor: 0 };
+  let contactOther = 0;
+  for (const c of contacts) {
+    const k = String(c.contact_type ?? c.contactType ?? "").trim().toLowerCase();
+    if (k in byType) byType[k] += 1;
+    else contactOther += 1;
+  }
+  const byTypeOut = { ...byType };
+  if (contactOther > 0) byTypeOut.other = contactOther;
+
+  const byProcStatus = { open: 0, completed: 0, cancelled: 0 };
+  let procOther = 0;
+  for (const p of processes) {
+    const k = String(p.status ?? "").trim().toLowerCase();
+    if (k in byProcStatus) byProcStatus[k] += 1;
+    else procOther += 1;
+  }
+  const byProcOut = { ...byProcStatus };
+  if (procOther > 0) byProcOut.other = procOther;
+
+  const openProcesses = processes.filter((p) => String(p.status ?? "").trim().toLowerCase() === "open");
+  const recentProcesses = [...openProcesses]
+    .sort((a, b) => (lsParseTimeMs(b.updated_at ?? b.updatedAt) ?? 0) - (lsParseTimeMs(a.updated_at ?? a.updatedAt) ?? 0))
+    .slice(0, 20);
+
+  let convOpen = 0;
+  for (const c of conversations) {
+    if (String(c.status ?? "").trim().toLowerCase() === "open") convOpen += 1;
+  }
+
+  return {
+    deals: {
+      total: deals.length,
+      byStatus: byStatusOut,
+      recentDeals,
+    },
+    tasks: {
+      total: tasks.length,
+      overdue,
+      dueThisWeek,
+      completedThisMonth,
+      recentTasks,
+    },
+    contacts: {
+      total: contacts.length,
+      byType: byTypeOut,
+    },
+    processes: {
+      total: processes.length,
+      byStatus: byProcOut,
+      recentProcesses,
+    },
+    conversations: {
+      total: conversations.length,
+      open: convOpen,
+    },
   };
 }

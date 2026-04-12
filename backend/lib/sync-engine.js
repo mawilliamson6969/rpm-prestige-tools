@@ -9,6 +9,7 @@ import {
 } from "./appfolio.js";
 import { getPool } from "./db.js";
 import { runBoomSync } from "./boom-sync.js";
+import { runLeadSimpleSync } from "./leadsimple-sync.js";
 import { runRentEngineSync } from "./rentengine-sync.js";
 
 const MIN_GAP_MS = 2500;
@@ -307,6 +308,12 @@ async function runSyncEndpointsForId(syncId, triggeredBy) {
       await runBoomSync(triggeredBy);
     } catch (boomErr) {
       console.error("[sync] boom failed:", boomErr?.message || boomErr);
+    }
+
+    try {
+      await runLeadSimpleSync(triggeredBy);
+    } catch (lsErr) {
+      console.error("[sync] leadsimple failed:", lsErr?.message || lsErr);
     }
 
     return { syncId, endpointsSynced, totalRows, errors: syncErrors };

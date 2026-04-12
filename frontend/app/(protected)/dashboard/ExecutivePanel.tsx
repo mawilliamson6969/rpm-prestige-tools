@@ -51,6 +51,10 @@ type Exec = {
   activeLeads: number;
   /** Count of Boom screening applications in cache (0 if not synced). */
   screeningsTotal?: number;
+  /** LeadSimple CRM: incomplete tasks with due date before today. */
+  leadSimpleOverdueTasks?: number;
+  /** LeadSimple CRM: deals with status open. */
+  leadSimpleOpenDeals?: number;
 };
 
 type FinanceRow = Record<string, unknown> & { _period?: string };
@@ -464,6 +468,20 @@ export default function ExecutivePanel(props: {
             <div className={styles.kpiSub}>Applications synced from BoomScreen</div>
           </div>
         ) : null}
+
+        <div className={styles.kpiCard}>
+          <div className={styles.kpiLabel}>LeadSimple open deals</div>
+          <div className={styles.kpiValue}>{executive.leadSimpleOpenDeals ?? 0}</div>
+          <div className={styles.kpiSub}>Deals with status open (cached)</div>
+        </div>
+
+        <div className={styles.kpiCard}>
+          <div className={styles.kpiLabel}>LeadSimple overdue tasks</div>
+          <div className={styles.kpiValue} style={{ color: (executive.leadSimpleOverdueTasks ?? 0) > 0 ? RED : undefined }}>
+            {executive.leadSimpleOverdueTasks ?? 0}
+          </div>
+          <div className={styles.kpiSub}>Incomplete with due date before today</div>
+        </div>
 
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Vacant units</div>

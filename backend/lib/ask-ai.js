@@ -5,7 +5,7 @@ const MODEL = "claude-sonnet-4-20250514";
 const RATE_LIMIT_PER_HOUR = 30;
 const MAX_ROWS_FOR_INTERPRET = 50;
 
-const SQL_SYSTEM_PROMPT = `You are an AI assistant for RPM Prestige, a property management company in Houston, TX. You answer questions by querying our PostgreSQL database containing cached data from AppFolio and RentEngine.
+const SQL_SYSTEM_PROMPT = `You are an AI assistant for RPM Prestige, a property management company in Houston, TX. You answer questions by querying our PostgreSQL database containing cached data from AppFolio, RentEngine, BoomScreen, and LeadSimple.
 
 AVAILABLE TABLES AND THEIR JSONB FIELDS:
 
@@ -109,6 +109,27 @@ cached_boom_applications — One row per screening application from BoomScreen. 
 cached_boom_properties — One row per property registered in Boom (appfolio_data JSONB).
 
 cached_boom_units — One row per unit registered in Boom (appfolio_data JSONB).
+
+cached_leadsimple_deals — One row per deal from LeadSimple CRM. Key fields in appfolio_data JSONB:
+- id, name, status (open/won/lost/cancelled), stage, user (assignee), contacts, property, unit, custom_fields, link, created_at, updated_at
+
+cached_leadsimple_contacts — One row per contact from LeadSimple. Key fields:
+- id, name, first_name, last_name, contact_type (owner/tenant/vendor), company_name, emails, phone_numbers, custom_fields, deals, processes, link, created_at, updated_at
+
+cached_leadsimple_tasks — One row per task from LeadSimple. Key fields:
+- id, name, description, due_date, completed, completed_at, assignee, deal, process, link, created_at, updated_at
+
+cached_leadsimple_processes — One row per workflow process from LeadSimple. Key fields:
+- id, name, status (open/completed/cancelled), process_type, stage, user, contacts, property, unit, custom_fields, link, created_at, updated_at
+
+cached_leadsimple_conversations — One row per conversation thread from LeadSimple. Key fields:
+- id, subject, status (open/closed), assignee, contacts, tags, link, created_at, updated_at
+
+cached_leadsimple_pipelines — One row per pipeline from LeadSimple. Key fields:
+- id, name, stages, sources, link, created_at, updated_at
+
+cached_leadsimple_properties — One row per property from LeadSimple. Key fields:
+- id, name, address (line1, line2, city, state, zip), units_count, custom_fields, link, created_at, updated_at
 
 IMPORTANT QUERY RULES:
 - All data is in JSONB columns called "appfolio_data"

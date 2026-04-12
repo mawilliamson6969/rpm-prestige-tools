@@ -37,6 +37,7 @@ import {
   postOwnerTermination,
 } from "./routes/ownerTermination.js";
 import {
+  getDashboardCrm,
   getDashboardExecutive,
   getDashboardFinance,
   getDashboardLeasing,
@@ -228,6 +229,7 @@ app.get("/dashboard/leasing", requireAuth, getDashboardLeasing);
 app.get("/dashboard/maintenance", requireAuth, getDashboardMaintenance);
 app.get("/dashboard/finance", requireAuth, getDashboardFinance);
 app.get("/dashboard/portfolio", requireAuth, getDashboardPortfolio);
+app.get("/dashboard/crm", requireAuth, getDashboardCrm);
 
 app.post("/forms/owner-termination", postOwnerTermination);
 app.get("/forms/owner-termination/export.csv", requireAuth, requireAdminRole, exportOwnerTerminationsCsv);
