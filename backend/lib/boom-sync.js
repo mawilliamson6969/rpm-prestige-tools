@@ -41,6 +41,7 @@ async function insertJsonRows(client, tableName, rows) {
 function normalizeList(json) {
   if (Array.isArray(json)) return json;
   if (json && typeof json === "object") {
+    if (Array.isArray(json.items)) return json.items;
     if (Array.isArray(json.data)) return json.data;
     if (Array.isArray(json.results)) return json.results;
     if (Array.isArray(json.applications)) return json.applications;
@@ -148,7 +149,7 @@ async function boomFetch(pathWithQuery, accessKey, secretKey, opts = {}) {
   return json;
 }
 
-async function fetchAllPages(accessKey, secretKey, path) {
+async function fetchAllPages(accessKey, secretKey, path, logLabel) {
   let page = 1;
   const out = [];
   for (;;) {
@@ -156,8 +157,14 @@ async function fetchAllPages(accessKey, secretKey, path) {
     const pathWithQuery = `${path}${sep}page=${page}&per_page=${PER_PAGE}`;
     const json = await boomFetch(pathWithQuery, accessKey, secretKey);
     const batch = normalizeList(json);
+    console.log(`[sync] boom ${logLabel} page ${page}: ${batch.length} items`);
     out.push(...batch);
-    if (batch.length < PER_PAGE) break;
+
+    const lastPage = json && typeof json === "object" && json.last_page === true;
+    const hasMoreFalse = json && typeof json === "object" && json.has_more === false;
+    const shortPage = batch.length < PER_PAGE;
+    if (lastPage || hasMoreFalse || shortPage) break;
+
     page += 1;
   }
   return out;
@@ -193,7 +200,7 @@ export async function runBoomSync(triggeredBy) {
   }
 
   try {
-    applications = await fetchAllPages(accessKey, secretKey, "/applications");
+    applications = await fetchAllPages(accessKey, secretKey, "/applications", "applications");
     console.log(`[sync] boom applications: ${applications.length} rows cached`);
   } catch (e) {
     const msg = e?.message || String(e);
@@ -204,7 +211,7 @@ export async function runBoomSync(triggeredBy) {
   }
 
   try {
-    properties = await fetchAllPages(accessKey, secretKey, "/properties");
+    properties = await fetchAllPages(accessKey, secretKey, "/properties", "properties");
     console.log(`[sync] boom properties: ${properties.length} rows cached`);
   } catch (e) {
     const msg = e?.message || String(e);
@@ -213,7 +220,7 @@ export async function runBoomSync(triggeredBy) {
   }
 
   try {
-    units = await fetchAllPages(accessKey, secretKey, "/units");
+    units = await fetchAllPages(accessKey, secretKey, "/units", "units");
     console.log(`[sync] boom units: ${units.length} rows cached`);
   } catch (e) {
     const msg = e?.message || String(e);
