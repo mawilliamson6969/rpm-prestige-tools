@@ -684,12 +684,12 @@ export default function InboxClient() {
             </button>
           </div>
           {!selectedId || !detail ? (
-            <div className={styles.detailScroll}>
+            <div className={styles.detailScrollEmpty}>
               <p className={styles.emptyDetail}>{detailLoading ? "Loading…" : "Select a ticket to view details"}</p>
             </div>
           ) : (
             <div className={styles.detailBodyColumn}>
-              <div className={styles.detailScroll}>
+              <div className={styles.detailHeaderSection}>
                 <div className={styles.detailHead}>
                   <h2>{detail.subject || "(No subject)"}</h2>
                   <p className={styles.metaLine}>
@@ -726,30 +726,7 @@ export default function InboxClient() {
                   </div>
                 ) : null}
 
-                <div
-                  className={styles.bodyHtml}
-                  dangerouslySetInnerHTML={{
-                    __html: sanitizeEmailHtml(detail.body_html || "<p>(No body)</p>"),
-                  }}
-                />
-
-                {responses.length > 0 ? (
-                  <div className={styles.threadBlock}>
-                    <h3 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>Thread & notes</h3>
-                    {responses.map((r) => (
-                      <div key={r.id} className={styles.threadItem}>
-                        <div className={styles.threadMeta}>
-                          {r.response_type === "reply" ? "Reply" : "Note"} · {r.responded_by_name || "—"} ·{" "}
-                          {new Date(r.created_at).toLocaleString()}
-                        </div>
-                        <div>{r.body}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className={styles.actionBar}>
+                <div className={styles.actionBar}>
                 <label>
                   Status
                   <select
@@ -813,6 +790,31 @@ export default function InboxClient() {
                     ))}
                   </select>
                 </label>
+                </div>
+              </div>
+
+              <div className={styles.detailEmailScroll}>
+                <div
+                  className={styles.bodyHtml}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeEmailHtml(detail.body_html || "<p>(No body)</p>"),
+                  }}
+                />
+
+                {responses.length > 0 ? (
+                  <div className={styles.threadBlock}>
+                    <h3 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>Thread & notes</h3>
+                    {responses.map((r) => (
+                      <div key={r.id} className={styles.threadItem}>
+                        <div className={styles.threadMeta}>
+                          {r.response_type === "reply" ? "Reply" : "Note"} · {r.responded_by_name || "—"} ·{" "}
+                          {new Date(r.created_at).toLocaleString()}
+                        </div>
+                        <div>{r.body}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <div className={styles.composeDock}>
