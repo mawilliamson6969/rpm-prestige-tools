@@ -7,6 +7,8 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -29,8 +31,45 @@ const STATUS_DONUT = {
   Renewed: GREEN,
 };
 
+const SOURCE_PIE_COLORS = [
+  "#0098d0",
+  "#1b2856",
+  "#2d8b4e",
+  "#c5960c",
+  "#b32317",
+  "#5c6bc0",
+  "#00897b",
+  "#795548",
+  "#6a737b",
+  "#e65100",
+  "#4527a0",
+  "#607d8b",
+];
+
 type LeasingPayload = {
   dataSources?: { appfolio?: boolean; rentengine?: boolean; boom?: boolean };
+  rentEngine?: {
+    hasData?: boolean;
+    activeLeadsTotal?: number;
+    prescreenedRatePercent?: number;
+    newLeadsThisMonth?: number;
+    newLeadsLast30Days?: number;
+    leadToLeaseConversionPercent?: number;
+    chartSourcePie?: { name: string; value: number }[];
+    chartStatusBar?: { status: string; count: number }[];
+    weeklyVolume?: { weekLabel: string; count: number }[];
+    prospects?: {
+      id: number | null;
+      name: string;
+      email: string;
+      phone: string;
+      status: string;
+      source: string;
+      unitLabel: string;
+      prescreened: boolean;
+      createdAt: string;
+    }[];
+  };
   vacancy?: {
     vacantUnits: number;
     onNotice: number;
@@ -124,6 +163,16 @@ type VSort =
 type ExpSort = "tenantName" | "propertyName" | "leaseExpires" | "daysUntilExpiration" | "rent" | "status";
 type AppSort = "applicants" | "propertyName" | "status" | "received" | "leadSource";
 
+type ProspectSort =
+  | "name"
+  | "email"
+  | "phone"
+  | "status"
+  | "source"
+  | "unitLabel"
+  | "prescreened"
+  | "createdAt";
+
 export default function LeasingPanel(props: {
   leasing: LeasingPayload | null;
   loading: boolean;
@@ -142,10 +191,15 @@ export default function LeasingPanel(props: {
   const [appSort, setAppSort] = useState<AppSort>("received");
   const [appDir, setAppDir] = useState<"asc" | "desc">("desc");
 
+  const [prospectSearch, setProspectSearch] = useState("");
+  const [prospectSort, setProspectSort] = useState<ProspectSort>("createdAt");
+  const [prospectDir, setProspectDir] = useState<"asc" | "desc">("desc");
+
   const vac = leasing?.vacancy;
   const apps = leasing?.applications;
   const le = leasing?.leaseExpirations;
   const rentengine = leasing?.dataSources?.rentengine;
+  const re = leasing?.rentEngine;
 
   const donutData = useMemo(() => {
     const b = le?.byStatus ?? {};
@@ -248,6 +302,40 @@ export default function LeasingPanel(props: {
     return list;
   }, [apps?.recentApplications, appSearch, appSort, appDir]);
 
+  const filteredProspects = useMemo(() => {
+    const rows = [...(re?.prospects ?? [])];
+    const q = prospectSearch.trim().toLowerCase();
+    const list = q
+      ? rows.filter((r) => {
+          const hay = `${r.name} ${r.email} ${r.phone} ${r.status} ${r.source} ${r.unitLabel}`.toLowerCase();
+          return hay.includes(q);
+        })
+      : rows;
+    const dir = prospectDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => {
+      switch (prospectSort) {
+        case "name":
+          return dir * a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        case "email":
+          return dir * a.email.localeCompare(b.email);
+        case "phone":
+          return dir * a.phone.localeCompare(b.phone);
+        case "status":
+          return dir * a.status.localeCompare(b.status);
+        case "source":
+          return dir * a.source.localeCompare(b.source);
+        case "unitLabel":
+          return dir * a.unitLabel.localeCompare(b.unitLabel);
+        case "prescreened":
+          return dir * (Number(a.prescreened) - Number(b.prescreened));
+        case "createdAt":
+          return dir * a.createdAt.localeCompare(b.createdAt);
+        default:
+          return 0;
+      }
+    });
+  }, [re?.prospects, prospectSearch, prospectSort, prospectDir]);
+
   const toggleVacSort = (k: VSort) => {
     if (vacSort === k) setVacDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -269,6 +357,14 @@ export default function LeasingPanel(props: {
     else {
       setAppSort(k);
       setAppDir("desc");
+    }
+  };
+
+  const toggleProspectSort = (k: ProspectSort) => {
+    if (prospectSort === k) setProspectDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setProspectSort(k);
+      setProspectDir(k === "createdAt" ? "desc" : "asc");
     }
   };
 
@@ -306,11 +402,183 @@ export default function LeasingPanel(props: {
 
   return (
     <>
-      <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
-        Vacancy and applications from cached rent roll and rental applications; lease renewals from lease
-        expirations. Property filter above applies.
+      <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "0.75rem" }}>
+        AppFolio: vacancy, applications, and lease expirations from cached sync (property filter applies).
+        RentEngine: prospects and funnel metrics when synced.
       </p>
 
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "0.75rem 1.25rem",
+          fontSize: "0.82rem",
+          marginBottom: "1.25rem",
+          padding: "0.6rem 0.85rem",
+          background: "#fafbfc",
+          border: "1px solid #e8eaed",
+          borderRadius: 8,
+        }}
+      >
+        <span style={{ fontWeight: 700, color: NAVY }}>Data sources</span>
+        <span style={{ color: leasing?.dataSources?.appfolio ? GREEN : GREY }}>
+          AppFolio {leasing?.dataSources?.appfolio ? "✓" : "○"}
+        </span>
+        <span style={{ color: rentengine ? GREEN : GREY }}>RentEngine {rentengine ? "✓" : "○"}</span>
+        <span style={{ color: GREY }}>Boom ○</span>
+      </div>
+
+      {re?.hasData ? (
+        <>
+          <h3 className={styles.sectionHeadingRent}>RentEngine — leads &amp; funnel</h3>
+          <div className={styles.grid4}>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Active leads</div>
+              <div className={styles.kpiValue} style={{ color: NAVY }}>
+                {re.activeLeadsTotal ?? 0}
+              </div>
+              <div className={styles.kpiSub}>Prospects in cache (last 6 months sync)</div>
+            </div>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>New leads (this month)</div>
+              <div className={styles.kpiValue} style={{ color: BLUE }}>
+                {re.newLeadsThisMonth ?? 0}
+              </div>
+              <div className={styles.kpiSub}>{re.newLeadsLast30Days ?? 0} in last 30 days</div>
+            </div>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Prescreened rate</div>
+              <div className={styles.kpiValue} style={{ color: GREEN }}>
+                {(re.prescreenedRatePercent ?? 0).toFixed(1)}%
+              </div>
+              <div className={styles.kpiSub}>Share prescreened</div>
+            </div>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Lead → lease (est.)</div>
+              <div className={styles.kpiValue} style={{ color: AMBER }}>
+                {(re.leadToLeaseConversionPercent ?? 0).toFixed(1)}%
+              </div>
+              <div className={styles.kpiSub}>Statuses indicating lease / placed</div>
+            </div>
+          </div>
+
+          <div className={styles.chartRow}>
+            <div className={styles.chartCard}>
+              <h3 className={styles.chartTitle}>Lead sources</h3>
+              {(re.chartSourcePie?.length ?? 0) === 0 ? (
+                <div className={styles.chartPlaceholder}>No source data.</div>
+              ) : (
+                <div style={{ width: "100%", height: 280 }}>
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={re.chartSourcePie ?? []}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={88}
+                        paddingAngle={2}
+                      >
+                        {(re.chartSourcePie ?? []).map((e, i) => (
+                          <Cell key={`${e.name}-${i}`} fill={SOURCE_PIE_COLORS[i % SOURCE_PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+            <div className={styles.chartCard}>
+              <h3 className={styles.chartTitle}>Leads by status</h3>
+              {(re.chartStatusBar?.length ?? 0) === 0 ? (
+                <div className={styles.chartPlaceholder}>No status data.</div>
+              ) : (
+                <div style={{ width: "100%", height: 280 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={re.chartStatusBar ?? []} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e8eaee" />
+                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} stroke={GREY} />
+                      <YAxis type="category" dataKey="status" width={120} tick={{ fontSize: 10 }} stroke={GREY} />
+                      <Tooltip />
+                      <Bar dataKey="count" name="Leads" fill={BLUE} radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.chartCard} style={{ marginBottom: "1.25rem" }}>
+            <h3 className={styles.chartTitle}>Lead volume (weekly, last 13 weeks)</h3>
+            <div style={{ width: "100%", height: 280 }}>
+              <ResponsiveContainer>
+                <LineChart data={re.weeklyVolume ?? []} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e8eaee" />
+                  <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} stroke={GREY} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke={GREY} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" name="New leads" stroke={BLUE} strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className={styles.tableCard} style={{ marginBottom: "1.25rem" }}>
+            <h3 className={styles.chartTitle}>Prospects (RentEngine)</h3>
+            <div className={styles.tableSearch}>
+              <input
+                type="search"
+                placeholder="Search name, email, phone, status, source…"
+                value={prospectSearch}
+                onChange={(e) => setProspectSearch(e.target.value)}
+                aria-label="Search prospects"
+              />
+            </div>
+            <div className={`${styles.tableWrap} ${styles.maintTableDesktop}`}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleProspectSort("name")}>Name</th>
+                    <th onClick={() => toggleProspectSort("email")}>Email</th>
+                    <th onClick={() => toggleProspectSort("phone")}>Phone</th>
+                    <th onClick={() => toggleProspectSort("status")}>Status</th>
+                    <th onClick={() => toggleProspectSort("source")}>Source</th>
+                    <th onClick={() => toggleProspectSort("unitLabel")}>Unit</th>
+                    <th onClick={() => toggleProspectSort("prescreened")}>Prescreened</th>
+                    <th onClick={() => toggleProspectSort("createdAt")}>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProspects.map((r) => (
+                    <tr key={`${r.id ?? "noid"}-${r.email}-${r.createdAt}`}>
+                      <td>{r.name}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone}</td>
+                      <td>{r.status}</td>
+                      <td>{r.source}</td>
+                      <td>{r.unitLabel}</td>
+                      <td>{r.prescreened ? "Yes" : "No"}</td>
+                      <td>{r.createdAt || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className={styles.leasingInfoBanner} role="status" style={{ marginBottom: "1.25rem" }}>
+          RentEngine prospect data is not loaded yet. Set <code className={styles.codeInline}>RENTENGINE_API_KEY</code>{" "}
+          and run a sync to populate leads and charts.
+        </div>
+      )}
+
+      <h3 className={styles.sectionHeadingRent}>AppFolio — occupancy &amp; leases</h3>
       <div className={styles.grid4}>
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Vacant units</div>
@@ -343,13 +611,6 @@ export default function LeasingPanel(props: {
           <div className={styles.kpiSub}>Renewed ÷ (Renewed + Not Eligible)</div>
         </div>
       </div>
-
-      {!rentengine ? (
-        <div className={styles.leasingInfoBanner} role="status">
-          Lead and showing data will be available when RentEngine is connected. Currently showing AppFolio
-          application and lease data only.
-        </div>
-      ) : null}
 
       <div className={styles.chartRow}>
         <div className={styles.chartCard}>

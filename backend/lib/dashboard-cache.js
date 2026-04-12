@@ -712,16 +712,23 @@ export async function getExecutive(req) {
   );
   const delKpis = aggregateDelinquencyFromRows(delRows, propertyIds);
 
+  const { rows: reLeadRowsExec } = await pool.query(`SELECT COUNT(*)::int AS c FROM cached_rentengine_leads`);
+  const rentEngineLeadCount = reLeadRowsExec[0]?.c ?? 0;
+
   const { rows: gcRows } = await pool.query(
     `SELECT appfolio_data FROM cached_guest_cards ORDER BY id`
   );
   let activeLeads = 0;
-  for (const r of gcRows) {
-    const d = rowData(r);
-    if (!matchesProperty(d, propertyIds)) continue;
-    const st = String(d.status ?? d.Status ?? d.stage ?? "").toLowerCase();
-    if (st && /\b(lost|closed|cancel|duplicate)\b/.test(st)) continue;
-    activeLeads += 1;
+  if (rentEngineLeadCount > 0) {
+    activeLeads = rentEngineLeadCount;
+  } else {
+    for (const r of gcRows) {
+      const d = rowData(r);
+      if (!matchesProperty(d, propertyIds)) continue;
+      const st = String(d.status ?? d.Status ?? d.stage ?? "").toLowerCase();
+      if (st && /\b(lost|closed|cancel|duplicate)\b/.test(st)) continue;
+      activeLeads += 1;
+    }
   }
 
   return {
@@ -793,6 +800,153 @@ function leasingParseMonthLabelToTime(label) {
   return Number.isNaN(t) ? null : t;
 }
 
+function reParseCreatedAtMs(d) {
+  const raw = d.created_at ?? d.createdAt;
+  if (raw == null) return null;
+  const t = Date.parse(String(raw));
+  return Number.isNaN(t) ? null : t;
+}
+
+function reStatusLeasedLike(status) {
+  const x = String(status ?? "").toLowerCase();
+  if (!x) return false;
+  return (
+    /\b(leased|moved in|placed|approved|closed|converted|tenant|occupied)\b/.test(x) ||
+    x.includes("lease signed") ||
+    x.includes("moved-in")
+  );
+}
+
+function buildRentEnginePayload(reLeadRows, reUnitRows) {
+  if (!reLeadRows.length) {
+    return { hasData: false };
+  }
+  const prospects = reLeadRows.map((r) => rowData(r));
+  const unitMap = new Map();
+  for (const r of reUnitRows) {
+    const d = rowData(r);
+    const uid = d.id ?? d.unit_id ?? d.unitId;
+    if (uid != null) unitMap.set(Number(uid), d);
+  }
+  const byStatus = {};
+  const bySource = {};
+  let prescreenedYes = 0;
+  const now = new Date();
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).getTime();
+  const thirtyDaysAgo = Date.now() - 30 * 86400000;
+  let newThisMonth = 0;
+  let newLast30 = 0;
+  let leasedLike = 0;
+
+  for (const d of prospects) {
+    const st = String(d.status ?? "Unknown").trim() || "Unknown";
+    byStatus[st] = (byStatus[st] || 0) + 1;
+    const src = String(d.source ?? "Unknown").trim() || "Unknown";
+    bySource[src] = (bySource[src] || 0) + 1;
+    if (d.prescreened === true) prescreenedYes += 1;
+    const ct = reParseCreatedAtMs(d);
+    if (ct != null) {
+      if (ct >= startOfMonth) newThisMonth += 1;
+      if (ct >= thirtyDaysAgo) newLast30 += 1;
+    }
+    if (reStatusLeasedLike(d.status)) leasedLike += 1;
+  }
+
+  const n = prospects.length;
+  const prescreenedRatePercent = n > 0 ? Math.round((prescreenedYes / n) * 10000) / 100 : 0;
+  const leadToLeaseConversionPercent =
+    n > 0 ? Math.round((leasedLike / n) * 10000) / 100 : 0;
+
+  const W = 7 * 86400000;
+  const nowMs = Date.now();
+  function startOfUtcWeekMonday(t) {
+    const dd = new Date(t);
+    const day = dd.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    dd.setUTCDate(dd.getUTCDate() + diff);
+    dd.setUTCHours(0, 0, 0, 0);
+    return dd.getTime();
+  }
+  const currentWeekStart = startOfUtcWeekMonday(nowMs);
+  const weeklyVolume = [];
+  for (let i = 12; i >= 0; i--) {
+    const weekStart = currentWeekStart - i * W;
+    const weekEnd = weekStart + W;
+    let cnt = 0;
+    for (const d of prospects) {
+      const ct = reParseCreatedAtMs(d);
+      if (ct != null && ct >= weekStart && ct < weekEnd) cnt += 1;
+    }
+    const wd = new Date(weekStart);
+    const weekLabel = wd.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    weeklyVolume.push({ weekLabel, count: cnt });
+  }
+
+  const chartSourcePie = Object.entries(bySource)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+  const chartStatusBar = Object.entries(byStatus)
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const prospectRows = prospects
+    .map((d) => {
+      const uid = d.unit_of_interest ?? d.unitOfInterest;
+      let unitLabel = "—";
+      if (uid != null) {
+        const u = unitMap.get(Number(uid));
+        if (u) {
+          unitLabel =
+            String(
+              u.unit_name ??
+                u.name ??
+                u.address ??
+                u.street ??
+                u.full_address ??
+                u.unit ??
+                uid
+            ).trim() || String(uid);
+        } else unitLabel = String(uid);
+      }
+      const createdRaw = d.created_at ?? d.createdAt;
+      let createdAt = "";
+      if (createdRaw) {
+        try {
+          createdAt = new Date(createdRaw).toISOString().slice(0, 10);
+        } catch {
+          createdAt = String(createdRaw).slice(0, 10);
+        }
+      }
+      return {
+        id: d.id ?? null,
+        name: String(d.name ?? "").trim() || "—",
+        email: String(d.email ?? "").trim() || "—",
+        phone: String(d.phone ?? "").trim() || "—",
+        status: String(d.status ?? "").trim() || "—",
+        source: String(d.source ?? "").trim() || "—",
+        unitLabel,
+        prescreened: Boolean(d.prescreened),
+        createdAt,
+      };
+    })
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+
+  return {
+    hasData: true,
+    activeLeadsTotal: n,
+    leadsByStatus: byStatus,
+    leadsBySource: bySource,
+    prescreenedRatePercent,
+    newLeadsThisMonth: newThisMonth,
+    newLeadsLast30Days: newLast30,
+    leadToLeaseConversionPercent,
+    chartSourcePie,
+    chartStatusBar,
+    weeklyVolume,
+    prospects: prospectRows,
+  };
+}
+
 /** GET /dashboard/leasing */
 export async function getLeasing(req) {
   const pool = getPool();
@@ -803,6 +957,8 @@ export async function getLeasing(req) {
     `SELECT appfolio_data FROM cached_rental_applications ORDER BY id`
   );
   const { rows: leRows } = await pool.query(`SELECT appfolio_data FROM cached_lease_expirations ORDER BY id`);
+  const { rows: reLeadRows } = await pool.query(`SELECT appfolio_data FROM cached_rentengine_leads ORDER BY id`);
+  const { rows: reUnitRows } = await pool.query(`SELECT appfolio_data FROM cached_rentengine_units ORDER BY id`);
 
   let vacantUnitCount = 0;
   let onNoticeCount = 0;
@@ -942,8 +1098,15 @@ export async function getLeasing(req) {
     return ta - tb;
   });
 
+  const rentEngine = buildRentEnginePayload(reLeadRows, reUnitRows);
+
   return {
-    dataSources: { appfolio: true, rentengine: false, boom: false },
+    dataSources: {
+      appfolio: true,
+      rentengine: rentEngine.hasData === true,
+      boom: false,
+    },
+    rentEngine,
     vacancy: {
       vacantUnits: vacantUnitCount,
       onNotice: onNoticeCount,

@@ -8,6 +8,7 @@ import {
   postAppfolioReportAbsoluteUrl,
 } from "./appfolio.js";
 import { getPool } from "./db.js";
+import { runRentEngineSync } from "./rentengine-sync.js";
 
 const MIN_GAP_MS = 2500;
 
@@ -269,7 +270,7 @@ async function insertSyncLog(triggeredBy) {
   return logRow.id;
 }
 
-async function runSyncEndpointsForId(syncId) {
+async function runSyncEndpointsForId(syncId, triggeredBy) {
   const pool = getPool();
   const syncErrors = [];
   let endpointsSynced = 0;
@@ -294,6 +295,13 @@ async function runSyncEndpointsForId(syncId) {
         JSON.stringify(syncErrors.length ? syncErrors : null),
       ]
     );
+
+    try {
+      await runRentEngineSync(triggeredBy);
+    } catch (reErr) {
+      console.error("[sync] rentengine failed:", reErr?.message || reErr);
+    }
+
     return { syncId, endpointsSynced, totalRows, errors: syncErrors };
   } catch (e) {
     await pool.query(
@@ -324,7 +332,7 @@ export async function runFullSync(triggeredBy) {
 
   try {
     const syncId = await insertSyncLog(triggeredBy);
-    return await runSyncEndpointsForId(syncId);
+    return await runSyncEndpointsForId(syncId, triggeredBy);
   } finally {
     syncInProgress = false;
   }
@@ -355,7 +363,7 @@ export async function startSyncInBackground(triggeredBy) {
   }
 
   setImmediate(() => {
-    runSyncEndpointsForId(syncId)
+    runSyncEndpointsForId(syncId, triggeredBy)
       .catch((e) => console.error("[sync] background job failed:", e))
       .finally(() => {
         syncInProgress = false;

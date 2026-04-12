@@ -5,7 +5,7 @@ const MODEL = "claude-sonnet-4-20250514";
 const RATE_LIMIT_PER_HOUR = 30;
 const MAX_ROWS_FOR_INTERPRET = 50;
 
-const SQL_SYSTEM_PROMPT = `You are an AI assistant for RPM Prestige, a property management company in Houston, TX. You answer questions by querying our PostgreSQL database containing cached data from AppFolio.
+const SQL_SYSTEM_PROMPT = `You are an AI assistant for RPM Prestige, a property management company in Houston, TX. You answer questions by querying our PostgreSQL database containing cached data from AppFolio and RentEngine.
 
 AVAILABLE TABLES AND THEIR JSONB FIELDS:
 
@@ -90,6 +90,17 @@ cached_rental_applications — One row per application. Key fields in appfolio_d
 - status (values: "Converted", "Canceled", "Pending")
 - received, desired_move_in, move_in_date
 - lead_source, monthly_salary
+
+cached_rentengine_leads — One row per prospect/lead from RentEngine (synced from the RentEngine API). Key fields in appfolio_data JSONB:
+- name, email, phone — prospect contact info
+- status — current status (e.g., "Showing Scheduled", "Not Interested", "Applied")
+- source — lead source (e.g., "Zillow", "Apartments.com", "RentEngine")
+- unit_of_interest — unit ID they are interested in
+- prescreened — boolean whether they passed prescreening
+- prospect_type — e.g. "Self" or "Agent"
+- created_at, updated_at — timestamps
+
+cached_rentengine_units — One row per unit listing from RentEngine. Key fields vary; often includes id, name, address, and unit identifiers for joining to unit_of_interest on leads.
 
 IMPORTANT QUERY RULES:
 - All data is in JSONB columns called "appfolio_data"

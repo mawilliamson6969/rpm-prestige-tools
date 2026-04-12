@@ -326,6 +326,15 @@
   color: var(--navy);
 }
 
+.sectionHeadingRent {
+  margin: 0 0 0.85rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.1);
+}
+
 .chartPlaceholder {
   display: flex;
   align-items: center;
