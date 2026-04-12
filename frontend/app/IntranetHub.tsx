@@ -314,6 +314,15 @@ export default function IntranetHub() {
                 />
               </div>
 
+              <p className={styles.catLabel}>AI Tools</p>
+              <div className={styles.toolGrid}>
+                <ToolCardLive
+                  href="/ask"
+                  title="Ask the AI"
+                  description="Ask any question about your properties, tenants, work orders, or finances and get instant answers"
+                />
+              </div>
+
               <p className={styles.catLabel}>EOS</p>
               <div className={styles.toolGrid}>
                 <ToolCardLive

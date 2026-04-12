@@ -1,0 +1,1 @@
+-- ask_ai_history (see ensureAskAiSchema in backend/lib/db.js)

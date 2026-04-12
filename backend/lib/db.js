@@ -189,3 +189,20 @@ export async function ensureUsersSchema() {
     );
   }
 }
+
+export async function ensureAskAiSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS ask_ai_history (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      question TEXT NOT NULL,
+      sql_query TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      response_time_ms INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ask_ai_history_user_created_idx ON ask_ai_history (user_id, created_at DESC);
+  `);
+}

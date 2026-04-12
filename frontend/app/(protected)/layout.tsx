@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import AskAiFloatingWidget from "../../components/AskAiFloatingWidget";
 import { RequireAuth } from "../../context/AuthContext";
 
 export default function ProtectedLayout({
@@ -23,7 +24,10 @@ export default function ProtectedLayout({
         </div>
       }
     >
-      <RequireAuth>{children}</RequireAuth>
+      <RequireAuth>
+        {children}
+        <AskAiFloatingWidget />
+      </RequireAuth>
     </Suspense>
   );
 }

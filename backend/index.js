@@ -13,6 +13,7 @@ import {
   ensureCachedDashboardSchema,
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
+  ensureAskAiSchema,
 } from "./lib/db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -44,6 +45,7 @@ import {
   postSyncRun,
 } from "./routes/kpiCacheRoutes.js";
 import { createUser, deleteUser, listUsers, updateUser } from "./routes/users.js";
+import { getAskHistory, postAsk } from "./routes/ask.js";
 import {
   deleteL10Issue,
   deleteL10Todo,
@@ -231,6 +233,9 @@ app.post("/eos/l10/issues", requireAuth, postL10Issue);
 app.put("/eos/l10/issues/:id", requireAuth, putL10Issue);
 app.delete("/eos/l10/issues/:id", requireAuth, deleteL10Issue);
 
+app.post("/ask", requireAuth, postAsk);
+app.get("/ask/history", requireAuth, getAskHistory);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -244,6 +249,8 @@ async function start() {
       console.log("Database schema OK (users).");
       await ensureEosSchema();
       console.log("Database schema OK (EOS).");
+      await ensureAskAiSchema();
+      console.log("Database schema OK (ask_ai_history).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
