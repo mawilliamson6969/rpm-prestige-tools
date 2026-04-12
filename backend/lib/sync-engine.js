@@ -8,6 +8,7 @@ import {
   postAppfolioReportAbsoluteUrl,
 } from "./appfolio.js";
 import { getPool } from "./db.js";
+import { runBoomSync } from "./boom-sync.js";
 import { runRentEngineSync } from "./rentengine-sync.js";
 
 const MIN_GAP_MS = 2500;
@@ -300,6 +301,12 @@ async function runSyncEndpointsForId(syncId, triggeredBy) {
       await runRentEngineSync(triggeredBy);
     } catch (reErr) {
       console.error("[sync] rentengine failed:", reErr?.message || reErr);
+    }
+
+    try {
+      await runBoomSync(triggeredBy);
+    } catch (boomErr) {
+      console.error("[sync] boom failed:", boomErr?.message || boomErr);
     }
 
     return { syncId, endpointsSynced, totalRows, errors: syncErrors };

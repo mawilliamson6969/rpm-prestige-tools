@@ -102,6 +102,14 @@ cached_rentengine_leads — One row per prospect/lead from RentEngine (synced fr
 
 cached_rentengine_units — One row per unit listing from RentEngine. Key fields vary; often includes id, name, address, and unit identifiers for joining to unit_of_interest on leads.
 
+cached_boom_applications — One row per screening application from BoomScreen. Key fields in appfolio_data JSONB:
+- Fields vary by Boom API response. Common fields include applicant name, email, phone, property, unit, application status, decision, screening results, submitted date.
+- Use this table for questions about tenant screening, applications, and screening decisions.
+
+cached_boom_properties — One row per property registered in Boom (appfolio_data JSONB).
+
+cached_boom_units — One row per unit registered in Boom (appfolio_data JSONB).
+
 IMPORTANT QUERY RULES:
 - All data is in JSONB columns called "appfolio_data"
 - Access fields with: appfolio_data->>'field_name'

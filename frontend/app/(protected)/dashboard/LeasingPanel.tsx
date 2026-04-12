@@ -70,6 +70,22 @@ type LeasingPayload = {
       createdAt: string;
     }[];
   };
+  boom?: {
+    hasData?: boolean;
+    totalScreened?: number;
+    applicationsByStatus?: Record<string, number>;
+    avgTimeToDecisionHours?: number | null;
+    chartStatusBar?: { status: string; count: number }[];
+    screeningApplications?: {
+      id: number | null;
+      applicantName: string;
+      property: string;
+      unit: string;
+      status: string;
+      decision: string;
+      submitted: string;
+    }[];
+  };
   vacancy?: {
     vacantUnits: number;
     onNotice: number;
@@ -173,6 +189,8 @@ type ProspectSort =
   | "prescreened"
   | "createdAt";
 
+type BoomSort = "applicantName" | "property" | "unit" | "status" | "decision" | "submitted";
+
 export default function LeasingPanel(props: {
   leasing: LeasingPayload | null;
   loading: boolean;
@@ -195,11 +213,17 @@ export default function LeasingPanel(props: {
   const [prospectSort, setProspectSort] = useState<ProspectSort>("createdAt");
   const [prospectDir, setProspectDir] = useState<"asc" | "desc">("desc");
 
+  const [boomSearch, setBoomSearch] = useState("");
+  const [boomSort, setBoomSort] = useState<BoomSort>("submitted");
+  const [boomDir, setBoomDir] = useState<"asc" | "desc">("desc");
+
   const vac = leasing?.vacancy;
   const apps = leasing?.applications;
   const le = leasing?.leaseExpirations;
   const rentengine = leasing?.dataSources?.rentengine;
+  const boomConnected = leasing?.dataSources?.boom;
   const re = leasing?.rentEngine;
+  const boom = leasing?.boom;
 
   const donutData = useMemo(() => {
     const b = le?.byStatus ?? {};
@@ -336,6 +360,36 @@ export default function LeasingPanel(props: {
     });
   }, [re?.prospects, prospectSearch, prospectSort, prospectDir]);
 
+  const filteredBoom = useMemo(() => {
+    const rows = [...(boom?.screeningApplications ?? [])];
+    const q = boomSearch.trim().toLowerCase();
+    const list = q
+      ? rows.filter((r) => {
+          const hay = `${r.applicantName} ${r.property} ${r.unit} ${r.status} ${r.decision} ${r.submitted}`.toLowerCase();
+          return hay.includes(q);
+        })
+      : rows;
+    const dir = boomDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => {
+      switch (boomSort) {
+        case "applicantName":
+          return dir * a.applicantName.localeCompare(b.applicantName, undefined, { sensitivity: "base" });
+        case "property":
+          return dir * a.property.localeCompare(b.property);
+        case "unit":
+          return dir * a.unit.localeCompare(b.unit);
+        case "status":
+          return dir * a.status.localeCompare(b.status);
+        case "decision":
+          return dir * a.decision.localeCompare(b.decision);
+        case "submitted":
+          return dir * a.submitted.localeCompare(b.submitted);
+        default:
+          return 0;
+      }
+    });
+  }, [boom?.screeningApplications, boomSearch, boomSort, boomDir]);
+
   const toggleVacSort = (k: VSort) => {
     if (vacSort === k) setVacDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -365,6 +419,14 @@ export default function LeasingPanel(props: {
     else {
       setProspectSort(k);
       setProspectDir(k === "createdAt" ? "desc" : "asc");
+    }
+  };
+
+  const toggleBoomSort = (k: BoomSort) => {
+    if (boomSort === k) setBoomDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setBoomSort(k);
+      setBoomDir(k === "submitted" ? "desc" : "asc");
     }
   };
 
@@ -404,7 +466,7 @@ export default function LeasingPanel(props: {
     <>
       <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "0.75rem" }}>
         AppFolio: vacancy, applications, and lease expirations from cached sync (property filter applies).
-        RentEngine: prospects and funnel metrics when synced.
+        RentEngine: prospects and funnel metrics when synced. Boom: screening applications when synced.
       </p>
 
       <div
@@ -426,7 +488,7 @@ export default function LeasingPanel(props: {
           AppFolio {leasing?.dataSources?.appfolio ? "✓" : "○"}
         </span>
         <span style={{ color: rentengine ? GREEN : GREY }}>RentEngine {rentengine ? "✓" : "○"}</span>
-        <span style={{ color: GREY }}>Boom ○</span>
+        <span style={{ color: boomConnected ? GREEN : GREY }}>Boom {boomConnected ? "✓" : "○"}</span>
       </div>
 
       {re?.hasData ? (
@@ -577,6 +639,104 @@ export default function LeasingPanel(props: {
           and run a sync to populate leads and charts.
         </div>
       )}
+
+      {boom?.hasData ? (
+        <>
+          <h3 className={styles.sectionHeadingRent}>Screening (Boom)</h3>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "1rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Applications screened</div>
+              <div className={styles.kpiValue} style={{ color: NAVY }}>
+                {boom.totalScreened ?? 0}
+              </div>
+              <div className={styles.kpiSub}>Total in cache from Boom sync</div>
+            </div>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Avg. time to decision</div>
+              <div className={styles.kpiValue} style={{ color: BLUE }}>
+                {boom.avgTimeToDecisionHours != null ? `${boom.avgTimeToDecisionHours} hrs` : "—"}
+              </div>
+              <div className={styles.kpiSub}>From submitted → decided (when timestamps exist)</div>
+            </div>
+            <div className={styles.kpiCard}>
+              <div className={styles.kpiLabel}>Status categories</div>
+              <div className={styles.kpiValue} style={{ color: AMBER }}>
+                {Object.keys(boom.applicationsByStatus ?? {}).length}
+              </div>
+              <div className={styles.kpiSub}>Distinct application statuses</div>
+            </div>
+          </div>
+
+          <div className={styles.chartCard} style={{ marginBottom: "1.25rem" }}>
+            <h3 className={styles.chartTitle}>Applications by status</h3>
+            {(boom.chartStatusBar?.length ?? 0) === 0 ? (
+              <div className={styles.chartPlaceholder}>No status breakdown.</div>
+            ) : (
+              <div style={{ width: "100%", height: 280 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={boom.chartStatusBar ?? []}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e8eaee" />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} stroke={GREY} />
+                    <YAxis type="category" dataKey="status" width={140} tick={{ fontSize: 10 }} stroke={GREY} />
+                    <Tooltip />
+                    <Bar dataKey="count" name="Applications" fill={NAVY} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.tableCard} style={{ marginBottom: "1.25rem" }}>
+            <h3 className={styles.chartTitle}>Screening applications</h3>
+            <div className={styles.tableSearch}>
+              <input
+                type="search"
+                placeholder="Search applicant, property, unit, status…"
+                value={boomSearch}
+                onChange={(e) => setBoomSearch(e.target.value)}
+                aria-label="Search Boom applications"
+              />
+            </div>
+            <div className={`${styles.tableWrap} ${styles.maintTableDesktop}`}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleBoomSort("applicantName")}>Applicant</th>
+                    <th onClick={() => toggleBoomSort("property")}>Property</th>
+                    <th onClick={() => toggleBoomSort("unit")}>Unit</th>
+                    <th onClick={() => toggleBoomSort("status")}>Status</th>
+                    <th onClick={() => toggleBoomSort("decision")}>Decision</th>
+                    <th onClick={() => toggleBoomSort("submitted")}>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBoom.map((r) => (
+                    <tr key={`${r.id ?? "b"}-${r.applicantName}-${r.submitted}`}>
+                      <td>{r.applicantName}</td>
+                      <td>{r.property}</td>
+                      <td>{r.unit}</td>
+                      <td>{r.status}</td>
+                      <td>{r.decision}</td>
+                      <td>{r.submitted || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <h3 className={styles.sectionHeadingRent}>AppFolio — occupancy &amp; leases</h3>
       <div className={styles.grid4}>

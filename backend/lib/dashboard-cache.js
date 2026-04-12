@@ -715,6 +715,9 @@ export async function getExecutive(req) {
   const { rows: reLeadRowsExec } = await pool.query(`SELECT COUNT(*)::int AS c FROM cached_rentengine_leads`);
   const rentEngineLeadCount = reLeadRowsExec[0]?.c ?? 0;
 
+  const { rows: boomCountRows } = await pool.query(`SELECT COUNT(*)::int AS c FROM cached_boom_applications`);
+  const screeningsTotal = boomCountRows[0]?.c ?? 0;
+
   const { rows: gcRows } = await pool.query(
     `SELECT appfolio_data FROM cached_guest_cards ORDER BY id`
   );
@@ -759,6 +762,7 @@ export async function getExecutive(req) {
     },
     onNoticeUnits,
     activeLeads,
+    screeningsTotal,
     filters: { propertyIds },
   };
 }
@@ -947,6 +951,125 @@ function buildRentEnginePayload(reLeadRows, reUnitRows) {
   };
 }
 
+function boomStr(o, ...keys) {
+  const obj = o && typeof o === "object" ? o : {};
+  for (const k of keys) {
+    if (obj[k] != null && String(obj[k]).trim() !== "") return String(obj[k]).trim();
+  }
+  return "";
+}
+
+function parseBoomDateMs(v) {
+  if (v == null) return null;
+  const t = Date.parse(String(v));
+  return Number.isNaN(t) ? null : t;
+}
+
+function buildBoomPayload(boomAppRows) {
+  if (!boomAppRows.length) {
+    return { hasData: false };
+  }
+  const rows = boomAppRows.map((r) => rowData(r));
+  const byStatus = {};
+  const timeToDecisionHours = [];
+  const screeningApplications = [];
+
+  for (const d of rows) {
+    const st = boomStr(d, "status", "application_status", "state") || "Unknown";
+    byStatus[st] = (byStatus[st] || 0) + 1;
+
+    const subMs = parseBoomDateMs(
+      d.submitted_at ?? d.submittedAt ?? d.created_at ?? d.createdAt ?? d.created
+    );
+    const doneMs = parseBoomDateMs(
+      d.decided_at ??
+        d.decidedAt ??
+        d.completed_at ??
+        d.completedAt ??
+        d.reviewed_at ??
+        d.updated_at ??
+        d.updatedAt
+    );
+    if (subMs != null && doneMs != null && doneMs > subMs) {
+      timeToDecisionHours.push((doneMs - subMs) / 3600000);
+    }
+
+    const applicant =
+      (d.applicant && typeof d.applicant === "object" ? d.applicant : null) ??
+      (d.primary_applicant && typeof d.primary_applicant === "object" ? d.primary_applicant : null) ??
+      (Array.isArray(d.applicants) && d.applicants[0] && typeof d.applicants[0] === "object"
+        ? d.applicants[0]
+        : null) ??
+      d;
+
+    let applicantName =
+      boomStr(applicant, "full_name", "fullName", "name") ||
+      [boomStr(applicant, "first_name", "firstName"), boomStr(applicant, "last_name", "lastName")]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+    if (!applicantName) applicantName = boomStr(d, "applicant_name", "applicantName", "name") || "—";
+
+    let propertyName = "—";
+    if (d.property && typeof d.property === "object") {
+      propertyName =
+        boomStr(d.property, "name", "property_name", "propertyName", "address", "street") || "—";
+    } else {
+      propertyName = boomStr(d, "property_name", "propertyName", "property") || "—";
+    }
+
+    let unitLabel = "—";
+    if (d.unit && typeof d.unit === "object") {
+      unitLabel = boomStr(d.unit, "name", "unit_name", "unitName", "label", "number") || "—";
+    } else {
+      unitLabel = boomStr(d, "unit_name", "unitName", "unit") || "—";
+    }
+
+    const decision =
+      boomStr(d, "decision", "screening_decision", "verification_decision", "outcome") || "—";
+
+    let submitted = "";
+    const rawSub = d.submitted_at ?? d.submittedAt ?? d.created_at ?? d.createdAt;
+    if (rawSub) {
+      try {
+        submitted = new Date(rawSub).toISOString().slice(0, 10);
+      } catch {
+        submitted = String(rawSub).slice(0, 10);
+      }
+    }
+
+    screeningApplications.push({
+      id: d.id ?? null,
+      applicantName,
+      property: propertyName,
+      unit: unitLabel,
+      status: st,
+      decision,
+      submitted,
+    });
+  }
+
+  screeningApplications.sort((a, b) => (a.submitted < b.submitted ? 1 : a.submitted > b.submitted ? -1 : 0));
+
+  const avgTimeToDecisionHours =
+    timeToDecisionHours.length > 0
+      ? Math.round((timeToDecisionHours.reduce((x, y) => x + y, 0) / timeToDecisionHours.length) * 10) / 10
+      : null;
+
+  const chartStatusBar = Object.entries(byStatus)
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    hasData: true,
+    totalScreened: rows.length,
+    applicationsByStatus: byStatus,
+    avgTimeToDecisionHours,
+    chartStatusBar,
+    screeningApplications,
+  };
+}
+
 /** GET /dashboard/leasing */
 export async function getLeasing(req) {
   const pool = getPool();
@@ -959,6 +1082,7 @@ export async function getLeasing(req) {
   const { rows: leRows } = await pool.query(`SELECT appfolio_data FROM cached_lease_expirations ORDER BY id`);
   const { rows: reLeadRows } = await pool.query(`SELECT appfolio_data FROM cached_rentengine_leads ORDER BY id`);
   const { rows: reUnitRows } = await pool.query(`SELECT appfolio_data FROM cached_rentengine_units ORDER BY id`);
+  const { rows: boomAppRows } = await pool.query(`SELECT appfolio_data FROM cached_boom_applications ORDER BY id`);
 
   let vacantUnitCount = 0;
   let onNoticeCount = 0;
@@ -1099,14 +1223,16 @@ export async function getLeasing(req) {
   });
 
   const rentEngine = buildRentEnginePayload(reLeadRows, reUnitRows);
+  const boom = buildBoomPayload(boomAppRows);
 
   return {
     dataSources: {
       appfolio: true,
       rentengine: rentEngine.hasData === true,
-      boom: false,
+      boom: boom.hasData === true,
     },
     rentEngine,
+    boom,
     vacancy: {
       vacantUnits: vacantUnitCount,
       onNotice: onNoticeCount,

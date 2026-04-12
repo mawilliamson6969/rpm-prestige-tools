@@ -49,6 +49,8 @@ type Exec = {
   openWorkOrders: number;
   totalDelinquency: number;
   activeLeads: number;
+  /** Count of Boom screening applications in cache (0 if not synced). */
+  screeningsTotal?: number;
 };
 
 type FinanceRow = Record<string, unknown> & { _period?: string };
@@ -448,8 +450,20 @@ export default function ExecutivePanel(props: {
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Active leads</div>
           <div className={styles.kpiValue}>{executive.activeLeads}</div>
-          <div className={styles.kpiSub}>Guest cards (non-closed statuses)</div>
+          <div className={styles.kpiSub}>
+            {(executive.screeningsTotal ?? 0) > 0
+              ? "RentEngine or guest cards (Boom separate)"
+              : "Guest cards (non-closed) or RentEngine count"}
+          </div>
         </div>
+
+        {(executive.screeningsTotal ?? 0) > 0 ? (
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>Boom screenings</div>
+            <div className={styles.kpiValue}>{executive.screeningsTotal}</div>
+            <div className={styles.kpiSub}>Applications synced from BoomScreen</div>
+          </div>
+        ) : null}
 
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Vacant units</div>
