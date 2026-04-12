@@ -1,10 +1,10 @@
 /**
  * Boom Screening Partner API → PostgreSQL cache.
- * https://api.boompay.app/partner/v1 — Bearer token from POST /authenticate
+ * https://api.production.boompay.app/partner/v1 — Bearer token from POST /authenticate
  */
 import { getPool } from "./db.js";
 
-const BASE = "https://api.boompay.app/partner/v1";
+const BASE = "https://api.production.boompay.app/partner/v1";
 const GAP_MS = 300;
 const PER_PAGE = 20;
 
