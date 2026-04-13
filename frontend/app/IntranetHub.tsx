@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import InboxNavLink from "../components/InboxNavLink";
 import WikiHubCard from "../components/WikiHubCard";
+import FileManagerHubCard from "../components/FileManagerHubCard";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
 import VideoMessagesHubCard from "../components/VideoMessagesHubCard";
 import UserMenu from "../components/UserMenu";
@@ -231,6 +232,9 @@ export default function IntranetHub() {
           <Link href="/wiki" className={styles.headerWikiLink}>
             Wiki
           </Link>
+          <Link href="/files" className={styles.headerWikiLink}>
+            Files
+          </Link>
           <InboxNavLink />
           <UserMenu />
         </div>
@@ -330,6 +334,11 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Knowledge Base</p>
               <div className={styles.toolGrid}>
                 <WikiHubCard />
+              </div>
+
+              <p className={styles.catLabel}>Tools</p>
+              <div className={styles.toolGrid}>
+                <FileManagerHubCard />
               </div>
 
               <p className={styles.catLabel}>Communications</p>

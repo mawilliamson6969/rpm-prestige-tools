@@ -19,6 +19,7 @@ import {
   ensureVideosSchema,
   ensureWikiSchema,
 } from "./lib/db.js";
+import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -162,6 +163,31 @@ import {
   putWikiPageReorder,
   wikiUploadMiddleware,
 } from "./routes/wiki.js";
+import {
+  deleteFile,
+  deleteFileShare,
+  deleteFolder,
+  getFileById,
+  getFileDownload,
+  getFilePreview,
+  getFileSharedDownload,
+  getFileSharedMeta,
+  getFilesList,
+  getFilesSearch,
+  getFilesStats,
+  getFolderByIdRoute,
+  getFoldersTree,
+  postBulkDelete,
+  postBulkMove,
+  postBulkTag,
+  postFileAnalyze,
+  postFileShare,
+  postFilesUpload,
+  postFolder,
+  putFile,
+  putFolder,
+  uploadFilesMiddleware,
+} from "./routes/files.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -385,6 +411,30 @@ app.post("/wiki/pages", requireAuth, postWikiPage);
 app.get("/wiki/attachments/:id", requireAuth, getWikiAttachment);
 app.delete("/wiki/attachments/:id", requireAuth, deleteWikiAttachment);
 
+/** Company file manager (JWT; public share routes below) */
+app.post("/files/upload", requireAuth, uploadFilesMiddleware.array("files"), postFilesUpload);
+app.get("/files/stats", requireAuth, getFilesStats);
+app.get("/files/folders", requireAuth, getFoldersTree);
+app.get("/files/folders/:id", requireAuth, getFolderByIdRoute);
+app.post("/files/folders", requireAuth, postFolder);
+app.put("/files/folders/:id", requireAuth, putFolder);
+app.delete("/files/folders/:id", requireAuth, deleteFolder);
+app.get("/files/search", requireAuth, getFilesSearch);
+app.post("/files/bulk/move", requireAuth, postBulkMove);
+app.post("/files/bulk/delete", requireAuth, requireAdminRole, postBulkDelete);
+app.post("/files/bulk/tag", requireAuth, postBulkTag);
+app.get("/files/shared/:shareToken", getFileSharedMeta);
+app.get("/files/shared/:shareToken/download", getFileSharedDownload);
+app.get("/files", requireAuth, getFilesList);
+app.get("/files/:id", requireAuth, getFileById);
+app.get("/files/:id/download", requireAuthOrQueryToken, getFileDownload);
+app.get("/files/:id/preview", requireAuthOrQueryToken, getFilePreview);
+app.put("/files/:id", requireAuth, putFile);
+app.delete("/files/:id", requireAuth, deleteFile);
+app.post("/files/:id/share", requireAuth, postFileShare);
+app.delete("/files/:id/share", requireAuth, deleteFileShare);
+app.post("/files/:id/analyze", requireAuth, postFileAnalyze);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -409,6 +459,8 @@ async function start() {
       console.log("Database schema OK (videos).");
       await ensureWikiSchema();
       console.log("Database schema OK (wiki).");
+      await ensureFilesSchema();
+      console.log("Database schema OK (files / file_folders).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

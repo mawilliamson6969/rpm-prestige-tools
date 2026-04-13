@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import EosNavDropdown from "./EosNavDropdown";
 import InboxNavLink from "./InboxNavLink";
 import UserMenu from "./UserMenu";
-import styles from "./wiki-top-bar.module.css";
+import styles from "./files-top-bar.module.css";
 
-export default function WikiTopBar() {
+export default function FilesTopBar() {
   const path = usePathname();
-  const wikiActive = path === "/wiki" || path.startsWith("/wiki/");
   const filesActive = path === "/files" || path.startsWith("/files/");
+  const wikiActive = path === "/wiki" || path.startsWith("/wiki/");
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
@@ -18,10 +18,10 @@ export default function WikiTopBar() {
           ← Team Hub
         </Link>
         <EosNavDropdown variant="light" />
-        <Link href="/wiki" className={`${styles.wikiLink} ${wikiActive ? styles.wikiLinkActive : ""}`}>
+        <Link href="/wiki" className={`${styles.navLink} ${wikiActive ? styles.navLinkActive : ""}`}>
           Wiki
         </Link>
-        <Link href="/files" className={`${styles.wikiLink} ${filesActive ? styles.wikiLinkActive : ""}`}>
+        <Link href="/files" className={`${styles.navLink} ${filesActive ? styles.navLinkActive : ""}`}>
           Files
         </Link>
       </div>
