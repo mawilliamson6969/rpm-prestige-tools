@@ -10,9 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { apiUrl } from "../lib/api";
-
-const TOKEN_KEY = "rpm_auth_token";
+import { apiUrl, AUTH_TOKEN_STORAGE_KEY } from "../lib/api";
 
 export type AuthUser = {
   id: number;
@@ -60,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const t = localStorage.getItem(TOKEN_KEY);
+    const t = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
     setToken(t);
     if (!t) {
       setLoading(false);
@@ -68,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     refreshUser(t)
       .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
         setToken(null);
         setUser(null);
       })
@@ -88,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = body.token as string | undefined;
     const u = body.user;
     if (!t || !u) throw new Error("Invalid response from server.");
-    localStorage.setItem(TOKEN_KEY, t);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, t);
     setToken(t);
     setUser({
       id: u.id,
@@ -99,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     setToken(null);
     setUser(null);
   }, []);
@@ -117,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       refreshUser: async () => {
-        const t = localStorage.getItem(TOKEN_KEY);
+        const t = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
         if (!t) return;
         await refreshUser(t);
       },

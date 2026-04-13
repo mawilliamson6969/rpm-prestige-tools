@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiUrl } from "../../../../lib/api";
+import { apiUrl, apiUrlWithAuthQuery } from "../../../../lib/api";
 import { formatDuration, timestampLabel, type VideoCommentRow, type VideoRow } from "../../../../lib/videos";
 import { useAuth } from "../../../../context/AuthContext";
 import styles from "../videos.module.css";
@@ -19,7 +19,7 @@ function parseTimestampFromText(text: string): number | null {
 
 export default function VideoDetailClient({ videoId }: { videoId: number }) {
   const router = useRouter();
-  const { authHeaders, user, isAdmin } = useAuth();
+  const { authHeaders, user, isAdmin, token } = useAuth();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [video, setVideo] = useState<VideoRow | null>(null);
   const [comments, setComments] = useState<VideoCommentRow[]>([]);
@@ -188,7 +188,12 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
         </p>
       </div>
 
-      <video ref={videoRef} controls className={styles.player} src={apiUrl(`/videos/${video.id}/stream`)} />
+      <video
+        ref={videoRef}
+        controls
+        className={styles.player}
+        src={apiUrlWithAuthQuery(`/videos/${video.id}/stream`, token)}
+      />
 
       <section className={styles.detailActions}>
         {canManage ? (

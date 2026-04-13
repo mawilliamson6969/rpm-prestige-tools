@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../context/AuthContext";
-import { apiUrl } from "../../../lib/api";
+import { apiUrl, apiUrlWithAuthQuery } from "../../../lib/api";
 import {
   avatarInitials,
   flattenFolderTree,
@@ -24,7 +24,7 @@ type FolderScope = { kind: "all" } | { kind: "unfiled" } | { kind: "folder"; id:
 
 export default function VideosClient() {
   const router = useRouter();
-  const { authHeaders, user } = useAuth();
+  const { authHeaders, user, token } = useAuth();
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -462,7 +462,7 @@ export default function VideosClient() {
                 <Link href={`/videos/${video.id}`} className={styles.videoCard}>
                   <div className={styles.thumbWrap}>
                     <img
-                      src={apiUrl(`/videos/${video.id}/thumbnail`)}
+                      src={apiUrlWithAuthQuery(`/videos/${video.id}/thumbnail`, token)}
                       alt=""
                       className={styles.thumb}
                       loading="lazy"

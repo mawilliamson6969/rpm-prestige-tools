@@ -7,7 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { fetchAppfolioUnitsJson } from "./lib/appfolio.js";
 import { getOccupancy } from "./lib/dashboard-cache.js";
-import { requireAdminRole, requireAuth } from "./lib/auth.js";
+import { requireAdminRole, requireAuth, requireAuthOrQueryToken } from "./lib/auth.js";
 import {
   ensureAnnouncementsSchema,
   ensureCachedDashboardSchema,
@@ -358,8 +358,8 @@ app.put("/videos/:id", requireAuth, putVideoById);
 app.delete("/videos/:id", requireAuth, deleteVideoById);
 app.post("/videos/:id/share", requireAuth, postVideoShare);
 app.delete("/videos/:id/share", requireAuth, deleteVideoShare);
-app.get("/videos/:id/stream", requireAuth, getVideoStream);
-app.get("/videos/:id/thumbnail", requireAuth, getVideoThumbnail);
+app.get("/videos/:id/stream", requireAuthOrQueryToken, getVideoStream);
+app.get("/videos/:id/thumbnail", requireAuthOrQueryToken, getVideoThumbnail);
 app.post("/videos/:id/comments", requireAuth, postVideoComment);
 app.get("/videos/:id/comments", requireAuth, getVideoComments);
 app.get("/videos/shared/:shareToken", getVideoByShareToken);
