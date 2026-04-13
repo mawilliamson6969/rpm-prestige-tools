@@ -20,6 +20,7 @@ import {
   ensureWikiSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
+import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -198,6 +199,26 @@ import {
   putFolder,
   uploadFilesMiddleware,
 } from "./routes/files.js";
+import {
+  createMarketingCampaign,
+  createMarketingChannel,
+  createMarketingContent,
+  deleteMarketingCampaign,
+  deleteMarketingChannel,
+  deleteMarketingContent,
+  duplicateMarketingContent,
+  getMarketingContent,
+  getMarketingStats,
+  listMarketingCampaigns,
+  listMarketingChannels,
+  listMarketingContent,
+  patchMarketingContentStatus,
+  postMarketingAiGenerate,
+  postMarketingAiIdeas,
+  updateMarketingCampaign,
+  updateMarketingChannel,
+  updateMarketingContent,
+} from "./routes/marketing.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -455,6 +476,26 @@ app.post("/files/:id/share", requireAuth, postFileShare);
 app.delete("/files/:id/share", requireAuth, deleteFileShare);
 app.post("/files/:id/analyze", requireAuth, postFileAnalyze);
 
+/** Marketing content calendar */
+app.get("/marketing/stats", requireAuth, getMarketingStats);
+app.get("/marketing/channels", requireAuth, listMarketingChannels);
+app.post("/marketing/channels", requireAuth, requireAdminRole, createMarketingChannel);
+app.put("/marketing/channels/:id", requireAuth, updateMarketingChannel);
+app.delete("/marketing/channels/:id", requireAuth, requireAdminRole, deleteMarketingChannel);
+app.get("/marketing/campaigns", requireAuth, listMarketingCampaigns);
+app.post("/marketing/campaigns", requireAuth, createMarketingCampaign);
+app.put("/marketing/campaigns/:id", requireAuth, updateMarketingCampaign);
+app.delete("/marketing/campaigns/:id", requireAuth, deleteMarketingCampaign);
+app.post("/marketing/content/ai-generate", requireAuth, postMarketingAiGenerate);
+app.post("/marketing/content/ai-ideas", requireAuth, postMarketingAiIdeas);
+app.get("/marketing/content", requireAuth, listMarketingContent);
+app.post("/marketing/content", requireAuth, createMarketingContent);
+app.get("/marketing/content/:id", requireAuth, getMarketingContent);
+app.put("/marketing/content/:id/status", requireAuth, patchMarketingContentStatus);
+app.put("/marketing/content/:id", requireAuth, updateMarketingContent);
+app.delete("/marketing/content/:id", requireAuth, deleteMarketingContent);
+app.post("/marketing/content/:id/duplicate", requireAuth, duplicateMarketingContent);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -481,6 +522,8 @@ async function start() {
       console.log("Database schema OK (wiki).");
       await ensureFilesSchema();
       console.log("Database schema OK (files / file_folders).");
+      await ensureMarketingSchema();
+      console.log("Database schema OK (marketing).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

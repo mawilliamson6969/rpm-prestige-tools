@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import InboxNavLink from "../components/InboxNavLink";
+import MarketingNavDropdown from "../components/MarketingNavDropdown";
 import WikiHubCard from "../components/WikiHubCard";
 import FileManagerHubCard from "../components/FileManagerHubCard";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
@@ -235,6 +236,7 @@ export default function IntranetHub() {
           <Link href="/files" className={styles.headerWikiLink}>
             Files
           </Link>
+          <MarketingNavDropdown variant="hub" />
           <InboxNavLink />
           <UserMenu />
         </div>
@@ -345,6 +347,18 @@ export default function IntranetHub() {
               <div className={styles.toolGrid}>
                 <SharedInboxHubCard />
                 <VideoMessagesHubCard />
+              </div>
+
+              <p className={styles.catLabel}>Marketing</p>
+              <div className={styles.toolGrid}>
+                <ToolCardLive
+                  href="/marketing/calendar"
+                  title="Content Calendar"
+                  description="Plan and schedule content across all channels"
+                />
+                <ToolCardSoon title="Lead Magnets" description="Downloadable guides and capture assets" />
+                <ToolCardSoon title="Email Newsletters" description="Design, send, and track internal campaigns" />
+                <ToolCardSoon title="Marketing Dashboard" description="Channel performance and ROI in one view" />
               </div>
 
               <p className={styles.catLabel}>EOS</p>

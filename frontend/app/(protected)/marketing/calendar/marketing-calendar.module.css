@@ -1,0 +1,672 @@
+.page {
+  --navy: #1b2856;
+  --blue: #0098d0;
+  --red: #b32317;
+  --grey: #6a737b;
+  --white: #ffffff;
+  --off: #f5f5f5;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.25rem clamp(0.75rem, 2vw, 1.5rem) 3rem;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--navy);
+}
+
+.topRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--grey);
+}
+
+.statsBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  background: var(--white);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 12px rgba(27, 40, 86, 0.04);
+}
+
+.stat {
+  font-size: 0.85rem;
+  color: var(--grey);
+}
+
+.stat strong {
+  color: var(--navy);
+  font-weight: 800;
+  margin-right: 0.25rem;
+}
+
+.statWarn strong {
+  color: var(--red);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.toggleGroup {
+  display: inline-flex;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  background: var(--white);
+}
+
+.toggleGroup button {
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--grey);
+  cursor: pointer;
+}
+
+.toggleGroup button:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.toggleGroup button.active {
+  background: var(--navy);
+  color: var(--white);
+}
+
+.navMonth {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.navMonth button {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--white);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  font-weight: 600;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.navMonth button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.navLabel {
+  font-weight: 700;
+  min-width: 10rem;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.btnPrimary {
+  background: var(--navy);
+  color: var(--white);
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.2);
+}
+
+.btnPrimary:hover {
+  background: #243a7a;
+}
+
+.btnAi {
+  background: linear-gradient(135deg, #1b2856 0%, #0098d0 100%);
+  color: var(--white);
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 152, 208, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btnAi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 152, 208, 0.45);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--white);
+  border-radius: 12px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.filterField label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey);
+  margin-bottom: 0.2rem;
+}
+
+.filterField select,
+.filterField input[type="search"] {
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  min-width: 8rem;
+}
+
+.campaignStripWrap {
+  position: relative;
+  height: 2.25rem;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border: 1px dashed rgba(27, 40, 86, 0.12);
+  overflow: hidden;
+}
+
+.campaignBar {
+  position: absolute;
+  top: 0.25rem;
+  height: 1.75rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  opacity: 0.92;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.calWrap {
+  background: var(--white);
+  border-radius: 16px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  padding: 0.75rem;
+  box-shadow: 0 4px 24px rgba(27, 40, 86, 0.06);
+}
+
+.weekdayRow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 0.35rem;
+}
+
+.weekdayCell {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--grey);
+  padding: 0.35rem 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dayCell {
+  min-height: 6.5rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-radius: 10px;
+  padding: 0.35rem;
+  background: #fafbfc;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dayCell:hover {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(0, 152, 208, 0.25);
+}
+
+.dayCell.today {
+  background: rgba(0, 152, 208, 0.08);
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.dayCell.outMonth {
+  opacity: 0.45;
+}
+
+.dayNum {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 0.25rem;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+  margin-bottom: 0.2rem;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  max-width: 100%;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.pill:active {
+  cursor: grabbing;
+  opacity: 0.85;
+  transform: scale(1.02);
+}
+
+.pillTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotIdea {
+  background: #6a737b;
+}
+.dotDraft {
+  background: #0098d0;
+}
+.dotReview {
+  background: #c5960c;
+}
+.dotScheduled {
+  background: #2d8b4e;
+}
+.dotPublished {
+  background: #0d4d2e;
+}
+.dotArchived {
+  background: #9aa0a6;
+}
+
+.tableWrap {
+  overflow: auto;
+  background: var(--white);
+  border-radius: 16px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.06);
+}
+
+.table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey);
+  cursor: pointer;
+  user-select: none;
+}
+
+.table th:hover {
+  color: var(--blue);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.board {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+}
+
+.boardCol {
+  flex: 0 0 17rem;
+  scroll-snap-align: start;
+  background: var(--off);
+  border-radius: 12px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  min-height: 22rem;
+  max-height: calc(100vh - 14rem);
+  overflow-y: auto;
+}
+
+.boardColHead {
+  padding: 0.65rem 0.75rem;
+  font-weight: 800;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+  position: sticky;
+  top: 0;
+  background: var(--off);
+  z-index: 1;
+}
+
+.boardCard {
+  margin: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--white);
+  border-radius: 10px;
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.06);
+  cursor: grab;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.boardCard:hover {
+  box-shadow: 0 4px 14px rgba(27, 40, 86, 0.1);
+}
+
+.boardCard:active {
+  cursor: grabbing;
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--grey);
+  margin-top: 0.35rem;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  z-index: 200;
+  overflow-y: auto;
+}
+
+.modal {
+  background: var(--white);
+  border-radius: 16px;
+  width: min(640px, 100%);
+  max-height: min(92vh, 900px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(27, 40, 86, 0.25);
+}
+
+.modalWide {
+  width: min(900px, 100%);
+}
+
+.modalHead {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.modalHead h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modalBody {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+
+.modalFoot {
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid rgba(27, 40, 86, 0.08);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.field {
+  margin-bottom: 0.85rem;
+}
+
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--grey);
+  margin-bottom: 0.25rem;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+}
+
+.field textarea.body {
+  min-height: 180px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.tabs button {
+  border: none;
+  background: var(--off);
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--grey);
+}
+
+.tabs button.active {
+  background: var(--navy);
+  color: #fff;
+}
+
+.previewBox {
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 8px;
+  padding: 0.75rem;
+  min-height: 180px;
+  font-size: 0.88rem;
+  background: #fafbfc;
+}
+
+.tagPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.tagPill {
+  background: rgba(0, 152, 208, 0.12);
+  color: var(--navy);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.charHint {
+  font-size: 0.75rem;
+  color: var(--grey);
+  text-align: right;
+  margin-top: 0.2rem;
+}
+
+.charHint.warn {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.ideaRow {
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 0.65rem;
+  background: #fafbfc;
+}
+
+.ideaRow h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.campaignList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.campaignRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  align-items: center;
+}
+
+.btnGhost {
+  background: transparent;
+  border: 1px solid rgba(27, 40, 86, 0.2);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--navy);
+}
+
+.btnGhost:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.btnDanger {
+  border-color: rgba(179, 35, 23, 0.4);
+  color: var(--red);
+}
+
+.mobileList {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .calDesktop {
+    display: none;
+  }
+
+  .mobileList {
+    display: block;
+  }
+
+  .board {
+    flex-wrap: nowrap;
+  }
+}
+
+.spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: mcspin 0.7s linear infinite;
+}
+
+@keyframes mcspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.emptyHint {
+  font-size: 0.85rem;
+  color: var(--grey);
+  padding: 1rem;
+  text-align: center;
+}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import EosNavDropdown from "./EosNavDropdown";
+import MarketingNavDropdown from "./MarketingNavDropdown";
 import InboxNavLink from "./InboxNavLink";
 import UserMenu from "./UserMenu";
 import styles from "./wiki-top-bar.module.css";
@@ -18,6 +19,7 @@ export default function WikiTopBar() {
           ← Team Hub
         </Link>
         <EosNavDropdown variant="light" />
+        <MarketingNavDropdown variant="light" />
         <Link href="/wiki" className={`${styles.wikiLink} ${wikiActive ? styles.wikiLinkActive : ""}`}>
           Wiki
         </Link>

@@ -1,0 +1,76 @@
+.wrap {
+  position: relative;
+  display: inline-block;
+  margin-left: 0.75rem;
+  vertical-align: middle;
+}
+
+.summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1b2856;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.wrap[open] .summary {
+  background: rgba(0, 152, 208, 0.15);
+}
+
+.menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.25rem;
+  min-width: 12rem;
+  background: #fff;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(27, 40, 86, 0.12);
+  z-index: 50;
+  padding: 0.35rem 0;
+}
+
+.item {
+  display: block;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  color: #1b2856;
+  text-decoration: none;
+}
+
+.item:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.light .summary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.light[open] .summary {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.hub .summary {
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hub[open] .summary {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hub .menu {
+  border-color: rgba(27, 40, 86, 0.15);
+}
