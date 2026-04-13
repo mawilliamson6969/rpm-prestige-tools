@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { randomBytes, randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import multer from "multer";
@@ -10,14 +9,7 @@ import { getPool } from "../lib/db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "..", "uploads", "videos");
 const SHARE_BASE_URL = "https://dashboard.prestigedash.com/videos/shared";
-const TRANSCRIPTION_PROMPT = `You are transcribing audio from a screen recording made by a property management team member.
-The audio has been extracted from a video recording.
-
-Please transcribe the spoken content accurately. Include timestamps every 30 seconds in the format [MM:SS].
-If there are pauses or silence, note them as [pause].
-If any words are unclear, use [inaudible] rather than guessing.
-
-Format the transcription as clean, readable paragraphs with timestamp markers.`;
+const TRANSCRIPT_UNAVAILABLE_MSG = "Audio transcription coming soon";
 
 async function ensureUploadDir() {
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
@@ -52,7 +44,7 @@ async function probeDurationSeconds(inputPath) {
     "-show_entries",
     "format=duration",
     "-of",
-    "csv=p=0",
+    "default=noprint_wrappers=1:nokey=1",
     inputPath,
   ]);
   const parsed = Math.round(Number.parseFloat(String(stdout).trim()) || 0);
@@ -72,20 +64,6 @@ async function generateThumbnail(inputPath, outputPath) {
     "scale=640:-1",
     outputPath,
   ]);
-}
-
-async function extractMp3Audio(inputPath, outputPath) {
-  await runProcess("ffmpeg", ["-y", "-i", inputPath, "-vn", "-acodec", "libmp3lame", "-q:a", "4", outputPath]);
-}
-
-function textFromClaudeMessage(msg) {
-  const parts = [];
-  for (const block of msg?.content || []) {
-    if (block.type === "text" && block.text) {
-      parts.push(block.text);
-    }
-  }
-  return parts.join("\n").trim();
 }
 
 function mapVideoRow(row) {
@@ -132,53 +110,18 @@ function canManageVideo(user, videoRow) {
   return user?.role === "admin" || Number(videoRow?.recorded_by) === Number(user?.id);
 }
 
-async function runVideoTranscription(videoId, audioPath) {
+/** Transcription via Claude audio documents is not supported; Whisper can be added later. */
+async function markTranscriptUnavailable(videoId) {
   const pool = getPool();
-  try {
-    await pool.query(
-      `UPDATE videos SET transcript_status = 'processing', processing_status = 'none', updated_at = NOW() WHERE id = $1`,
-      [videoId]
-    );
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
-    }
-    const audioBuffer = await fs.readFile(audioPath);
-    const audioBase64 = audioBuffer.toString("base64");
-    const anthropic = new Anthropic({ apiKey });
-    const result = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: TRANSCRIPTION_PROMPT },
-            {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "audio/mp3",
-                data: audioBase64,
-              },
-            },
-          ],
-        },
-      ],
-    });
-    const transcript = textFromClaudeMessage(result);
-    await pool.query(
-      `UPDATE videos
-       SET transcript = $2, transcript_status = 'completed', updated_at = NOW()
-       WHERE id = $1`,
-      [videoId, transcript || "[No transcript returned]"]
-    );
-  } catch (error) {
-    console.error("[videos] transcription failed", error);
-    await pool.query(`UPDATE videos SET transcript_status = 'failed', updated_at = NOW() WHERE id = $1`, [videoId]);
-  } finally {
-    fs.unlink(audioPath).catch(() => {});
-  }
+  await pool.query(
+    `UPDATE videos
+     SET transcript_status = 'unavailable',
+         transcript = $2,
+         processing_status = 'none',
+         updated_at = NOW()
+     WHERE id = $1`,
+    [videoId, TRANSCRIPT_UNAVAILABLE_MSG]
+  );
 }
 
 const storage = multer.diskStorage({
@@ -210,12 +153,9 @@ async function processUploadedVideoInBackground(videoId, filePath, fileSize, mim
   const baseName = path.basename(filePath, path.extname(filePath));
   const thumbnailFilename = `${baseName}.jpg`;
   const thumbnailPath = path.join(UPLOAD_DIR, thumbnailFilename);
-  const audioFilename = `${baseName}.mp3`;
-  const audioPath = path.join(UPLOAD_DIR, audioFilename);
   try {
     const durationSeconds = await probeDurationSeconds(filePath);
     await generateThumbnail(filePath, thumbnailPath);
-    await extractMp3Audio(filePath, audioPath);
     await pool.query(
       `UPDATE videos SET
         thumbnail_filename = $2,
@@ -227,13 +167,12 @@ async function processUploadedVideoInBackground(videoId, filePath, fileSize, mim
        WHERE id = $1`,
       [videoId, thumbnailFilename, durationSeconds, fileSize, mimeType || "video/webm"]
     );
-    runVideoTranscription(videoId, audioPath).catch((e) => {
-      console.error("[videos] background transcription crashed", e);
+    markTranscriptUnavailable(videoId).catch((e) => {
+      console.error("[videos] mark transcript unavailable failed", e);
     });
   } catch (error) {
     console.error("[videos] ffmpeg processing failed", error);
     await pool.query(`UPDATE videos SET processing_status = 'error', updated_at = NOW() WHERE id = $1`, [videoId]);
-    fs.unlink(audioPath).catch(() => {});
     fs.unlink(thumbnailPath).catch(() => {});
   }
 }
@@ -493,28 +432,56 @@ export async function deleteVideoShare(req, res) {
   }
 }
 
+/**
+ * Parse Range: bytes=... for static file size `totalSize` (last byte index is totalSize - 1).
+ * Clamps end past EOF. Returns null to mean "send full representation" (no usable range).
+ */
 function parseRangeHeader(rangeHeader, totalSize) {
-  if (!rangeHeader?.startsWith("bytes=")) return null;
-  const [startText, endText] = rangeHeader.replace("bytes=", "").split("-");
-  const start = Number(startText);
-  const end = endText ? Number(endText) : totalSize - 1;
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end >= totalSize) {
-    return null;
+  if (!rangeHeader || totalSize <= 0) return null;
+  const raw = String(rangeHeader).trim();
+  if (!raw.toLowerCase().startsWith("bytes=")) return null;
+  const spec = raw.slice(6).trim();
+
+  if (spec.startsWith("-")) {
+    const suffixLen = Number(spec.slice(1));
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0) return null;
+    const start = Math.max(0, totalSize - Math.floor(suffixLen));
+    return { start, end: totalSize - 1 };
   }
-  return { start, end };
+
+  const dash = spec.indexOf("-");
+  if (dash < 0) return null;
+  const startText = spec.slice(0, dash);
+  const endText = spec.slice(dash + 1);
+  const start = Number(startText);
+  if (!Number.isFinite(start) || start < 0) return null;
+  if (start >= totalSize) return null;
+
+  let end = endText === "" ? totalSize - 1 : Number(endText);
+  if (!Number.isFinite(end)) return null;
+  end = Math.min(Math.floor(end), totalSize - 1);
+  if (end < start) return null;
+  return { start: Math.floor(start), end };
 }
 
 async function streamVideoFile(res, filePath, mimeType, rangeHeader) {
+  await fs.access(filePath);
   const stat = await fs.stat(filePath);
   const total = stat.size;
-  const range = parseRangeHeader(rangeHeader, total);
+  const contentType = mimeType && String(mimeType).trim() ? String(mimeType).trim() : "video/webm";
+
+  const range = rangeHeader ? parseRangeHeader(rangeHeader, total) : null;
   if (!range) {
     res.status(200);
-    res.setHeader("Content-Type", mimeType || "video/webm");
-    res.setHeader("Content-Length", total);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", String(total));
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
-    const stream = (await import("fs")).createReadStream(filePath);
+    const fsSync = await import("fs");
+    const stream = fsSync.createReadStream(filePath);
+    stream.on("error", () => {
+      if (!res.writableEnded) res.destroy();
+    });
     stream.pipe(res);
     return;
   }
@@ -523,10 +490,14 @@ async function streamVideoFile(res, filePath, mimeType, rangeHeader) {
   res.status(206);
   res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${total}`);
   res.setHeader("Accept-Ranges", "bytes");
-  res.setHeader("Content-Length", chunkSize);
-  res.setHeader("Content-Type", mimeType || "video/webm");
+  res.setHeader("Content-Length", String(chunkSize));
+  res.setHeader("Content-Type", contentType);
   res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
-  const stream = (await import("fs")).createReadStream(filePath, { start: range.start, end: range.end });
+  const fsSync = await import("fs");
+  const stream = fsSync.createReadStream(filePath, { start: range.start, end: range.end });
+  stream.on("error", () => {
+    if (!res.writableEnded) res.destroy();
+  });
   stream.pipe(res);
 }
 
@@ -538,8 +509,16 @@ export async function getVideoStream(req, res) {
       res.status(404).json({ error: "Not found." });
       return;
     }
-    const filePath = path.join(UPLOAD_DIR, video.filename);
-    await streamVideoFile(res, filePath, video.mime_type, req.headers.range);
+    const safeFilename = path.basename(String(video.filename || ""));
+    if (!safeFilename) {
+      res.status(404).json({ error: "Video file unavailable." });
+      return;
+    }
+    const filePath = path.join(UPLOAD_DIR, safeFilename);
+    const mime =
+      (video.mime_type && String(video.mime_type).trim()) ||
+      (safeFilename.toLowerCase().endsWith(".webm") ? "video/webm" : "application/octet-stream");
+    await streamVideoFile(res, filePath, mime, req.headers.range);
   } catch (error) {
     console.error(error);
     if (!res.headersSent) {
@@ -662,8 +641,16 @@ export async function getVideoStreamByShareToken(req, res) {
       res.status(404).json({ error: "Not found." });
       return;
     }
-    const filePath = path.join(UPLOAD_DIR, video.filename);
-    await streamVideoFile(res, filePath, video.mime_type, req.headers.range);
+    const safeFilename = path.basename(String(video.filename || ""));
+    if (!safeFilename) {
+      res.status(404).json({ error: "Video file unavailable." });
+      return;
+    }
+    const filePath = path.join(UPLOAD_DIR, safeFilename);
+    const mime =
+      (video.mime_type && String(video.mime_type).trim()) ||
+      (safeFilename.toLowerCase().endsWith(".webm") ? "video/webm" : "application/octet-stream");
+    await streamVideoFile(res, filePath, mime, req.headers.range);
   } catch (error) {
     console.error(error);
     if (!res.headersSent) {

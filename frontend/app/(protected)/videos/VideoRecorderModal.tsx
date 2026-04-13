@@ -340,7 +340,11 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
             pollTimerRef.current = setTimeout(poll, 1000);
             return;
           }
-          if (v.transcriptStatus === "completed" || v.transcriptStatus === "failed") {
+          if (
+            v.transcriptStatus === "completed" ||
+            v.transcriptStatus === "failed" ||
+            v.transcriptStatus === "unavailable"
+          ) {
             onUploaded(videoId);
             return;
           }

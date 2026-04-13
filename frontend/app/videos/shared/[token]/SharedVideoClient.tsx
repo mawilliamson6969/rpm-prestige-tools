@@ -43,7 +43,12 @@ export default function SharedVideoClient({ token }: { token: string }) {
       <section className={styles.sharedDescription}>
         <p>{video.description || "No description provided."}</p>
       </section>
-      {video.transcript ? (
+      {video.transcriptStatus === "unavailable" ? (
+        <section className={styles.transcriptSection}>
+          <h2>Transcript</h2>
+          <p>Transcription will be available in a future update.</p>
+        </section>
+      ) : video.transcript && video.transcriptStatus === "completed" ? (
         <section className={styles.transcriptSection}>
           <h2>Transcript</h2>
           <div className={styles.transcriptBody}>

@@ -19,7 +19,7 @@ export type VideoRow = {
   mimeType: string;
   recordingType: "screen" | "webcam" | "both" | string;
   transcript: string | null;
-  transcriptStatus: "pending" | "processing" | "completed" | "failed" | string;
+  transcriptStatus: "pending" | "processing" | "completed" | "failed" | "unavailable" | string;
   /** `ffmpeg` while generating thumbnail/audio; `none` when ready for / during transcription; `error` if FFmpeg failed */
   processingStatus: "none" | "ffmpeg" | "error" | string;
   visibility: "private" | "shared" | string;

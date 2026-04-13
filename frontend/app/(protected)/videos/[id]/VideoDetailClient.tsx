@@ -168,6 +168,8 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
       <p>Processing video...</p>
     ) : video.transcriptStatus === "failed" ? (
       <p>Transcription failed.</p>
+    ) : video.transcriptStatus === "unavailable" ? (
+      <p>Transcription will be available in a future update.</p>
     ) : video.transcriptStatus === "processing" || video.transcriptStatus === "pending" ? (
       <p>Transcribing...</p>
     ) : null;
@@ -232,7 +234,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
       <section className={styles.transcriptSection}>
         <h2>Transcript</h2>
         {transcriptStatusMessage}
-        {video.transcript ? (
+        {video.transcript && video.transcriptStatus === "completed" ? (
           <>
             <input
               value={transcriptSearch}
