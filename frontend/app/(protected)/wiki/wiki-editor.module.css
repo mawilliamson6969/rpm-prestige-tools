@@ -41,7 +41,7 @@
   border: 1px solid #d8dee4;
 }
 
-.toggle button {
+.toggleBtn {
   border: none;
   background: #fff;
   padding: 0.45rem 0.85rem;
@@ -50,7 +50,7 @@
   color: #6a737b;
 }
 
-.toggle button.active {
+.toggleBtnActive {
   background: #1b2856;
   color: #fff;
 }
@@ -144,7 +144,7 @@
   cursor: pointer;
 }
 
-.tabBtn.active {
+.tabBtnActive {
   border-color: #0098d0;
   color: #0098d0;
   background: #f4fbfd;

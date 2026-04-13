@@ -13,7 +13,7 @@ export type WikiHeading = { level: 2 | 3; id: string; text: string };
 
 /** Ordered H2/H3 headings with stable ids (matches render order). */
 export function parseWikiHeadings(markdown: string): WikiHeading[] {
-  const lines = markdown.split(/\n");
+  const lines = markdown.split("\n");
   const used = new Map<string, number>();
   const out: WikiHeading[] = [];
   for (const line of lines) {

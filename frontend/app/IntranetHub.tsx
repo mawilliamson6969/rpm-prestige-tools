@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import InboxNavLink from "../components/InboxNavLink";
+import WikiHubCard from "../components/WikiHubCard";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
 import VideoMessagesHubCard from "../components/VideoMessagesHubCard";
 import UserMenu from "../components/UserMenu";
@@ -227,6 +228,9 @@ export default function IntranetHub() {
             <span className={styles.clockLabel}>Houston (CT)</span>
             <span>{clockStr}</span>
           </div>
+          <Link href="/wiki" className={styles.headerWikiLink}>
+            Wiki
+          </Link>
           <InboxNavLink />
           <UserMenu />
         </div>
@@ -321,6 +325,11 @@ export default function IntranetHub() {
                   title="Ask the AI"
                   description="Ask any question about your properties, tenants, work orders, or finances and get instant answers"
                 />
+              </div>
+
+              <p className={styles.catLabel}>Knowledge Base</p>
+              <div className={styles.toolGrid}>
+                <WikiHubCard />
               </div>
 
               <p className={styles.catLabel}>Communications</p>

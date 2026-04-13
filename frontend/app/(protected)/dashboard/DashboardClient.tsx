@@ -282,6 +282,9 @@ export default function DashboardClient() {
               </button>
             ) : null}
           </div>
+          <Link href="/wiki" className={styles.headerWikiLink}>
+            Wiki
+          </Link>
           <InboxNavLink />
           <UserMenu />
         </div>

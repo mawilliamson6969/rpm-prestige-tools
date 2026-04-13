@@ -34,6 +34,7 @@ export default function WikiCategoryClient({
   const [category, setCategory] = useState<Category | null>(null);
   const [pages, setPages] = useState<PageRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [sortBy, setSortBy] = useState<"title" | "updated" | "order">("order");
@@ -41,6 +42,7 @@ export default function WikiCategoryClient({
   const load = useCallback(async () => {
     if (!token) return;
     setErr(null);
+    setReady(false);
     try {
       const [cRes, pRes] = await Promise.all([
         fetch(apiUrl("/wiki/categories"), { headers: { ...authHeaders() }, cache: "no-store" }),
@@ -59,6 +61,8 @@ export default function WikiCategoryClient({
       setPages(Array.isArray(pBody.pages) ? pBody.pages : []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load department.");
+    } finally {
+      setReady(true);
     }
   }, [authHeaders, token, categorySlug]);
 
@@ -93,11 +97,14 @@ export default function WikiCategoryClient({
   if (err) {
     return <p style={{ color: "#b32317" }}>{err}</p>;
   }
-  if (!category && !err) {
+  if (!ready && !err) {
     return <p style={{ color: "#6a737b" }}>Loading…</p>;
   }
-  if (!category) {
+  if (ready && !category) {
     return <p>Department not found.</p>;
+  }
+  if (!category) {
+    return null;
   }
 
   return (

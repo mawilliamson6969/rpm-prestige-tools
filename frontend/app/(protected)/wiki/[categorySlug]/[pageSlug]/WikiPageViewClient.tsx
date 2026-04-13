@@ -4,11 +4,11 @@ import Link from "next/link";
 import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import MarkdownBody, { useWikiHeadings } from "../../../../components/wiki/MarkdownBody";
-import WikiToc from "../../../../components/wiki/WikiToc";
-import WikiVersionPanel from "../../../../components/wiki/WikiVersionPanel";
-import { useAuth } from "../../../../context/AuthContext";
-import { apiUrl } from "../../../../lib/api";
+import MarkdownBody, { useWikiHeadings } from "../../../../../components/wiki/MarkdownBody";
+import WikiToc from "../../../../../components/wiki/WikiToc";
+import WikiVersionPanel from "../../../../../components/wiki/WikiVersionPanel";
+import { useAuth } from "../../../../../context/AuthContext";
+import { apiUrl } from "../../../../../lib/api";
 import shell from "../../wiki-shell.module.css";
 import art from "../../wiki-article.module.css";
 

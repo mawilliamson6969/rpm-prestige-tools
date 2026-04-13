@@ -129,7 +129,7 @@ export default function WikiVersionPanel({
 
   return (
     <>
-      <button type="button" className={styles.backdrop} aria-label="Close history" onClick={onClose} />
+      <div className={styles.backdrop} role="presentation" onClick={onClose} />
       <aside className={styles.panel} aria-label="Version history">
         <div className={styles.panelHeader}>
           <h2>Version history</h2>

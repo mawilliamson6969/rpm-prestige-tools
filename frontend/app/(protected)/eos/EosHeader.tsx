@@ -35,6 +35,9 @@ export default function EosHeader() {
           </Link>
         ))}
       </nav>
+      <Link href="/wiki" className={styles.headerWikiLink}>
+        Wiki
+      </Link>
       <InboxNavLink />
       <UserMenu />
     </header>

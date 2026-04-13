@@ -47,6 +47,20 @@
   gap: 1rem;
 }
 
+.headerWikiLink {
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.headerWikiLink:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .clock {
   font-size: 0.95rem;
   font-variant-numeric: tabular-nums;

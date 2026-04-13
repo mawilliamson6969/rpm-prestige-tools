@@ -64,6 +64,20 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+.headerWikiLink {
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.headerWikiLink:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .main {
   padding: clamp(1rem, 3vw, 1.75rem);
   max-width: 1600px;
