@@ -44,6 +44,7 @@ function mapUserRow(r) {
     username: r.username,
     displayName: r.display_name,
     role: r.role,
+    email: r.email ?? null,
   };
 }
 
@@ -69,7 +70,7 @@ export async function getEosTeamUsers(req, res) {
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      `SELECT id, username, display_name, role FROM users ORDER BY lower(display_name)`
+      `SELECT id, username, display_name, role, email FROM users ORDER BY lower(display_name)`
     );
     res.json({ users: rows.map(mapUserRow) });
   } catch (e) {

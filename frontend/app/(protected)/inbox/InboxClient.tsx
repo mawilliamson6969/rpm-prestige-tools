@@ -37,6 +37,12 @@ type TicketRow = {
   assignee_username?: string | null;
   assignee_name?: string | null;
   has_ai_draft_ready?: boolean;
+  connection_id?: number | null;
+  mailbox_display_name?: string | null;
+  mailbox_email?: string | null;
+  mailbox_type?: string | null;
+  inbox_permission?: string | null;
+  reply_from_email?: string | null;
 };
 
 type AiDraftPayload = {
@@ -85,7 +91,32 @@ type Stats = {
   byCategory: Record<string, number>;
 };
 
-type TeamUser = { id: number; username: string; displayName: string };
+type TeamUser = { id: number; username: string; displayName: string; email?: string | null };
+
+type MailboxConnection = {
+  id: number;
+  email_address: string | null;
+  mailbox_type: string | null;
+  mailbox_email: string | null;
+  display_name: string | null;
+  is_active: boolean;
+  last_sync_at: string | null;
+  my_permission: string | null;
+  unread_count: number | null;
+};
+
+const MAILBOX_COLORS = ["#1565c0", "#2e7d32", "#6a1b9a", "#e65100", "#00897b"];
+
+function mailboxColor(connectionId: number | null | undefined) {
+  if (connectionId == null || !Number.isFinite(connectionId)) return MAILBOX_COLORS[0];
+  return MAILBOX_COLORS[Math.abs(connectionId) % MAILBOX_COLORS.length];
+}
+
+function mailboxShortLabel(t: TicketRow) {
+  const name = (t.mailbox_display_name || t.mailbox_email || "").trim();
+  if (!name) return "";
+  return name.length > 18 ? `${name.slice(0, 16)}…` : name;
+}
 
 const CATEGORY_ORDER = [
   "maintenance",
@@ -186,6 +217,9 @@ export default function InboxClient() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [bucket, setBucket] = useState<string>("open");
+  /** null = all mailboxes */
+  const [filterConnectionId, setFilterConnectionId] = useState<number | null>(null);
+  const [mailboxes, setMailboxes] = useState<MailboxConnection[]>([]);
   const [category, setCategory] = useState<string | null>(null);
   /** When set, uses bucket=all and this status (narrow view). When null, bucket controls pipeline. */
   const [narrowStatus, setNarrowStatus] = useState<string | null>(null);
@@ -263,6 +297,18 @@ export default function InboxClient() {
     })();
   }, [authHeaders]);
 
+  const loadMailboxes = useCallback(async () => {
+    const res = await fetch(apiUrl("/inbox/connections"), { cache: "no-store", headers: { ...authHeaders() } });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(body.connections)) {
+      setMailboxes(body.connections as MailboxConnection[]);
+    }
+  }, [authHeaders]);
+
+  useEffect(() => {
+    void loadMailboxes();
+  }, [loadMailboxes]);
+
   useEffect(() => {
     (async () => {
       const res = await fetch(apiUrl("/inbox/signatures"), {
@@ -309,9 +355,10 @@ export default function InboxClient() {
     else if (sort === "priority") p.set("sort", "priority");
     else if (sort === "updated") p.set("sort", "updated");
     else p.set("sort", "newest");
+    if (filterConnectionId != null) p.set("connectionId", String(filterConnectionId));
     p.set("limit", String(limit));
     return p.toString();
-  }, [bucket, category, narrowStatus, teamUserId, debouncedSearch, sort]);
+  }, [bucket, category, narrowStatus, teamUserId, debouncedSearch, sort, filterConnectionId]);
 
   const loadList = useCallback(
     async (startOffset: number, append: boolean) => {
@@ -510,6 +557,7 @@ export default function InboxClient() {
     try {
       await fetch(apiUrl("/inbox/sync/trigger"), { method: "POST", headers: { ...authHeaders() } });
       await loadStats();
+      await loadMailboxes();
       loadList(0, false);
     } finally {
       setSyncBusy(false);
@@ -633,6 +681,19 @@ export default function InboxClient() {
     bucket !== "starred" &&
     ["open", "unread", "assignedToMe", "unassigned"].includes(bucket);
 
+  const canMetaMailbox =
+    !!detail &&
+    (detail.inbox_permission === "reply" ||
+      detail.inbox_permission === "admin" ||
+      detail.inbox_permission == null);
+  const canReplyMailbox = canMetaMailbox;
+
+  useEffect(() => {
+    if (detail?.inbox_permission === "read") {
+      setComposeMode("note");
+    }
+  }, [detail?.id, detail?.inbox_permission]);
+
   const slaBadgeEl =
     sla && detail?.received_at
       ? sla.firstResponseAt != null && sla.hoursToFirstResponse != null
@@ -727,6 +788,38 @@ export default function InboxClient() {
               ☰ Menu
             </button>
           </div>
+
+          <div className={styles.mailboxSectionLabel}>Mailboxes</div>
+          <button
+            type="button"
+            className={`${styles.mailboxNavBtn} ${filterConnectionId == null ? styles.active : ""}`}
+            onClick={() => {
+              setFilterConnectionId(null);
+              setMobileMenuOpen(false);
+            }}
+          >
+            <span className={styles.mailboxNavLabel}>All mailboxes</span>
+            <span className={styles.badgeCount}>{stats?.unread ?? "—"}</span>
+          </button>
+          {mailboxes.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`${styles.mailboxNavBtn} ${filterConnectionId === m.id ? styles.active : ""}`}
+              onClick={() => {
+                setFilterConnectionId(m.id);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <span className={styles.mailboxDot} style={{ background: mailboxColor(m.id) }} aria-hidden />
+              <span className={styles.mailboxNavLabel}>
+                {(m.display_name || m.mailbox_email || m.email_address || "Mailbox").trim()}
+              </span>
+              <span className={styles.badgeCount}>{m.unread_count ?? 0}</span>
+            </button>
+          ))}
+
+          <div className={styles.divider} />
 
           <button
             type="button"
@@ -898,6 +991,12 @@ export default function InboxClient() {
                   </div>
                   <p className={styles.subject}>{t.subject || "(No subject)"}</p>
                   <p className={styles.preview}>{t.body_preview || ""}</p>
+                  {t.connection_id != null && mailboxShortLabel(t) ? (
+                    <div className={styles.ticketMailboxTag}>
+                      <span className={styles.mailboxDot} style={{ background: mailboxColor(t.connection_id) }} />
+                      <span>📧 {mailboxShortLabel(t)}</span>
+                    </div>
+                  ) : null}
                   <div className={styles.ticketMeta}>
                     <span
                       className={styles.catBadge}
@@ -968,6 +1067,10 @@ export default function InboxClient() {
                     </span>
                     {slaBadgeEl}
                   </p>
+                  <p className={styles.receivedInLine}>
+                    Received in:{" "}
+                    {(detail.mailbox_display_name || detail.mailbox_email || "").trim() || "—"}
+                  </p>
                   <button
                     type="button"
                     className={styles.starBtn}
@@ -1000,6 +1103,7 @@ export default function InboxClient() {
                   Status
                   <select
                     value={detail.status}
+                    disabled={!canMetaMailbox}
                     onChange={(e) => updateTicket({ status: e.target.value })}
                   >
                     <option value="open">Open</option>
@@ -1012,6 +1116,7 @@ export default function InboxClient() {
                   Assigned to
                   <select
                     value={detail.assigned_to ?? ""}
+                    disabled={!canMetaMailbox}
                     onChange={(e) =>
                       updateTicket({
                         assignedTo: e.target.value === "" ? null : Number(e.target.value),
@@ -1030,6 +1135,7 @@ export default function InboxClient() {
                   Priority
                   <select
                     value={priorityTier(detail.priority)}
+                    disabled={!canMetaMailbox}
                     onChange={(e) => updateTicket({ priority: Number(e.target.value) })}
                   >
                     <option value={95}>Urgent</option>
@@ -1040,7 +1146,11 @@ export default function InboxClient() {
                 </label>
                 <label>
                   Category
-                  <select value={detail.category} onChange={(e) => updateTicket({ category: e.target.value })}>
+                  <select
+                    value={detail.category}
+                    disabled={!canMetaMailbox}
+                    onChange={(e) => updateTicket({ category: e.target.value })}
+                  >
                     {[
                       "maintenance",
                       "leasing",
@@ -1094,17 +1204,25 @@ export default function InboxClient() {
                       <span>{aiLoadingMessage || "Drafting…"}</span>
                     </div>
                   ) : null}
+                  {!canReplyMailbox ? (
+                    <p className={styles.readOnlyReplyNote}>
+                      You have read-only access to this mailbox. You can add internal notes below; replies are
+                      disabled.
+                    </p>
+                  ) : null}
                   <div className={styles.tabs}>
-                    <button
-                      type="button"
-                      className={`${styles.tabBtn} ${composeMode === "reply" ? styles.active : ""}`}
-                      onClick={() => {
-                        setComposeMode("reply");
-                        setComposeExpanded(false);
-                      }}
-                    >
-                      Reply
-                    </button>
+                    {canReplyMailbox ? (
+                      <button
+                        type="button"
+                        className={`${styles.tabBtn} ${composeMode === "reply" ? styles.active : ""}`}
+                        onClick={() => {
+                          setComposeMode("reply");
+                          setComposeExpanded(false);
+                        }}
+                      >
+                        Reply
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className={`${styles.tabBtn} ${composeMode === "note" ? styles.active : ""}`}
@@ -1115,14 +1233,16 @@ export default function InboxClient() {
                     >
                       Internal note
                     </button>
-                    <button
-                      type="button"
-                      className={styles.aiDraftTabBtn}
-                      onClick={() => void runAiDraft()}
-                      disabled={aiDraftBusy || !selectedId}
-                    >
-                      ✨ AI Draft Reply
-                    </button>
+                    {canReplyMailbox ? (
+                      <button
+                        type="button"
+                        className={styles.aiDraftTabBtn}
+                        onClick={() => void runAiDraft()}
+                        disabled={aiDraftBusy || !selectedId}
+                      >
+                        ✨ AI Draft Reply
+                      </button>
+                    ) : null}
                   </div>
                   {showAiDraftBanner && composeMode === "reply" ? (
                     <div className={styles.aiDraftBanner}>
@@ -1169,7 +1289,12 @@ export default function InboxClient() {
                       )}
                     </details>
                   ) : null}
-                  {composeMode === "reply" ? (
+                  {composeMode === "reply" && canReplyMailbox && (detail.reply_from_email || detail.mailbox_email) ? (
+                    <p className={styles.replyFromLine}>
+                      Replying from: {(detail.reply_from_email || detail.mailbox_email || "").trim()}
+                    </p>
+                  ) : null}
+                  {composeMode === "reply" && canReplyMailbox ? (
                     <div className={styles.sigSelectRow}>
                       <label className={styles.sigSelectLabel} htmlFor="inbox-signature-select">
                         Signature:

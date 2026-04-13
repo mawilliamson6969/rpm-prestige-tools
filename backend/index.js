@@ -107,7 +107,9 @@ import {
 } from "./routes/eos.js";
 import {
   deleteInboxConnection,
+  deleteInboxConnectionPermission,
   deleteInboxTicketAiDraft,
+  getInboxConnectionPermissions,
   getInboxConnections,
   getInboxStats,
   getInboxSyncStatus,
@@ -117,12 +119,16 @@ import {
   getMicrosoftCallback,
   getMicrosoftConnect,
   postInboxAiDraftBatch,
+  postInboxConnectionGrantTeam,
+  postInboxConnectionPermission,
   postInboxSyncTrigger,
   postInboxTicketAiDraft,
   postInboxTicketAssign,
   postInboxTicketNote,
   postInboxTicketReply,
   postMicrosoftAuthorizeUrl,
+  putInboxConnection,
+  putInboxConnectionPermission,
   putInboxTicket,
 } from "./routes/inbox.js";
 import {
@@ -353,7 +359,13 @@ app.get("/ask/history", requireAuth, getAskHistory);
 
 app.post("/inbox/microsoft/authorize-url", requireAuth, postMicrosoftAuthorizeUrl);
 app.get("/inbox/connections", requireAuth, getInboxConnections);
+app.put("/inbox/connections/:id", requireAuth, putInboxConnection);
 app.delete("/inbox/connections/:id", requireAuth, deleteInboxConnection);
+app.get("/inbox/connections/:id/permissions", requireAuth, getInboxConnectionPermissions);
+app.post("/inbox/connections/:id/permissions/grant-team", requireAuth, postInboxConnectionGrantTeam);
+app.post("/inbox/connections/:id/permissions", requireAuth, postInboxConnectionPermission);
+app.put("/inbox/connections/:id/permissions/:userId", requireAuth, putInboxConnectionPermission);
+app.delete("/inbox/connections/:id/permissions/:userId", requireAuth, deleteInboxConnectionPermission);
 app.get("/inbox/tickets", requireAuth, getInboxTickets);
 app.get("/inbox/tickets/:id", requireAuth, getInboxTicket);
 app.put("/inbox/tickets/:id", requireAuth, putInboxTicket);

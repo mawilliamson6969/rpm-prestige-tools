@@ -1105,3 +1105,255 @@
   color: var(--grey);
   line-height: 1.45;
 }
+
+.mailboxSectionLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey);
+  padding: 0.35rem 0.75rem 0.15rem;
+  font-weight: 600;
+}
+
+.mailboxNavBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  background: transparent;
+  font-size: 0.86rem;
+  cursor: pointer;
+  color: var(--navy);
+  border-radius: 6px;
+}
+
+.mailboxNavBtn:hover {
+  background: var(--off);
+}
+
+.mailboxNavBtn.active {
+  background: #e8f7fc;
+  font-weight: 600;
+}
+
+.mailboxDot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mailboxNavLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticketMailboxTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--grey);
+  margin-top: 0.2rem;
+}
+
+.receivedInLine {
+  font-size: 0.85rem;
+  color: var(--grey);
+  margin: 0.25rem 0 0;
+}
+
+.replyFromLine {
+  font-size: 0.82rem;
+  color: var(--navy);
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.readOnlyReplyNote {
+  font-size: 0.85rem;
+  color: var(--grey);
+  padding: 0.65rem 0.75rem;
+  background: #fafbfc;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.settingsSection {
+  margin-top: 1.75rem;
+}
+
+.settingsCard {
+  border: 1px solid #e2e4e8;
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.85rem;
+  background: #fff;
+}
+
+.settingsCardTitle {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin: 0 0 0.35rem;
+}
+
+.settingsMuted {
+  font-size: 0.85rem;
+  color: var(--grey);
+  margin: 0 0 0.75rem;
+}
+
+.settingsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.badgePersonal,
+.badgeShared {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+}
+
+.badgePersonal {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.badgeShared {
+  background: #f3e5f5;
+  color: #6a1b9a;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modalPanel {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 560px;
+  width: 100%;
+  max-height: min(90vh, 640px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.modalHead {
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid #e2e4e8;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.modalHead h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modalClose {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--grey);
+}
+
+.modalBody {
+  padding: 1rem 1.1rem;
+  overflow-y: auto;
+}
+
+.modalFoot {
+  padding: 0.75rem 1.1rem;
+  border-top: 1px solid #e2e4e8;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.permTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.permTable th,
+.permTable td {
+  padding: 0.5rem 0.35rem;
+  text-align: left;
+  border-bottom: 1px solid #eef0f3;
+  vertical-align: middle;
+}
+
+.permTable th {
+  color: var(--grey);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.permSelect {
+  min-width: 8.5rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid #cfd4dc;
+}
+
+.inlineInput {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #cfd4dc;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.secondaryBtn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #cfd4dc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.secondaryBtn:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.dangerBtn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #e8c4c4;
+  border-radius: 6px;
+  background: #fff5f5;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
