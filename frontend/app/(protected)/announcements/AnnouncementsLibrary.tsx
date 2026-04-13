@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import UserMenu from "../../../components/UserMenu";
 import AddAnnouncementModal from "../../AddAnnouncementModal";
 import { useAuth } from "../../../context/AuthContext";
 import { apiUrl } from "../../../lib/api";
@@ -154,11 +152,7 @@ export default function AnnouncementsLibrary() {
         <header className={styles.header}>
           <div>
             <h1 className={styles.title}>Team Announcements</h1>
-            <p className={styles.sub}>
-              <Link href="/">← Team Hub</Link>
-            </p>
           </div>
-          <UserMenu variant="light" />
         </header>
 
         <div className={styles.toolbar}>

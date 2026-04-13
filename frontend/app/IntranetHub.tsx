@@ -3,14 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AgentsHubCard from "../components/AgentsHubCard";
-import AgentsNavLink from "../components/AgentsNavLink";
-import InboxNavLink from "../components/InboxNavLink";
-import MarketingNavDropdown from "../components/MarketingNavDropdown";
 import WikiHubCard from "../components/WikiHubCard";
 import FileManagerHubCard from "../components/FileManagerHubCard";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
 import VideoMessagesHubCard from "../components/VideoMessagesHubCard";
-import UserMenu from "../components/UserMenu";
 import AddAnnouncementModal from "./AddAnnouncementModal";
 import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
@@ -147,7 +143,6 @@ function ToolCardSoon({ title, description }: { title: string; description: stri
 
 export default function IntranetHub() {
   const { authHeaders, isAdmin, token } = useAuth();
-  const [now, setNow] = useState(() => new Date());
   const [occupancy, setOccupancy] = useState<OccupancyData | null>(null);
   const [occLoading, setOccLoading] = useState(true);
   const [occError, setOccError] = useState<string | null>(null);
@@ -168,11 +163,6 @@ export default function IntranetHub() {
       setAnnouncements([]);
     }
   }, [authHeaders]);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   const loadOccupancy = useCallback(async () => {
     setOccLoading(true);
@@ -209,39 +199,12 @@ export default function IntranetHub() {
     loadAnnouncements();
   }, [loadAnnouncements, token]);
 
-  const clockStr = now.toLocaleString("en-US", {
-    timeZone: "America/Chicago",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-
   return (
     <div className={styles.page}>
       <header className={styles.headerBar}>
         <div>
           <h1 className={styles.brandTitle}>Real Property Management Prestige</h1>
           <p className={styles.brandSub}>Team Hub — Internal Use Only</p>
-        </div>
-        <div className={styles.headerAside}>
-          <div className={styles.clock}>
-            <span className={styles.clockLabel}>Houston (CT)</span>
-            <span>{clockStr}</span>
-          </div>
-          <Link href="/wiki" className={styles.headerWikiLink}>
-            Wiki
-          </Link>
-          <Link href="/files" className={styles.headerWikiLink}>
-            Files
-          </Link>
-          <MarketingNavDropdown variant="hub" />
-          <AgentsNavLink />
-          <InboxNavLink />
-          <UserMenu />
         </div>
       </header>
 

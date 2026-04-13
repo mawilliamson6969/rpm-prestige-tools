@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import SignatureManager from "../../../../components/signature/SignatureManager";
-import UserMenu from "../../../../components/UserMenu";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
 import type { ManagedUser } from "../users/UserFormModal";
@@ -61,7 +60,9 @@ export default function AdminSignaturesClient() {
           <Link href="/admin/users" className={inboxStyles.mutedLink}>
             User management
           </Link>
-          <UserMenu variant="light" />
+          <Link href="/admin/forms" className={inboxStyles.mutedLink}>
+            Form submissions
+          </Link>
         </div>
       </header>
 

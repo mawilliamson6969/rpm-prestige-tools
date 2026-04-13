@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import UserMenu from "../../../../components/UserMenu";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
 import UserFormModal, { type ManagedUser } from "./UserFormModal";
@@ -152,21 +151,18 @@ export default function UsersAdminClient() {
     <div className={styles.page}>
       <header className={styles.topBar}>
         <div className={styles.titleBlock}>
-          <Link href="/" className={styles.backLink}>
-            ← Team Hub
-          </Link>
           <h1>User Management</h1>
           <p className={styles.sub}>Real Property Management Prestige — team accounts</p>
-        </div>
-        <div className={styles.topBarRight}>
-          <UserMenu />
         </div>
       </header>
 
       <main className={styles.main}>
         <div className={styles.toolbar}>
           <p style={{ margin: 0, color: "var(--grey)", fontSize: "0.95rem" }}>
-            Manage login accounts and roles for the intranet.
+            Manage login accounts and roles for the intranet.{" "}
+            <Link href="/admin/signatures" style={{ color: "var(--blue)", fontWeight: 600 }}>
+              Email signatures
+            </Link>
           </p>
           <button type="button" className={styles.addBtn} onClick={() => setModal({ mode: "create" })}>
             Add user

@@ -4,7 +4,6 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import UserMenu from "../../../../components/UserMenu";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl, ownerTerminationBasePath } from "../../../../lib/api";
 
@@ -240,26 +239,9 @@ export default function AdminFormLibrary() {
       }}
     >
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <header
-          style={{
-            marginBottom: "1.5rem",
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: "1rem",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: NAVY }}>Real Property Management Prestige</div>
-            <h1 style={{ margin: "0.35rem 0 0", fontSize: "1.35rem", color: LIGHT_BLUE }}>Form Submission Library</h1>
-            <p style={{ margin: "0.5rem 0 0", fontSize: "0.9rem" }}>
-              <Link href="/" style={{ color: LIGHT_BLUE, fontWeight: 600 }}>
-                ← Team Hub
-              </Link>
-            </p>
-          </div>
-          <UserMenu variant="light" />
+        <header style={{ marginBottom: "1.5rem" }}>
+          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: NAVY }}>Real Property Management Prestige</div>
+          <h1 style={{ margin: "0.35rem 0 0", fontSize: "1.35rem", color: LIGHT_BLUE }}>Form Submission Library</h1>
         </header>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", alignItems: "flex-start" }}>

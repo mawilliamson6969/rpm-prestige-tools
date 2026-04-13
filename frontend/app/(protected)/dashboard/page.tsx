@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import DashboardClient from "./DashboardClient";
 
 export const metadata: Metadata = {
@@ -7,5 +8,13 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardPage() {
-  return <DashboardClient />;
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: "2rem", color: "#6a737b", fontFamily: "system-ui, sans-serif" }}>Loading dashboard…</div>
+      }
+    >
+      <DashboardClient />
+    </Suspense>
+  );
 }

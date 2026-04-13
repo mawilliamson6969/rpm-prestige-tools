@@ -1,0 +1,333 @@
+/* RPM Prestige app sidebar — navy shell, light blue active rail */
+
+.shell {
+  --sidebar-navy: #1b2856;
+  --sidebar-blue: #0098d0;
+  --sidebar-red: #b32317;
+  --sidebar-grey: #6a737b;
+  --sidebar-white: #ffffff;
+  --sidebar-off: #f5f5f5;
+  --sidebar-width-expanded: 240px;
+  --sidebar-width-collapsed: 60px;
+  --sidebar-transition: 300ms ease;
+  position: fixed;
+  z-index: 1200;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-outer-w, var(--sidebar-width-expanded));
+  background: var(--sidebar-navy);
+  color: var(--sidebar-white);
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  transition: width var(--sidebar-transition), transform var(--sidebar-transition);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.shell[data-collapsed="true"]:not([data-mobile="true"]) {
+  --sidebar-outer-w: var(--sidebar-width-collapsed);
+}
+
+.shell[data-mobile="true"] {
+  width: min(var(--sidebar-width-expanded), 88vw);
+  transform: translateX(-105%);
+}
+
+.shell[data-mobile="true"][data-drawer-open="true"] {
+  transform: translateX(0);
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 0.5rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toggle {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-white);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: background 0.2s ease;
+}
+
+.toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.mobileClose {
+  margin-left: auto;
+}
+
+.logoBlock {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.15rem;
+}
+
+.logoMark {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  color: var(--sidebar-white);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logoMarkCompact {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(0, 152, 208, 0.25);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--sidebar-white);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.35rem 0 0.75rem;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-width: thin;
+}
+
+.sectionLabel {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(106, 115, 123, 0.95);
+  padding: 0.85rem 0.85rem 0.35rem;
+  text-transform: uppercase;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0.45rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.95);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  width: calc(100% - 0.9rem);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s ease;
+  position: relative;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rowActive {
+  background: rgba(0, 152, 208, 0.18);
+  box-shadow: inset 3px 0 0 0 var(--sidebar-blue);
+}
+
+.rowActive:hover {
+  background: rgba(0, 152, 208, 0.22);
+}
+
+.icon {
+  width: 1.35rem;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.externalMark {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.chevron {
+  font-size: 0.65rem;
+  opacity: 0.75;
+  flex-shrink: 0;
+  transition: transform var(--sidebar-transition);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.subWrap {
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.subList {
+  padding: 0.15rem 0 0.35rem 0.25rem;
+}
+
+.subLink {
+  display: block;
+  margin: 0.1rem 0.45rem 0.1rem 0.35rem;
+  padding: 0.38rem 0.55rem 0.38rem 2rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  text-decoration: none;
+  transition: background 0.2s ease;
+}
+
+.subLink:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.subLinkActive {
+  background: rgba(0, 152, 208, 0.2);
+  box-shadow: inset 3px 0 0 0 var(--sidebar-blue);
+}
+
+.badge {
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--sidebar-red);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badgePulse {
+  animation: sidebarBadgePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes sidebarBadgePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(179, 35, 23, 0.45);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 6px rgba(179, 35, 23, 0);
+  }
+}
+
+.userFooter {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.55rem;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.userBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.4rem 0.45rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sidebar-white);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.2s ease;
+}
+
+.userBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 152, 208, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.userMenu {
+  position: absolute;
+  bottom: 100%;
+  left: 0.55rem;
+  right: 0.55rem;
+  margin-bottom: 0.35rem;
+  background: #fff;
+  color: #1b2856;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(27, 40, 86, 0.18);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.userMenu button,
+.userMenu a {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: none;
+  background: none;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.userMenu button:hover,
+.userMenu a:hover {
+  background: var(--sidebar-off);
+}
+
+.userMenuDanger {
+  color: var(--sidebar-red) !important;
+}
+
+.userWrap {
+  position: relative;
+}

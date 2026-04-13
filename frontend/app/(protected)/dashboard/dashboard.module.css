@@ -13,6 +13,33 @@
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+.dashboardHeading {
+  padding: clamp(0.85rem, 2vw, 1.25rem) clamp(1rem, 3vw, 2rem) 0.65rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+}
+
+.dashboardTitle {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.2vw, 1.35rem);
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.dashboardHeadingActions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.dashboardHeadingActions .refreshBtn {
+  margin-top: 0;
+}
+
 .topBar {
   background: var(--navy);
   color: var(--white);

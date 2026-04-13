@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import AskAiFloatingWidget from "../../components/AskAiFloatingWidget";
+import SidebarLayout from "../../components/SidebarLayout";
 import { RequireAuth } from "../../context/AuthContext";
 
 export default function ProtectedLayout({
@@ -25,7 +26,7 @@ export default function ProtectedLayout({
       }
     >
       <RequireAuth>
-        {children}
+        <SidebarLayout>{children}</SidebarLayout>
         <AskAiFloatingWidget />
       </RequireAuth>
     </Suspense>

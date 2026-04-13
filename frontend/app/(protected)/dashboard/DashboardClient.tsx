@@ -1,11 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import EosNavDropdown from "../../../components/EosNavDropdown";
-import AgentsNavLink from "../../../components/AgentsNavLink";
-import InboxNavLink from "../../../components/InboxNavLink";
-import UserMenu from "../../../components/UserMenu";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../../context/AuthContext";
 import { apiUrl } from "../../../lib/api";
 import styles from "./dashboard.module.css";
@@ -18,6 +14,8 @@ import PortfolioPanel from "./PortfolioPanel";
 import CrmPanel from "./CrmPanel";
 
 type TabId = "executive" | "leasing" | "maintenance" | "finance" | "portfolio" | "crm";
+
+const TAB_IDS = new Set<TabId>(["executive", "leasing", "maintenance", "finance", "portfolio", "crm"]);
 
 function buildQuery(params: {
   propertyIds: string[];
@@ -32,21 +30,16 @@ function buildQuery(params: {
   return s ? `?${s}` : "";
 }
 
-type SyncLatest = {
-  completed_at?: string | null;
-  started_at?: string | null;
-  status?: string;
-};
-
 export default function DashboardClient() {
   const { authHeaders, isAdmin } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabId>("executive");
   const [preset, setPreset] = useState<DatePresetId>("ytd");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
 
-  const [syncLatest, setSyncLatest] = useState<SyncLatest | null>(null);
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
 
@@ -101,7 +94,6 @@ export default function DashboardClient() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return;
-      setSyncLatest(body.latest ?? null);
       setSyncInProgress(!!body.syncInProgress);
     } catch {
       /* ignore */
@@ -165,13 +157,26 @@ export default function DashboardClient() {
 
   useEffect(() => {
     loadSyncStatus();
-    const id = setInterval(loadSyncStatus, 60_000);
-    return () => clearInterval(id);
   }, [loadSyncStatus]);
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t && TAB_IDS.has(t as TabId)) setTab(t as TabId);
+  }, [searchParams]);
 
   useEffect(() => {
     loadExecutiveData();
   }, [loadExecutiveData]);
+
+  const setTabNav = useCallback(
+    (id: TabId) => {
+      setTab(id);
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("tab", id);
+      router.replace(`/dashboard?${sp.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
 
   const tabTitle = useMemo(() => {
     const m: Record<TabId, string> = {
@@ -184,19 +189,6 @@ export default function DashboardClient() {
     };
     return m[tab];
   }, [tab]);
-
-  const lastSyncedText = useMemo(() => {
-    const t = syncLatest?.completed_at ?? syncLatest?.started_at;
-    if (!t) return "Not synced yet";
-    try {
-      return new Date(t).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
-    } catch {
-      return String(t);
-    }
-  }, [syncLatest]);
 
   const onRefreshCache = async () => {
     if (typeof window === "undefined" || !isAdmin) return;
@@ -257,43 +249,17 @@ export default function DashboardClient() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.topBar}>
-        <div className={styles.titleBlock}>
-          <Link href="/" className={styles.backLink}>
-            ← Team Hub
-          </Link>
-          <EosNavDropdown variant="light" />
-          <h1>RPM Prestige — {tabTitle} Dashboard</h1>
-        </div>
-        <div className={styles.topBarRight}>
-          <div className={styles.syncMeta}>
-            <div>
-              Last synced: <strong>{lastSyncedText}</strong>
-              {syncInProgress ? " (sync running…)" : ""}
-            </div>
-            <div className={styles.muted}>Cached AppFolio data · Houston (CT)</div>
-            {isAdmin ? (
-              <button
-                type="button"
-                className={styles.refreshBtn}
-                onClick={onRefreshCache}
-                disabled={adminBusy}
-              >
-                {adminBusy ? "Starting…" : "Refresh Data"}
-              </button>
-            ) : null}
+      <div className={styles.dashboardHeading}>
+        <h1 className={styles.dashboardTitle}>RPM Prestige — {tabTitle} Dashboard</h1>
+        {isAdmin ? (
+          <div className={styles.dashboardHeadingActions}>
+            {syncInProgress ? <span className={styles.muted}>Sync running…</span> : null}
+            <button type="button" className={styles.refreshBtn} onClick={onRefreshCache} disabled={adminBusy}>
+              {adminBusy ? "Starting…" : "Refresh cache"}
+            </button>
           </div>
-          <Link href="/wiki" className={styles.headerWikiLink}>
-            Wiki
-          </Link>
-          <Link href="/files" className={styles.headerWikiLink}>
-            Files
-          </Link>
-          <AgentsNavLink />
-          <InboxNavLink />
-          <UserMenu />
-        </div>
-      </header>
+        ) : null}
+      </div>
 
       <nav className={styles.tabs} aria-label="Dashboard sections">
         {(
@@ -310,7 +276,7 @@ export default function DashboardClient() {
             key={id}
             type="button"
             className={`${styles.tab} ${tab === id ? styles.tabActive : ""}`}
-            onClick={() => setTab(id)}
+            onClick={() => setTabNav(id)}
           >
             {label}
           </button>
