@@ -2,20 +2,44 @@ import { getPool } from "../lib/db.js";
 import { runEmailSyncOnce } from "../lib/inbox/email-sync.js";
 import { sendTicketReply } from "../lib/inbox/email-send.js";
 import {
+  assertInboxAdminOnConnection,
+  getAllowedConnectionIds,
+  getUserPermissionOnConnection,
+  permissionAtLeast,
+} from "../lib/inbox/inbox-permissions.js";
+import {
   buildMicrosoftAuthorizeUrl,
   exchangeCodeForTokens,
   fetchGraphMe,
   verifyOAuthState,
 } from "../lib/inbox/microsoft-auth.js";
+import { runAiDraftForTicket } from "../lib/inbox/ai-draft-reply.js";
 
 function frontendBase() {
   return (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
+function oauthOptsFromRequest(req) {
+  const q = req.query || {};
+  const type = String(q.type || "personal").toLowerCase() === "shared" ? "shared" : "personal";
+  const mailbox = typeof q.mailbox === "string" ? q.mailbox.trim() : "";
+  const displayName = typeof q.displayName === "string" ? q.displayName.trim() : "";
+  return {
+    flow: type === "shared" ? "shared" : "personal",
+    sharedMailbox: type === "shared" ? mailbox : null,
+    displayName: displayName || null,
+  };
+}
+
 /** GET — redirect to Microsoft (requires Authorization: Bearer; browsers should use POST authorize-url instead). */
 export async function getMicrosoftConnect(req, res) {
   try {
-    const url = buildMicrosoftAuthorizeUrl(req.user.id);
+    const o = oauthOptsFromRequest(req);
+    if (o.flow === "shared" && !o.sharedMailbox) {
+      res.status(400).json({ error: "Shared mailbox email is required (query: mailbox=)." });
+      return;
+    }
+    const url = buildMicrosoftAuthorizeUrl(req.user.id, o);
     res.redirect(302, url);
   } catch (e) {
     if (e.code === "MS_NOT_CONFIGURED") {
@@ -30,7 +54,19 @@ export async function getMicrosoftConnect(req, res) {
 /** POST — returns Microsoft authorize URL for SPA redirect */
 export async function postMicrosoftAuthorizeUrl(req, res) {
   try {
-    const url = buildMicrosoftAuthorizeUrl(req.user.id);
+    const b = req.body || {};
+    const flow = String(b.flow || "personal").toLowerCase() === "shared" ? "shared" : "personal";
+    const sharedMailbox = typeof b.mailbox === "string" ? b.mailbox.trim() : "";
+    const displayName = typeof b.displayName === "string" ? b.displayName.trim() : "";
+    if (flow === "shared" && !sharedMailbox) {
+      res.status(400).json({ error: "mailbox is required for shared mailbox flow." });
+      return;
+    }
+    const url = buildMicrosoftAuthorizeUrl(req.user.id, {
+      flow,
+      sharedMailbox: flow === "shared" ? sharedMailbox : null,
+      displayName: displayName || null,
+    });
     res.json({ authorizeUrl: url });
   } catch (e) {
     if (e.code === "MS_NOT_CONFIGURED") {
@@ -220,17 +256,16 @@ export async function getInboxTickets(req, res) {
     if (sort === "updated") orderBy = "t.updated_at DESC";
 
     const q = `
-      SELECT t.*, u.username AS assignee_username, u.display_name AS assignee_name
+      SELECT t.*, u.username AS assignee_username, u.display_name AS assignee_name,
+        (tad.id IS NOT NULL) AS has_ai_draft_ready
       FROM tickets t
       LEFT JOIN users u ON u.id = t.assigned_to
+      LEFT JOIN ticket_ai_drafts tad ON tad.ticket_id = t.id AND tad.used_at IS NULL
       WHERE ${where}
       ORDER BY ${orderBy}
       LIMIT ${limit} OFFSET ${offset}`;
     const { rows } = await pool.query(q, params);
-    const { rows: countRows } = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM tickets t WHERE ${where}`,
-      params
-    );
+    const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS c FROM tickets t WHERE ${where}`, params);
     res.json({ tickets: rows, total: countRows[0].c, limit, offset });
   } catch (e) {
     console.error(e);
@@ -260,7 +295,19 @@ export async function getInboxTicket(req, res) {
        WHERE tr.ticket_id = $1 ORDER BY tr.created_at ASC`,
       [id]
     );
-    res.json({ ticket: rows[0], responses });
+    const { rows: draftRows } = await pool.query(
+      `SELECT draft_text, context_used, created_at
+       FROM ticket_ai_drafts WHERE ticket_id = $1 AND used_at IS NULL`,
+      [id]
+    );
+    const ai_draft = draftRows[0]
+      ? {
+          draft_text: draftRows[0].draft_text,
+          context_used: draftRows[0].context_used,
+          created_at: draftRows[0].created_at,
+        }
+      : null;
+    res.json({ ticket: rows[0], responses, ai_draft });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load ticket." });
@@ -430,5 +477,108 @@ export async function getInboxSyncStatus(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load sync status." });
+  }
+}
+
+export async function postInboxTicketAiDraft(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const { draft, contextUsed } = await runAiDraftForTicket(id, req.user.id);
+    res.json({ draft, contextUsed });
+  } catch (e) {
+    if (e.code === "NOT_FOUND") {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    if (e.code === "NO_AI_KEY") {
+      res.status(503).json({ error: e.message });
+      return;
+    }
+    console.error(e);
+    res.status(500).json({ error: e.message || "Could not generate draft." });
+  }
+}
+
+export async function getInboxTicketSla(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const pool = getPool();
+    const { rows } = await pool.query(`SELECT id, received_at FROM tickets WHERE id = $1`, [id]);
+    if (!rows.length) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    const receivedAt = rows[0].received_at ? new Date(rows[0].received_at) : null;
+    const { rows: fr } = await pool.query(
+      `SELECT MIN(created_at) AS first_at FROM ticket_responses WHERE ticket_id = $1 AND response_type = 'reply'`,
+      [id]
+    );
+    const firstReplyAt = fr[0]?.first_at ? new Date(fr[0].first_at) : null;
+    const now = Date.now();
+    const hoursOpen = receivedAt ? (now - receivedAt.getTime()) / (1000 * 60 * 60) : null;
+    let hoursToFirstResponse = null;
+    if (receivedAt && firstReplyAt) {
+      hoursToFirstResponse = (firstReplyAt.getTime() - receivedAt.getTime()) / (1000 * 60 * 60);
+    }
+    const slaTarget = 24;
+    const isOverdue = Boolean(receivedAt && !firstReplyAt && hoursOpen != null && hoursOpen > slaTarget);
+    res.json({
+      hoursOpen: hoursOpen != null ? Math.round(hoursOpen * 10) / 10 : null,
+      hoursToFirstResponse: hoursToFirstResponse != null ? Math.round(hoursToFirstResponse * 10) / 10 : null,
+      isOverdue,
+      slaTarget,
+      receivedAt: receivedAt ? receivedAt.toISOString() : null,
+      firstResponseAt: firstReplyAt ? firstReplyAt.toISOString() : null,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load SLA." });
+  }
+}
+
+export async function postInboxAiDraftBatch(req, res) {
+  try {
+    const raw = req.body?.ticketIds;
+    if (!Array.isArray(raw)) {
+      res.status(400).json({ error: "ticketIds array is required." });
+      return;
+    }
+    const ticketIds = [...new Set(raw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))].slice(0, 10);
+    if (!ticketIds.length) {
+      res.status(400).json({ error: "No valid ticket ids." });
+      return;
+    }
+    const results = [];
+    for (const ticketId of ticketIds) {
+      try {
+        const { draft, contextUsed } = await runAiDraftForTicket(ticketId, req.user.id);
+        results.push({ ticketId, draft, contextUsed });
+      } catch (e) {
+        results.push({
+          ticketId,
+          error: e.code === "NOT_FOUND" ? "Not found." : e.message || "Draft failed",
+        });
+      }
+    }
+    res.json({ results });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Batch draft failed." });
+  }
+}
+
+export async function deleteInboxTicketAiDraft(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const pool = getPool();
+    const { rowCount } = await pool.query(`DELETE FROM ticket_ai_drafts WHERE ticket_id = $1 AND used_at IS NULL`, [id]);
+    if (!rowCount) {
+      res.status(404).json({ error: "No active draft." });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not dismiss draft." });
   }
 }

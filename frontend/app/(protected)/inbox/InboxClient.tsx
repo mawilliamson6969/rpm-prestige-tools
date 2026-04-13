@@ -27,6 +27,7 @@ type TicketRow = {
   is_read: boolean;
   is_starred: boolean;
   received_at: string | null;
+  first_response_at?: string | null;
   ai_summary: string | null;
   linked_property_name: string | null;
   linked_tenant_name: string | null;
@@ -35,6 +36,34 @@ type TicketRow = {
   assigned_to?: number | null;
   assignee_username?: string | null;
   assignee_name?: string | null;
+  has_ai_draft_ready?: boolean;
+};
+
+type AiDraftPayload = {
+  draft_text: string;
+  context_used: ContextUsedShape | null;
+  created_at: string;
+};
+
+type ContextUsedShape = {
+  property?: boolean;
+  propertyName?: string | null;
+  tenant?: boolean;
+  tenantName?: string | null;
+  owner?: boolean;
+  ownerName?: string | null;
+  workOrders?: number;
+  delinquency?: string | null;
+  leadsimple?: boolean;
+};
+
+type SlaPayload = {
+  hoursOpen: number | null;
+  hoursToFirstResponse: number | null;
+  isOverdue: boolean;
+  slaTarget: number;
+  receivedAt: string | null;
+  firstResponseAt: string | null;
 };
 
 type ResponseRow = {
@@ -132,6 +161,25 @@ function priorityTier(p: number) {
   return 25;
 }
 
+function formatSlaDuration(hours: number) {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
+  const rounded = Math.round(hours * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}h` : `${rounded}h`;
+}
+
+function hasNoAiContext(ctx: ContextUsedShape | null) {
+  if (!ctx) return true;
+  const wo = ctx.workOrders ?? 0;
+  return (
+    !ctx.property &&
+    !ctx.tenant &&
+    !ctx.owner &&
+    wo === 0 &&
+    (ctx.delinquency == null || ctx.delinquency === "") &&
+    !ctx.leadsimple
+  );
+}
+
 export default function InboxClient() {
   const { authHeaders, isAdmin } = useAuth();
 
@@ -161,6 +209,14 @@ export default function InboxClient() {
   const [composeBody, setComposeBody] = useState("");
   const [composeBusy, setComposeBusy] = useState(false);
   const [composeExpanded, setComposeExpanded] = useState(false);
+  const [showAiDraftBanner, setShowAiDraftBanner] = useState(false);
+  const [aiContextUsed, setAiContextUsed] = useState<ContextUsedShape | null>(null);
+  const [aiDraftBusy, setAiDraftBusy] = useState(false);
+  const [aiLoadingMessage, setAiLoadingMessage] = useState<string | null>(null);
+  const [sla, setSla] = useState<SlaPayload | null>(null);
+  const [batchDraftBusy, setBatchDraftBusy] = useState(false);
+  const [batchDraftProgress, setBatchDraftProgress] = useState<string | null>(null);
+  const [batchDraftSummary, setBatchDraftSummary] = useState<string | null>(null);
   const [signatures, setSignatures] = useState<EmailSignatureRow[]>([]);
   /** Selected signature for reply: id, "none", or null before load. */
   const [selectedSigId, setSelectedSigId] = useState<number | "none" | null>(null);
@@ -223,6 +279,10 @@ export default function InboxClient() {
   useEffect(() => {
     setComposeExpanded(false);
     setComposeBody("");
+    setShowAiDraftBanner(false);
+    setAiContextUsed(null);
+    setAiLoadingMessage(null);
+    setSla(null);
   }, [selectedId]);
 
   useEffect(() => {
@@ -295,6 +355,14 @@ export default function InboxClient() {
         if (res.ok) {
           setDetail(body.ticket as TicketRow);
           setResponses(Array.isArray(body.responses) ? body.responses : []);
+          const ad = body.ai_draft as AiDraftPayload | undefined;
+          if (ad?.draft_text) {
+            setComposeBody(ad.draft_text);
+            setAiContextUsed(ad.context_used);
+            setShowAiDraftBanner(true);
+            setComposeMode("reply");
+            setComposeExpanded(true);
+          }
         }
       } finally {
         setDetailLoading(false);
@@ -311,6 +379,49 @@ export default function InboxClient() {
     }
     loadDetail(selectedId);
   }, [selectedId, loadDetail]);
+
+  useEffect(() => {
+    if (selectedId == null || !detail || detail.id !== selectedId) {
+      setSla(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/sla`), {
+        cache: "no-store",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!cancelled && res.ok) setSla(body as SlaPayload);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, detail?.id, authHeaders]);
+
+  useEffect(() => {
+    if (!aiDraftBusy) return;
+    setAiLoadingMessage("Drafting response… Pulling context from AppFolio…");
+    const t = window.setTimeout(() => {
+      setAiLoadingMessage("Generating draft…");
+    }, 1600);
+    return () => window.clearTimeout(t);
+  }, [aiDraftBusy]);
+
+  useEffect(() => {
+    if (!batchDraftSummary) return;
+    const t = window.setTimeout(() => setBatchDraftSummary(null), 9000);
+    return () => window.clearTimeout(t);
+  }, [batchDraftSummary]);
+
+  const unreadDraftEligible = useMemo(() => {
+    const openStatuses = new Set(["open", "in_progress", "waiting"]);
+    return tickets.filter((t) => !t.is_read && !t.first_response_at && openStatuses.has(t.status));
+  }, [tickets]);
+  const unreadDraftIdsBatch = useMemo(
+    () => unreadDraftEligible.map((t) => t.id).slice(0, 10),
+    [unreadDraftEligible]
+  );
 
   const openTicket = (id: number) => {
     setSelectedId(id);
@@ -380,6 +491,10 @@ export default function InboxClient() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        if (composeMode === "reply") {
+          setShowAiDraftBanner(false);
+          setAiContextUsed(null);
+        }
         setComposeBody("");
         setComposeExpanded(false);
         loadDetail(selectedId);
@@ -398,6 +513,94 @@ export default function InboxClient() {
       loadList(0, false);
     } finally {
       setSyncBusy(false);
+    }
+  };
+
+  const runAiDraft = async () => {
+    if (!selectedId) return;
+    setAiDraftBusy(true);
+    try {
+      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/ai-draft`), {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Draft failed");
+      const draft = typeof body.draft === "string" ? body.draft : "";
+      if (!draft) throw new Error("Empty draft.");
+      setComposeBody(draft);
+      setAiContextUsed((body.contextUsed as ContextUsedShape) ?? null);
+      setShowAiDraftBanner(true);
+      setComposeMode("reply");
+      setComposeExpanded(true);
+      setTickets((prev) => prev.map((t) => (t.id === selectedId ? { ...t, has_ai_draft_ready: true } : t)));
+      if (detail?.id === selectedId) setDetail({ ...detail, has_ai_draft_ready: true });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAiDraftBusy(false);
+      setAiLoadingMessage(null);
+    }
+  };
+
+  const dismissAiDraft = async () => {
+    if (!selectedId) return;
+    try {
+      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/ai-draft`), {
+        method: "DELETE",
+        headers: { ...authHeaders() },
+      });
+      if (!res.ok && res.status !== 404) return;
+      setShowAiDraftBanner(false);
+      setAiContextUsed(null);
+      setComposeBody("");
+      setTickets((prev) => prev.map((t) => (t.id === selectedId ? { ...t, has_ai_draft_ready: false } : t)));
+      if (detail?.id === selectedId) setDetail({ ...detail, has_ai_draft_ready: false });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const draftAllUnread = async () => {
+    const ids = unreadDraftIdsBatch;
+    if (!ids.length) return;
+    setBatchDraftBusy(true);
+    setBatchDraftSummary(null);
+    setBatchDraftProgress(`Drafting 1 of ${ids.length}…`);
+    let tick = 1;
+    const interval = window.setInterval(() => {
+      tick = Math.min(ids.length, tick + 1);
+      setBatchDraftProgress(`Drafting ${tick} of ${ids.length}…`);
+    }, 720);
+    try {
+      const res = await fetch(apiUrl("/inbox/ai-draft/batch"), {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketIds: ids }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error(body.error || "Batch draft failed");
+        setBatchDraftProgress(null);
+        return;
+      }
+      const results = Array.isArray(body.results) ? body.results : [];
+      let ok = 0;
+      const touched = new Set<number>();
+      for (const r of results) {
+        if (r?.error) continue;
+        ok += 1;
+        const tid = Number(r.ticketId);
+        if (Number.isFinite(tid)) touched.add(tid);
+      }
+      setTickets((prev) =>
+        prev.map((t) => (touched.has(t.id) ? { ...t, has_ai_draft_ready: true } : t))
+      );
+      setBatchDraftSummary(`${ok} drafts ready for review`);
+      setBatchDraftProgress(null);
+    } finally {
+      window.clearInterval(interval);
+      setBatchDraftBusy(false);
     }
   };
 
@@ -430,6 +633,34 @@ export default function InboxClient() {
     bucket !== "starred" &&
     ["open", "unread", "assignedToMe", "unassigned"].includes(bucket);
 
+  const slaBadgeEl =
+    sla && detail?.received_at
+      ? sla.firstResponseAt != null && sla.hoursToFirstResponse != null
+        ? sla.hoursToFirstResponse <= sla.slaTarget
+          ? (
+              <span className={styles.slaBadge} data-variant="ok">
+                Responded in {formatSlaDuration(sla.hoursToFirstResponse)}
+              </span>
+            )
+          : (
+              <span className={styles.slaBadge} data-variant="late">
+                Responded in {formatSlaDuration(sla.hoursToFirstResponse)}
+              </span>
+            )
+        : sla.isOverdue
+          ? (
+              <span className={styles.slaBadge} data-variant="overdue">
+                ⚠ Overdue —{" "}
+                {sla.hoursOpen != null ? formatSlaDuration(sla.hoursOpen) : ""} without response
+              </span>
+            )
+          : (
+              <span className={styles.slaBadge} data-variant="open">
+                Open {sla.hoursOpen != null ? formatSlaDuration(sla.hoursOpen) : ""}
+              </span>
+            )
+      : null;
+
   return (
     <div className={styles.page}>
       <header className={styles.topBar}>
@@ -451,12 +682,27 @@ export default function InboxClient() {
             ) : (
               <span>Loading stats…</span>
             )}
+            {batchDraftProgress || batchDraftSummary ? (
+              <span className={styles.batchStatus}>
+                {batchDraftProgress || batchDraftSummary}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className={styles.topActions}>
           {isAdmin ? (
             <button type="button" className={styles.iconBtn} title="Sync now" onClick={onSync} disabled={syncBusy}>
               ⟳
+            </button>
+          ) : null}
+          {isAdmin ? (
+            <button
+              type="button"
+              className={styles.batchDraftBtn}
+              onClick={() => void draftAllUnread()}
+              disabled={batchDraftBusy || unreadDraftEligible.length === 0}
+            >
+              ✨ Draft All Unread ({unreadDraftEligible.length})
             </button>
           ) : null}
           <Link href="/inbox/settings" className={styles.mutedLink}>
@@ -641,7 +887,14 @@ export default function InboxClient() {
                 <div className={styles.ticketMain}>
                   <div className={styles.ticketTop}>
                     <p className={`${styles.sender} ${!t.is_read ? styles.unread : ""}`}>{t.sender_name || t.sender_email}</p>
-                    <span className={styles.time}>{relativeTime(t.received_at)}</span>
+                    <span className={styles.ticketTopRight}>
+                      {t.has_ai_draft_ready ? (
+                        <span className={styles.draftReadyMark} title="Draft ready">
+                          ✨
+                        </span>
+                      ) : null}
+                      <span className={styles.time}>{relativeTime(t.received_at)}</span>
+                    </span>
                   </div>
                   <p className={styles.subject}>{t.subject || "(No subject)"}</p>
                   <p className={styles.preview}>{t.body_preview || ""}</p>
@@ -708,8 +961,12 @@ export default function InboxClient() {
                     From: {detail.sender_name || "—"} &lt;{detail.sender_email || ""}&gt;
                   </p>
                   <p className={styles.metaLine}>To: {detail.recipient_emails || "—"}</p>
-                  <p className={styles.metaLine}>
-                    Received: {detail.received_at ? new Date(detail.received_at).toLocaleString() : "—"}
+                  <p className={styles.metaLineReceived}>
+                    <span>
+                      Received:{" "}
+                      {detail.received_at ? new Date(detail.received_at).toLocaleString() : "—"}
+                    </span>
+                    {slaBadgeEl}
                   </p>
                   <button
                     type="button"
@@ -830,7 +1087,13 @@ export default function InboxClient() {
               </div>
 
               <div className={styles.composeDock}>
-                <div className={styles.compose}>
+                <div className={`${styles.compose} ${aiDraftBusy ? styles.composeBusy : ""}`}>
+                  {aiDraftBusy ? (
+                    <div className={styles.aiDraftOverlay}>
+                      <span className={styles.spinner} aria-hidden />
+                      <span>{aiLoadingMessage || "Drafting…"}</span>
+                    </div>
+                  ) : null}
                   <div className={styles.tabs}>
                     <button
                       type="button"
@@ -852,7 +1115,60 @@ export default function InboxClient() {
                     >
                       Internal note
                     </button>
+                    <button
+                      type="button"
+                      className={styles.aiDraftTabBtn}
+                      onClick={() => void runAiDraft()}
+                      disabled={aiDraftBusy || !selectedId}
+                    >
+                      ✨ AI Draft Reply
+                    </button>
                   </div>
+                  {showAiDraftBanner && composeMode === "reply" ? (
+                    <div className={styles.aiDraftBanner}>
+                      <span>AI-drafted response — review and edit before sending</span>
+                      <button type="button" className={styles.aiDraftDismiss} onClick={() => void dismissAiDraft()}>
+                        Dismiss
+                      </button>
+                    </div>
+                  ) : null}
+                  {showAiDraftBanner && composeMode === "reply" && aiContextUsed ? (
+                    <details className={styles.contextUsed}>
+                      <summary>Context used</summary>
+                      {hasNoAiContext(aiContextUsed) ? (
+                        <p className={styles.contextUsedBody}>No matching context found</p>
+                      ) : (
+                        <ul className={styles.contextUsedList}>
+                          <li>
+                            Property:{" "}
+                            {aiContextUsed.property
+                              ? `✓ ${aiContextUsed.propertyName || detail.linked_property_name || "matched"}`
+                              : "—"}
+                          </li>
+                          <li>
+                            Tenant:{" "}
+                            {aiContextUsed.tenant
+                              ? `✓ ${aiContextUsed.tenantName || detail.linked_tenant_name || "matched"}`
+                              : "—"}
+                          </li>
+                          <li>
+                            Owner:{" "}
+                            {aiContextUsed.owner
+                              ? `✓ ${aiContextUsed.ownerName || detail.linked_owner_name || "matched"}`
+                              : "—"}
+                          </li>
+                          <li>Work orders: {aiContextUsed.workOrders ?? 0} open</li>
+                          <li>
+                            Delinquency:{" "}
+                            {aiContextUsed.delinquency != null && aiContextUsed.delinquency !== ""
+                              ? aiContextUsed.delinquency
+                              : "—"}
+                          </li>
+                          <li>LeadSimple: {aiContextUsed.leadsimple ? "✓ open deals/tasks matched" : "—"}</li>
+                        </ul>
+                      )}
+                    </details>
+                  ) : null}
                   {composeMode === "reply" ? (
                     <div className={styles.sigSelectRow}>
                       <label className={styles.sigSelectLabel} htmlFor="inbox-signature-select">

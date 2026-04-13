@@ -30,6 +30,15 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
+function messagesPathForConnection(row) {
+  const mtype = row.mailbox_type || "personal";
+  const mailbox = String(row.mailbox_email || "").trim();
+  if (mtype === "shared" && mailbox) {
+    return `/users/${encodeURIComponent(mailbox)}/messages`;
+  }
+  return "/me/messages";
+}
+
 export async function syncConnection(connectionRow) {
   const pool = getPool();
   const connId = connectionRow.id;
@@ -38,14 +47,19 @@ export async function syncConnection(connectionRow) {
   const { accessToken } = await getValidAccessTokenForConnection(connId);
 
   let since = new Date(Date.now() - 7 * 86400000);
-  const { rows: st } = await pool.query(`SELECT * FROM email_sync_state WHERE user_id = $1`, [userId]);
-  if (st[0]?.last_message_received_at) {
-    since = new Date(new Date(st[0].last_message_received_at).getTime() - 60_000);
+  if (connectionRow.sync_last_message_at) {
+    since = new Date(new Date(connectionRow.sync_last_message_at).getTime() - 60_000);
+  } else {
+    const { rows: st } = await pool.query(`SELECT * FROM email_sync_state WHERE user_id = $1`, [userId]);
+    if (st[0]?.last_message_received_at) {
+      since = new Date(new Date(st[0].last_message_received_at).getTime() - 60_000);
+    }
   }
 
   const sinceIso = iso(since).replace(/\.\d{3}Z$/, "Z");
   const filter = `receivedDateTime ge ${sinceIso}`;
-  const q = `/me/messages?$orderby=receivedDateTime desc&$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,bodyPreview,body,from,toRecipients,receivedDateTime,conversationId,hasAttachments,isRead`;
+  const basePath = messagesPathForConnection(connectionRow);
+  const q = `${basePath}?$orderby=receivedDateTime desc&$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,bodyPreview,body,from,toRecipients,receivedDateTime,conversationId,hasAttachments,isRead`;
 
   await pool.query(
     `INSERT INTO email_sync_state (user_id, sync_status, messages_synced, error_log)
@@ -86,11 +100,11 @@ export async function syncConnection(connectionRow) {
         `INSERT INTO tickets (
           channel, external_id, thread_id, subject, body_preview, body_html,
           sender_name, sender_email, recipient_emails, has_attachments, is_read,
-          received_at, source_user_id, status
+          received_at, source_user_id, connection_id, status
         ) VALUES (
           'email', $1, $2, $3, $4, $5,
           $6, $7, $8, $9, $10,
-          $11, $12, 'open'
+          $11, $12, $13, 'open'
         )
         ON CONFLICT (external_id) DO NOTHING
         RETURNING id`,
@@ -107,6 +121,7 @@ export async function syncConnection(connectionRow) {
           msg.isRead !== false,
           received,
           userId,
+          connId,
         ]
       );
 
@@ -122,8 +137,8 @@ export async function syncConnection(connectionRow) {
   }
 
   await pool.query(
-    `UPDATE email_connections SET last_sync_at = NOW() WHERE id = $1`,
-    [connId]
+    `UPDATE email_connections SET last_sync_at = NOW(), sync_last_message_at = COALESCE($2::timestamptz, sync_last_message_at) WHERE id = $1`,
+    [connId, newest]
   );
   await pool.query(
     `UPDATE email_sync_state SET

@@ -335,6 +335,18 @@ export async function ensureInboxSchema() {
 
     CREATE INDEX IF NOT EXISTS ticket_responses_ticket_idx ON ticket_responses (ticket_id);
 
+    CREATE TABLE IF NOT EXISTS ticket_ai_drafts (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      draft_text TEXT NOT NULL,
+      context_used JSONB,
+      drafted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      used_at TIMESTAMPTZ,
+      UNIQUE (ticket_id)
+    );
+    CREATE INDEX IF NOT EXISTS ticket_ai_drafts_used_idx ON ticket_ai_drafts (ticket_id) WHERE used_at IS NULL;
+
     CREATE TABLE IF NOT EXISTS email_signatures (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -358,7 +370,83 @@ export async function ensureInboxSchema() {
     );
   `);
 
+  await migrateInboxMultiMailbox(p);
+
   await seedEmailSignatures(p);
+}
+
+async function migrateInboxMultiMailbox(p) {
+  await p.query(`ALTER TABLE email_connections ADD COLUMN IF NOT EXISTS mailbox_type VARCHAR(20) DEFAULT 'personal'`);
+  await p.query(`ALTER TABLE email_connections ADD COLUMN IF NOT EXISTS mailbox_email VARCHAR(255)`);
+  await p.query(`ALTER TABLE email_connections ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)`);
+  await p.query(
+    `ALTER TABLE email_connections ADD COLUMN IF NOT EXISTS sync_last_message_at TIMESTAMPTZ`
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS inbox_permissions (
+      id SERIAL PRIMARY KEY,
+      connection_id INTEGER NOT NULL REFERENCES email_connections(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      permission VARCHAR(20) NOT NULL DEFAULT 'read',
+      granted_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (connection_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS inbox_permissions_user_idx ON inbox_permissions (user_id);
+  `);
+
+  await p.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS connection_id INTEGER REFERENCES email_connections(id)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS tickets_connection_id_idx ON tickets (connection_id)`);
+
+  await p.query(`
+    UPDATE email_connections
+    SET mailbox_type = 'personal'
+    WHERE mailbox_type IS NULL OR trim(mailbox_type) = ''
+  `);
+  await p.query(`
+    UPDATE email_connections
+    SET mailbox_email = email_address
+    WHERE mailbox_email IS NULL AND email_address IS NOT NULL
+  `);
+
+  await p.query(`
+    UPDATE tickets t
+    SET connection_id = sub.cid
+    FROM (
+      SELECT t2.id AS tid,
+        (SELECT ec.id FROM email_connections ec
+         WHERE ec.user_id = t2.source_user_id AND ec.is_active = true
+           AND COALESCE(ec.mailbox_type, 'personal') = 'personal'
+         ORDER BY ec.id DESC LIMIT 1) AS cid
+      FROM tickets t2
+      WHERE t2.connection_id IS NULL AND t2.source_user_id IS NOT NULL
+    ) sub
+    WHERE t.id = sub.tid AND sub.cid IS NOT NULL
+  `);
+
+  await p.query(`ALTER TABLE email_connections DROP CONSTRAINT IF EXISTS email_connections_user_id_email_address_key`);
+  await p.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS email_connections_user_mailbox_lower_uq
+    ON email_connections (user_id, lower(mailbox_email))
+  `);
+
+  await p.query(`
+    INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
+    SELECT ec.id, ec.user_id, 'admin', ec.user_id
+    FROM email_connections ec
+    WHERE ec.is_active = true
+      AND NOT EXISTS (SELECT 1 FROM inbox_permissions ip WHERE ip.connection_id = ec.id AND ip.user_id = ec.user_id)
+  `);
+
+  await p.query(`
+    INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
+    SELECT ec.id, u.id, 'admin', u.id
+    FROM email_connections ec
+    CROSS JOIN users u
+    WHERE ec.is_active = true AND lower(u.username) = 'mike'
+    ON CONFLICT (connection_id, user_id) DO NOTHING
+  `);
 }
 
 /**

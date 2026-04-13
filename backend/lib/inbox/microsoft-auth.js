@@ -21,23 +21,54 @@ function msEnv() {
 }
 
 const SCOPES =
-  "openid email Mail.Read Mail.ReadWrite Mail.Send User.Read offline_access";
+  "openid email Mail.Read Mail.ReadWrite Mail.Read.Shared Mail.ReadWrite.Shared Mail.Send User.Read offline_access";
 
-export function signOAuthState(userId) {
-  return jwt.sign({ purpose: "microsoft_oauth", uid: userId }, jwtSecret(), { expiresIn: "15m" });
+/**
+ * @param {number} userId
+ * @param {{ flow?: "personal" | "shared"; sharedMailbox?: string | null; displayName?: string | null }} [opts]
+ */
+export function signOAuthState(userId, opts = {}) {
+  const flow = opts.flow === "shared" ? "shared" : "personal";
+  const sharedMailbox =
+    typeof opts.sharedMailbox === "string" ? opts.sharedMailbox.trim().toLowerCase() : null;
+  const displayName = typeof opts.displayName === "string" ? opts.displayName.trim().slice(0, 255) : null;
+  return jwt.sign(
+    {
+      purpose: "microsoft_oauth",
+      uid: userId,
+      flow,
+      smb: flow === "shared" ? sharedMailbox : null,
+      dn: displayName || null,
+    },
+    jwtSecret(),
+    { expiresIn: "15m" }
+  );
 }
 
+/** @returns {{ userId: number; flow: "personal" | "shared"; sharedMailbox: string | null; displayName: string | null }} */
 export function verifyOAuthState(state) {
   const payload = jwt.verify(state, jwtSecret());
   if (payload.purpose !== "microsoft_oauth" || payload.uid == null) {
     throw new Error("Invalid OAuth state.");
   }
-  return Number(payload.uid);
+  const flow = payload.flow === "shared" ? "shared" : "personal";
+  const sharedMailbox = typeof payload.smb === "string" && payload.smb.trim() ? payload.smb.trim().toLowerCase() : null;
+  const displayName = typeof payload.dn === "string" && payload.dn.trim() ? payload.dn.trim().slice(0, 255) : null;
+  return {
+    userId: Number(payload.uid),
+    flow,
+    sharedMailbox: flow === "shared" ? sharedMailbox : null,
+    displayName,
+  };
 }
 
-export function buildMicrosoftAuthorizeUrl(userId) {
+/**
+ * @param {number} userId
+ * @param {{ flow?: "personal" | "shared"; sharedMailbox?: string | null; displayName?: string | null }} [opts]
+ */
+export function buildMicrosoftAuthorizeUrl(userId, opts = {}) {
   const { clientId, tenantId, redirectUri } = msEnv();
-  const state = signOAuthState(userId);
+  const state = signOAuthState(userId, opts);
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: "code",

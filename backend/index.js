@@ -107,14 +107,18 @@ import {
 } from "./routes/eos.js";
 import {
   deleteInboxConnection,
+  deleteInboxTicketAiDraft,
   getInboxConnections,
   getInboxStats,
   getInboxSyncStatus,
   getInboxTicket,
+  getInboxTicketSla,
   getInboxTickets,
   getMicrosoftCallback,
   getMicrosoftConnect,
+  postInboxAiDraftBatch,
   postInboxSyncTrigger,
+  postInboxTicketAiDraft,
   postInboxTicketAssign,
   postInboxTicketNote,
   postInboxTicketReply,
@@ -356,6 +360,10 @@ app.put("/inbox/tickets/:id", requireAuth, putInboxTicket);
 app.post("/inbox/tickets/:id/reply", requireAuth, postInboxTicketReply);
 app.post("/inbox/tickets/:id/note", requireAuth, postInboxTicketNote);
 app.post("/inbox/tickets/:id/assign", requireAuth, postInboxTicketAssign);
+app.post("/inbox/tickets/:id/ai-draft", requireAuth, postInboxTicketAiDraft);
+app.delete("/inbox/tickets/:id/ai-draft", requireAuth, deleteInboxTicketAiDraft);
+app.get("/inbox/tickets/:id/sla", requireAuth, getInboxTicketSla);
+app.post("/inbox/ai-draft/batch", requireAuth, requireAdminRole, postInboxAiDraftBatch);
 app.get("/inbox/stats", requireAuth, getInboxStats);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);

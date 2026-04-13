@@ -47,6 +47,7 @@
 .topActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
@@ -691,6 +692,8 @@
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.4rem;
+  width: 100%;
+  align-items: center;
 }
 
 .tabBtn {
@@ -908,4 +911,197 @@
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
   overflow-y: auto;
   padding-bottom: 1rem;
+}
+
+.batchDraftBtn {
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.batchDraftBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.batchStatus {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.ticketTopRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.draftReadyMark {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.metaLineReceived {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--grey);
+  margin: 0.2rem 0;
+}
+
+.slaBadge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.slaBadge[data-variant="ok"] {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.slaBadge[data-variant="open"] {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+.slaBadge[data-variant="overdue"] {
+  background: #ffebee;
+  color: var(--red);
+}
+
+.slaBadge[data-variant="late"] {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.composeBusy {
+  position: relative;
+}
+
+.aiDraftOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--navy);
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 3px solid #e0e0e0;
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: inboxSpin 0.7s linear infinite;
+}
+
+@keyframes inboxSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.aiDraftTabBtn {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.aiDraftTabBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .aiDraftTabBtn {
+    margin-left: 0;
+    width: 100%;
+    order: 3;
+  }
+}
+
+.aiDraftBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: #e8f7fc;
+  border: 1px solid #b8e6f5;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--navy);
+}
+
+.aiDraftDismiss {
+  border: none;
+  background: transparent;
+  color: var(--blue);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.82rem;
+  text-decoration: underline;
+}
+
+.contextUsed {
+  margin-bottom: 0.45rem;
+  font-size: 0.8rem;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: #fafbfc;
+}
+
+.contextUsed summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.contextUsedBody {
+  margin: 0.35rem 0 0;
+  color: var(--grey);
+}
+
+.contextUsedList {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--grey);
+  line-height: 1.45;
 }
