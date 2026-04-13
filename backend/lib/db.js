@@ -361,7 +361,12 @@ export async function ensureInboxSchema() {
   await seedEmailSignatures(p);
 }
 
-export async function ensureVideosSchema() {
+/**
+ * Creates `video_folders` alone first. Older deployments had a batched migration where
+ * `CREATE INDEX ... ON videos(folder_id)` failed before `folder_id` existed, rolling back the whole batch
+ * and leaving `video_folders` missing — split steps avoid that.
+ */
+export async function ensureVideoFoldersTable() {
   const p = getPool();
   await p.query(`
     CREATE TABLE IF NOT EXISTS video_folders (
@@ -371,7 +376,17 @@ export async function ensureVideosSchema() {
       created_by INTEGER REFERENCES users(id),
       created_at TIMESTAMP DEFAULT NOW()
     );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS video_folders_parent_idx ON video_folders (parent_folder_id)`
+  );
+}
 
+export async function ensureVideosSchema() {
+  const p = getPool();
+  await ensureVideoFoldersTable();
+
+  await p.query(`
     CREATE TABLE IF NOT EXISTS videos (
       id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
@@ -388,12 +403,13 @@ export async function ensureVideosSchema() {
       visibility VARCHAR(20) DEFAULT 'private',
       share_token VARCHAR(64),
       recorded_by INTEGER REFERENCES users(id),
-      folder_id INTEGER REFERENCES video_folders(id),
       views_count INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
+  `);
 
+  await p.query(`
     CREATE TABLE IF NOT EXISTS video_comments (
       id SERIAL PRIMARY KEY,
       video_id INTEGER REFERENCES videos(id),
@@ -402,16 +418,102 @@ export async function ensureVideosSchema() {
       timestamp_seconds INTEGER,
       created_at TIMESTAMP DEFAULT NOW()
     );
-
-    CREATE INDEX IF NOT EXISTS videos_recorded_by_idx ON videos (recorded_by, created_at DESC);
-    CREATE INDEX IF NOT EXISTS videos_visibility_idx ON videos (visibility);
-    CREATE INDEX IF NOT EXISTS videos_share_token_idx ON videos (share_token);
-    CREATE INDEX IF NOT EXISTS video_comments_video_idx ON video_comments (video_id, created_at ASC);
-    CREATE INDEX IF NOT EXISTS videos_folder_idx ON videos (folder_id);
-    CREATE INDEX IF NOT EXISTS video_folders_parent_idx ON video_folders (parent_folder_id);
   `);
-  await p.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS folder_id INTEGER REFERENCES video_folders(id)`);
-  await p.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) DEFAULT 'none'`);
+
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS videos_recorded_by_idx ON videos (recorded_by, created_at DESC)`
+  );
+  await p.query(`CREATE INDEX IF NOT EXISTS videos_visibility_idx ON videos (visibility)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS videos_share_token_idx ON videos (share_token)`);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS video_comments_video_idx ON video_comments (video_id, created_at ASC)`
+  );
+
+  await p.query(
+    `ALTER TABLE videos ADD COLUMN IF NOT EXISTS folder_id INTEGER REFERENCES video_folders(id)`
+  );
+  await p.query(
+    `ALTER TABLE videos ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) DEFAULT 'none'`
+  );
+  await p.query(`CREATE INDEX IF NOT EXISTS videos_folder_idx ON videos (folder_id)`);
+}
+
+export async function ensureWikiSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS wiki_categories (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) UNIQUE NOT NULL,
+      description TEXT,
+      icon VARCHAR(50) DEFAULT '📁',
+      display_order INTEGER DEFAULT 0,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_pages (
+      id SERIAL PRIMARY KEY,
+      category_id INTEGER REFERENCES wiki_categories(id),
+      parent_page_id INTEGER REFERENCES wiki_pages(id),
+      title VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) NOT NULL,
+      content_markdown TEXT DEFAULT '',
+      status VARCHAR(20) DEFAULT 'published',
+      is_pinned BOOLEAN DEFAULT false,
+      display_order INTEGER DEFAULT 0,
+      created_by INTEGER REFERENCES users(id),
+      last_edited_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(category_id, slug)
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_page_versions (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER REFERENCES wiki_pages(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      title VARCHAR(255),
+      content_markdown TEXT,
+      change_summary VARCHAR(255),
+      edited_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS wiki_attachments (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER REFERENCES wiki_pages(id) ON DELETE CASCADE,
+      filename VARCHAR(255) NOT NULL,
+      stored_filename VARCHAR(255) NOT NULL,
+      file_size_bytes BIGINT,
+      mime_type VARCHAR(100),
+      uploaded_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS wiki_pages_category_idx ON wiki_pages (category_id, display_order, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS wiki_page_versions_page_idx ON wiki_page_versions (page_id, version_number DESC);
+  `);
+
+  const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM wiki_categories`);
+  if (rows[0].c > 0) return;
+
+  const seeds = [
+    ["Leasing", "leasing", "🏠", "Showing procedures, application processing, move-in checklists"],
+    ["Maintenance", "maintenance", "🔧", "Work order workflows, vendor management, technician playbooks"],
+    ["Client Success", "client-success", "🤝", "Owner onboarding, monthly reporting, retention processes"],
+    ["Accounting", "accounting", "💰", "Rent collection, owner disbursements, delinquency procedures"],
+    ["Operations", "operations", "⚙️", "Call center scripts, emergency procedures, team onboarding"],
+    ["Sales / BDM", "sales", "📈", "Lead follow-up, PMA signing, owner pitch process"],
+  ];
+  let order = 0;
+  for (const [name, slug, icon, description] of seeds) {
+    await p.query(
+      `INSERT INTO wiki_categories (name, slug, description, icon, display_order)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [name, slug, description, icon, order++]
+    );
+  }
 }
 
 const TEAM_SIGNATURE_HTML = {

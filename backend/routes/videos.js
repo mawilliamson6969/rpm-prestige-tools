@@ -713,6 +713,7 @@ export async function getVideoFolders(req, res) {
 
 export async function postVideoFolder(req, res) {
   try {
+    console.log("[videos] creating folder:", req.body);
     const name = String(req.body?.name || "").trim().slice(0, 255);
     if (!name) {
       res.status(400).json({ error: "name is required." });

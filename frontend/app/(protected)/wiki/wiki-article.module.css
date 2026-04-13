@@ -1,0 +1,105 @@
+.metaBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-size: 0.88rem;
+  color: #6a737b;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e6eaef;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  justify-content: flex-end;
+}
+
+.attachSection {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e6eaef;
+}
+
+.attachTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1b2856;
+  margin: 0 0 1rem;
+}
+
+.attachList {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.attachList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 0.92rem;
+}
+
+.attachName {
+  font-weight: 600;
+  color: #2c3338;
+}
+
+.attachMeta {
+  font-size: 0.82rem;
+  color: #6a737b;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: #0098d0;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  padding: 0;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.modal h3 {
+  margin: 0 0 0.75rem;
+  color: #1b2856;
+}
+
+.modal p {
+  margin: 0 0 1.25rem;
+  color: #4a5568;
+  line-height: 1.5;
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}

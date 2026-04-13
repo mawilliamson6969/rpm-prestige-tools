@@ -212,25 +212,35 @@ export default function VideosClient() {
   const newSubfolder = async (parentFolderId: number) => {
     const name = window.prompt("New subfolder name");
     if (!name?.trim()) return;
-    await fetch(apiUrl("/videos/folders"), {
+    const res = await fetch(apiUrl("/videos/folders"), {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim().slice(0, 255), parentFolderId }),
     });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      window.alert(typeof body.error === "string" ? body.error : `Could not create folder (${res.status}).`);
+      return;
+    }
     setContextMenu(null);
     setExpanded((prev) => ({ ...prev, [parentFolderId]: true }));
-    loadFolders();
+    await loadFolders();
   };
 
   const createRootFolder = async () => {
     const name = window.prompt("New folder name");
     if (!name?.trim()) return;
-    await fetch(apiUrl("/videos/folders"), {
+    const res = await fetch(apiUrl("/videos/folders"), {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim().slice(0, 255) }),
     });
-    loadFolders();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      window.alert(typeof body.error === "string" ? body.error : `Could not create folder (${res.status}).`);
+      return;
+    }
+    await loadFolders();
   };
 
   const renderFolderNodes = (nodes: VideoFolderNode[], depth: number) => {

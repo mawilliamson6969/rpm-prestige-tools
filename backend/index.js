@@ -15,7 +15,9 @@ import {
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
   ensureAskAiSchema,
+  ensureVideoFoldersTable,
   ensureVideosSchema,
+  ensureWikiSchema,
 } from "./lib/db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
@@ -139,6 +141,27 @@ import {
   putVideoMove,
   uploadVideoMiddleware,
 } from "./routes/videos.js";
+import {
+  deleteWikiAttachment,
+  deleteWikiCategory,
+  deleteWikiPage,
+  getWikiAttachment,
+  getWikiCategories,
+  getWikiPage,
+  getWikiPages,
+  getWikiSearch,
+  getWikiPageVersion,
+  getWikiPageVersions,
+  postWikiAttachment,
+  postWikiCategory,
+  postWikiPage,
+  postWikiRestoreVersion,
+  putWikiCategory,
+  putWikiPage,
+  putWikiPagePin,
+  putWikiPageReorder,
+  wikiUploadMiddleware,
+} from "./routes/wiki.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -342,6 +365,26 @@ app.get("/videos/:id/comments", requireAuth, getVideoComments);
 app.get("/videos/shared/:shareToken", getVideoByShareToken);
 app.get("/videos/shared/:shareToken/stream", getVideoStreamByShareToken);
 
+/** Company Wiki / SOP library */
+app.get("/wiki/categories", requireAuth, getWikiCategories);
+app.post("/wiki/categories", requireAuth, requireAdminRole, postWikiCategory);
+app.put("/wiki/categories/:id", requireAuth, requireAdminRole, putWikiCategory);
+app.delete("/wiki/categories/:id", requireAuth, requireAdminRole, deleteWikiCategory);
+app.get("/wiki/search", requireAuth, getWikiSearch);
+app.get("/wiki/pages/:id/versions/:versionId", requireAuth, getWikiPageVersion);
+app.post("/wiki/pages/:id/versions/:versionId/restore", requireAuth, postWikiRestoreVersion);
+app.get("/wiki/pages/:id/versions", requireAuth, getWikiPageVersions);
+app.post("/wiki/pages/:id/attachments", requireAuth, wikiUploadMiddleware, postWikiAttachment);
+app.put("/wiki/pages/:id/pin", requireAuth, requireAdminRole, putWikiPagePin);
+app.put("/wiki/pages/:id/reorder", requireAuth, requireAdminRole, putWikiPageReorder);
+app.get("/wiki/pages/:id", requireAuth, getWikiPage);
+app.put("/wiki/pages/:id", requireAuth, putWikiPage);
+app.delete("/wiki/pages/:id", requireAuth, deleteWikiPage);
+app.get("/wiki/pages", requireAuth, getWikiPages);
+app.post("/wiki/pages", requireAuth, postWikiPage);
+app.get("/wiki/attachments/:id", requireAuth, getWikiAttachment);
+app.delete("/wiki/attachments/:id", requireAuth, deleteWikiAttachment);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -359,8 +402,13 @@ async function start() {
       console.log("Database schema OK (ask_ai_history).");
       await ensureInboxSchema();
       console.log("Database schema OK (inbox / tickets).");
+      /** Video library: ensure folder table exists before videos.folder_id migration (see ensureVideosSchema). */
+      await ensureVideoFoldersTable();
+      console.log("Database schema OK (video_folders).");
       await ensureVideosSchema();
       console.log("Database schema OK (videos).");
+      await ensureWikiSchema();
+      console.log("Database schema OK (wiki).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
