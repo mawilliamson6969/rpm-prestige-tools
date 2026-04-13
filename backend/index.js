@@ -30,11 +30,15 @@ import {
   postLogin,
 } from "./routes/auth.js";
 import {
+  archiveAnnouncement,
+  deleteAnnouncement,
   getAnnouncements,
   postAnnouncement,
+  restoreAnnouncement,
   uploadAnnouncementFile,
   uploadAnnouncementMiddleware,
 } from "./routes/announcements.js";
+import { getAdminFormSubmissions, getAdminFormTypes } from "./routes/adminForms.js";
 import {
   exportOwnerTerminationsCsv,
   listOwnerTerminations,
@@ -105,6 +109,7 @@ import {
   putRockMilestone,
   putScorecardEntry,
   putScorecardMetric,
+  postScorecardAiAnalyze,
 } from "./routes/eos.js";
 import {
   deleteInboxConnection,
@@ -287,6 +292,9 @@ app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
 app.delete("/users/:id", requireAuth, requireAdminRole, deleteUser);
 
 app.get("/announcements", requireAuth, getAnnouncements);
+app.put("/announcements/:id/archive", requireAuth, requireAdminRole, archiveAnnouncement);
+app.put("/announcements/:id/restore", requireAuth, requireAdminRole, restoreAnnouncement);
+app.delete("/announcements/:id", requireAuth, requireAdminRole, deleteAnnouncement);
 app.post(
   "/announcements/upload",
   requireAuth,
@@ -338,6 +346,9 @@ app.get("/forms/owner-termination/export.csv", requireAuth, requireAdminRole, ex
 app.get("/forms/owner-termination", requireAuth, requireAdminRole, listOwnerTerminations);
 app.patch("/forms/owner-termination/:id", requireAuth, requireAdminRole, patchOwnerTermination);
 
+app.get("/admin/forms/submissions", requireAuth, requireAdminRole, getAdminFormSubmissions);
+app.get("/admin/forms/types", requireAuth, requireAdminRole, getAdminFormTypes);
+
 /** EOS — Entrepreneurial Operating System */
 app.get("/eos/team-users", requireAuth, getEosTeamUsers);
 app.get("/eos/scorecard/metrics", requireAuth, getScorecardMetrics);
@@ -349,6 +360,7 @@ app.post("/eos/scorecard/entries", requireAuth, postScorecardEntry);
 app.put("/eos/scorecard/entries/:id", requireAuth, putScorecardEntry);
 app.delete("/eos/scorecard/entries/:id", requireAuth, requireAdminRole, deleteScorecardEntry);
 app.get("/eos/scorecard/report", requireAuth, getScorecardReport);
+app.post("/eos/scorecard/ai-analyze", requireAuth, postScorecardAiAnalyze);
 
 app.get("/eos/rocks", requireAuth, getRocks);
 app.post("/eos/rocks", requireAuth, requireAdminRole, postRock);

@@ -64,6 +64,10 @@ export async function ensureAnnouncementsSchema() {
 
   await p.query(`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_url TEXT`);
   await p.query(`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_label TEXT`);
+  await p.query(
+    `ALTER TABLE announcements ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`
+  );
+  await p.query(`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
 
   const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM announcements`);
   if (rows[0].c === 0) {

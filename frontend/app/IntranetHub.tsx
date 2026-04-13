@@ -36,8 +36,8 @@ const USEFUL_LINKS = [
   { label: "Texas Property Code Ch. 92", href: "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.92.htm" },
   { label: "TREC Website", href: "https://www.trec.texas.gov" },
   { label: "HAR MLS", href: "https://www.har.com" },
-  { label: "RPM Prestige Website", href: "https://www.rpmhouston.com" },
-  { label: "Neighborly Hub", href: "https://hub.nbly.com" },
+  { label: "RPM Prestige Website", href: "https://www.prestigerpm.com/" },
+  { label: "RPM Intranet", href: "https://rpmintranet.com/login" },
 ] as const;
 
 const TEASERS = [
@@ -84,6 +84,7 @@ type AnnouncementRow = {
   created_at: string;
   attachment_url?: string | null;
   attachment_label?: string | null;
+  status?: string;
 };
 
 function attachmentHref(url: string) {
@@ -400,9 +401,9 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Admin</p>
               <div className={styles.toolGrid}>
                 <ToolCardLive
-                  href="/admin/terminations"
-                  title="Termination Requests"
-                  description="Manage submitted termination requests"
+                  href="/admin/forms"
+                  title="Form Submissions"
+                  description="Review and manage submitted forms across the organization"
                 />
                 {isAdmin ? (
                   <ToolCardLive
@@ -462,6 +463,9 @@ export default function IntranetHub() {
                   ))}
                 </ul>
               )}
+              <Link href="/announcements" className={styles.dashboardLink} style={{ marginTop: "0.65rem", display: "inline-block" }}>
+                See All Announcements →
+              </Link>
             </section>
 
             <section className={styles.sidebarSection} aria-labelledby="directory-heading">
@@ -511,7 +515,7 @@ export default function IntranetHub() {
         <p>© 2026 Real Property Management Prestige — A Neighborly® Company</p>
         <p>Houston, TX</p>
         <p className={styles.footerAdmin}>
-          <Link href="/admin/terminations">Admin</Link>
+          <Link href="/admin/forms">Admin</Link>
         </p>
       </footer>
     </div>

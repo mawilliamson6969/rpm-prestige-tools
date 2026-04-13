@@ -1,16 +1,17 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { RequireAdmin } from "../../../../context/AuthContext";
-import AdminTerminations from "./AdminTerminations";
 
-export const metadata: Metadata = {
-  title: "Admin — Terminations | RPM Prestige",
-  robots: { index: false, follow: false },
-};
-
-export default function AdminTerminationsPage() {
+export default function LegacyAdminTerminationsRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/admin/forms?type=owner-termination");
+  }, [router]);
   return (
     <RequireAdmin>
-      <AdminTerminations />
+      <p style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", color: "#6a737b" }}>Redirecting…</p>
     </RequireAdmin>
   );
 }

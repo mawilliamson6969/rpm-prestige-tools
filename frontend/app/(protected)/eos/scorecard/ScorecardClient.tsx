@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -75,6 +75,15 @@ export default function ScorecardClient() {
   const [manageOpen, setManageOpen] = useState(false);
   const [allMetrics, setAllMetrics] = useState<Metric[]>([]);
   const [trendMetricId, setTrendMetricId] = useState<number | null>(null);
+  const [metricMenuFor, setMetricMenuFor] = useState<number | null>(null);
+  const [editMetric, setEditMetric] = useState<Metric | null>(null);
+  const [deleteMetric, setDeleteMetric] = useState<Metric | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askMetricId, setAskMetricId] = useState<number | null>(null);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [askAnalysis, setAskAnalysis] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const { start, end } = useMemo(() => {
     if (preset === "last_13_weeks" && frequency === "monthly") {
@@ -266,6 +275,19 @@ export default function ScorecardClient() {
             </label>
           </>
         ) : null}
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnGhost}`}
+          disabled={!report?.metrics?.length}
+          onClick={() => {
+            setAskOpen(true);
+            setAskMetricId((prev) => prev ?? report?.metrics?.[0]?.id ?? null);
+            setAskAnalysis(null);
+            setAskError(null);
+          }}
+        >
+          Ask AI ✨
+        </button>
         {isAdmin ? (
           <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setManageOpen(true)}>
             Manage metrics
@@ -314,10 +336,39 @@ export default function ScorecardClient() {
                 {report.metrics.map((m, mi) => (
                   <tr key={m.id}>
                     <td>
-                      <div className={styles.metricTitle}>{m.name}</div>
-                      <div className={styles.metricMeta}>
-                        {m.ownerDisplayName ?? "—"} · Goal {formatGoal(m.unit, m.goalValue)} (
-                        {m.goalDirection})
+                      <div className={styles.metricHeadRow}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className={styles.metricTitleRow}>
+                            <div className={styles.metricTitle}>{m.name}</div>
+                            <button
+                              type="button"
+                              className={styles.aiSparkle}
+                              title="Ask AI about this metric"
+                              aria-label={`Ask AI about ${m.name}`}
+                              onClick={() => {
+                                setAskMetricId(m.id);
+                                setAskOpen(true);
+                                setAskAnalysis(null);
+                                setAskError(null);
+                              }}
+                            >
+                              ✨
+                            </button>
+                          </div>
+                          <div className={styles.metricMeta}>
+                            {m.ownerDisplayName ?? "—"} · Goal {formatGoal(m.unit, m.goalValue)} (
+                            {m.goalDirection})
+                          </div>
+                        </div>
+                        {isAdmin ? (
+                          <MetricGearMenu
+                            open={metricMenuFor === m.id}
+                            onToggle={() => setMetricMenuFor((cur) => (cur === m.id ? null : m.id))}
+                            onClose={() => setMetricMenuFor(null)}
+                            onEdit={() => setEditMetric(m)}
+                            onDelete={() => setDeleteMetric(m)}
+                          />
+                        ) : null}
                       </div>
                     </td>
                     {report.periods.map((p, pi) => {
@@ -440,6 +491,402 @@ export default function ScorecardClient() {
           }}
         />
       ) : null}
+
+      {editMetric && isAdmin ? (
+        <EditMetricModal
+          metric={editMetric}
+          team={team}
+          authHeaders={authHeaders}
+          onClose={() => setEditMetric(null)}
+          onSaved={() => {
+            setEditMetric(null);
+            setMetricMenuFor(null);
+            loadReport();
+          }}
+        />
+      ) : null}
+
+      {deleteMetric && isAdmin ? (
+        <ConfirmModal
+          title={`Archive ${deleteMetric.name}?`}
+          body="Historical data will be preserved but the metric will be removed from the scorecard."
+          confirmLabel="Archive"
+          onClose={() => setDeleteMetric(null)}
+          onConfirm={async () => {
+            await fetch(apiUrl(`/eos/scorecard/metrics/${deleteMetric.id}`), {
+              method: "DELETE",
+              headers: { ...authHeaders() },
+            });
+            setDeleteMetric(null);
+            setMetricMenuFor(null);
+            await loadReport();
+          }}
+        />
+      ) : null}
+
+      {askOpen && report?.metrics?.length ? (
+        <AskAiPanel
+          metrics={report.metrics}
+          metricId={askMetricId}
+          question={askQuestion}
+          loading={askLoading}
+          analysis={askAnalysis}
+          error={askError}
+          onMetricChange={setAskMetricId}
+          onQuestionChange={setAskQuestion}
+          onClose={() => setAskOpen(false)}
+          onAnalyze={async () => {
+            if (!askMetricId) return;
+            const q = askQuestion.trim();
+            if (!q) return;
+            setAskLoading(true);
+            setAskError(null);
+            setAskAnalysis(null);
+            try {
+              const res = await fetch(apiUrl("/eos/scorecard/ai-analyze"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeaders() },
+                body: JSON.stringify({ metricId: askMetricId, question: q }),
+              });
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(typeof j.error === "string" ? j.error : "Analysis failed");
+              setAskAnalysis(typeof j.analysis === "string" ? j.analysis : "");
+            } catch (e) {
+              setAskError(e instanceof Error ? e.message : "Error");
+            } finally {
+              setAskLoading(false);
+            }
+          }}
+          loadingLabel={`Analyzing ${report.metrics.find((x) => x.id === askMetricId)?.name ?? "metric"} data...`}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function MetricGearMenu({
+  open,
+  onToggle,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, onClose]);
+
+  return (
+    <div className={styles.gearWrap} ref={ref}>
+      <button
+        type="button"
+        className={styles.gearBtn}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Metric actions"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+      >
+        ⚙
+      </button>
+      {open ? (
+        <div className={styles.gearMenu} role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onEdit();
+              onClose();
+            }}
+          >
+            Edit Metric
+          </button>
+          <button
+            type="button"
+            className={styles.gearMenuDanger}
+            role="menuitem"
+            onClick={() => {
+              onDelete();
+              onClose();
+            }}
+          >
+            Delete Metric
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  body,
+  confirmLabel,
+  onClose,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className={styles.modalOverlay} role="dialog" aria-modal>
+      <div className={styles.modal}>
+        <h2>{title}</h2>
+        <p className={styles.muted}>{body}</p>
+        <div className={styles.modalActions}>
+          <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditMetricModal({
+  metric,
+  team,
+  authHeaders,
+  onClose,
+  onSaved,
+}: {
+  metric: Metric;
+  team: TeamUser[];
+  authHeaders: () => Record<string, string>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(metric.name);
+  const [description, setDescription] = useState(metric.description ?? "");
+  const [ownerUserId, setOwnerUserId] = useState(String(metric.ownerUserId));
+  const [frequency, setFrequency] = useState<"weekly" | "monthly">(metric.frequency);
+  const [goalValue, setGoalValue] = useState(String(metric.goalValue));
+  const [goalDirection, setGoalDirection] = useState(metric.goalDirection);
+  const [unit, setUnit] = useState(metric.unit);
+  const [displayOrder, setDisplayOrder] = useState(String(metric.displayOrder));
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className={styles.modalOverlay} role="dialog" aria-modal>
+      <div className={styles.modal} style={{ maxWidth: "34rem" }}>
+        <h2>Edit metric</h2>
+        <div className={styles.formGrid}>
+          <label>
+            Name
+            <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label>
+            Owner
+            <select
+              className={styles.select}
+              value={ownerUserId}
+              onChange={(e) => setOwnerUserId(e.target.value)}
+            >
+              {team.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ gridColumn: "1 / -1" }}>
+            Description
+            <textarea
+              className={styles.textarea}
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+          <label>
+            Frequency
+            <select
+              className={styles.select}
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value as "weekly" | "monthly")}
+            >
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label>
+            Goal value
+            <input className={styles.input} value={goalValue} onChange={(e) => setGoalValue(e.target.value)} />
+          </label>
+          <label>
+            Goal direction
+            <select
+              className={styles.select}
+              value={goalDirection}
+              onChange={(e) => setGoalDirection(e.target.value)}
+            >
+              <option value="above">Above</option>
+              <option value="below">Below</option>
+              <option value="exact">Exact</option>
+            </select>
+          </label>
+          <label>
+            Unit
+            <select className={styles.select} value={unit} onChange={(e) => setUnit(e.target.value)}>
+              <option value="number">Number</option>
+              <option value="currency">Currency</option>
+              <option value="percentage">Percentage</option>
+              <option value="days">Days</option>
+            </select>
+          </label>
+          <label>
+            Display order
+            <input className={styles.input} value={displayOrder} onChange={(e) => setDisplayOrder(e.target.value)} />
+          </label>
+        </div>
+        <div className={styles.modalActions}>
+          <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                const res = await fetch(apiUrl(`/eos/scorecard/metrics/${metric.id}`), {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json", ...authHeaders() },
+                  body: JSON.stringify({
+                    name,
+                    description: description.trim() || null,
+                    ownerUserId: Number(ownerUserId),
+                    frequency,
+                    goalValue: Number(goalValue),
+                    goalDirection,
+                    unit,
+                    displayOrder: Number(displayOrder),
+                  }),
+                });
+                const j = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(typeof j.error === "string" ? j.error : "Save failed");
+                onSaved();
+              } catch (e) {
+                alert(e instanceof Error ? e.message : "Save failed");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AskAiPanel({
+  metrics,
+  metricId,
+  question,
+  loading,
+  analysis,
+  error,
+  onMetricChange,
+  onQuestionChange,
+  onClose,
+  onAnalyze,
+  loadingLabel,
+}: {
+  metrics: Metric[];
+  metricId: number | null;
+  question: string;
+  loading: boolean;
+  analysis: string | null;
+  error: string | null;
+  onMetricChange: (id: number | null) => void;
+  onQuestionChange: (q: string) => void;
+  onClose: () => void;
+  onAnalyze: () => void | Promise<void>;
+  loadingLabel: string;
+}) {
+  return (
+    <>
+      <div className={styles.askBackdrop} role="presentation" onClick={onClose} />
+      <aside className={styles.askPanel} aria-label="Ask AI about scorecard">
+        <button type="button" className={styles.askClose} onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h2>Ask AI ✨</h2>
+        <label className={styles.muted} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+          Metric
+          <select
+            className={styles.select}
+            value={metricId ?? ""}
+            onChange={(e) => onMetricChange(Number(e.target.value) || null)}
+          >
+            {metrics.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.muted} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          Your question
+          <textarea
+            className={styles.textarea}
+            rows={4}
+            value={question}
+            onChange={(e) => onQuestionChange(e.target.value)}
+            placeholder={
+              'Examples: "Why did this metric drop last week?" · "How can we improve this metric?" · "What\'s the trend over the last quarter?" · "Are we on track to hit our annual goal?"'
+            }
+          />
+        </label>
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={loading || !metricId || !question.trim()}
+            onClick={() => void onAnalyze()}
+          >
+            Analyze
+          </button>
+        </div>
+        {loading ? <p className={styles.muted} style={{ marginTop: 12 }}>{loadingLabel}</p> : null}
+        {error ? <p className={styles.alert} style={{ marginTop: 12 }}>{error}</p> : null}
+        {analysis != null && analysis !== "" ? <div className={styles.askAnalysis}>{analysis}</div> : null}
+      </aside>
     </>
   );
 }

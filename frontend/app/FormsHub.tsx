@@ -333,7 +333,7 @@ export default function FormsHub() {
         }}
       >
         <span>© 2026 Real Property Management Prestige</span>
-        <Link href="/admin/terminations" style={{ color: LIGHT_BLUE, fontWeight: 600, textDecoration: "none" }}>
+        <Link href="/admin/forms" style={{ color: LIGHT_BLUE, fontWeight: 600, textDecoration: "none" }}>
           Admin
         </Link>
       </footer>

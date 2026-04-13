@@ -61,6 +61,14 @@ export default function UserMenu({ variant = "dark" }: Props) {
             {user?.role === "admin" ? (
               <>
                 <Link
+                  href="/admin/forms"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                >
+                  Form Submissions
+                </Link>
+                <Link
                   href="/admin/users"
                   className={styles.menuItem}
                   role="menuitem"

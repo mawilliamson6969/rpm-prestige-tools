@@ -1,4 +1,17 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
+
+const SCORECARD_AI_MODEL = "claude-sonnet-4-20250514";
+
+function anthropicForScorecard() {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!key) {
+    const err = new Error("ANTHROPIC_API_KEY is not set.");
+    err.code = "NO_AI_KEY";
+    throw err;
+  }
+  return new Anthropic({ apiKey: key });
+}
 
 function ymd(d) {
   const x = d instanceof Date ? d : new Date(d);
@@ -192,7 +205,14 @@ export async function putScorecardMetric(req, res) {
   if (typeof b.name === "string") set("name", b.name.trim());
   if (b.description !== undefined)
     set("description", typeof b.description === "string" ? b.description.trim() || null : null);
-  if (b.ownerUserId != null) set("owner_user_id", Number(b.ownerUserId));
+  if (b.ownerUserId != null) {
+    const oid = Number(b.ownerUserId);
+    if (!Number.isFinite(oid)) {
+      res.status(400).json({ error: "ownerUserId invalid." });
+      return;
+    }
+    set("owner_user_id", oid);
+  }
   if (b.frequency === "weekly" || b.frequency === "monthly") set("frequency", b.frequency);
   if (b.goalValue != null) set("goal_value", Number(b.goalValue));
   if (["above", "below", "exact"].includes(b.goalDirection)) set("goal_direction", b.goalDirection);
@@ -232,9 +252,17 @@ export async function deleteScorecardMetric(req, res) {
     return;
   }
   const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid id." });
+    return;
+  }
   try {
     const pool = getPool();
-    await pool.query(`UPDATE scorecard_metrics SET is_active = false WHERE id = $1`, [id]);
+    const { rowCount } = await pool.query(`UPDATE scorecard_metrics SET is_active = false WHERE id = $1`, [id]);
+    if (!rowCount) {
+      res.status(404).json({ error: "Metric not found." });
+      return;
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1288,5 +1316,117 @@ export async function deleteL10Issue(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not delete issue." });
+  }
+}
+
+/** POST /eos/scorecard/ai-analyze — authenticated users */
+export async function postScorecardAiAnalyze(req, res) {
+  const metricId = Number(req.body?.metricId);
+  const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+  if (!Number.isFinite(metricId) || !question) {
+    res.status(400).json({ error: "metricId and question are required." });
+    return;
+  }
+
+  try {
+    const pool = getPool();
+    const { rows: mrows } = await pool.query(
+      `SELECT m.*, u.display_name AS owner_display_name
+       FROM scorecard_metrics m
+       JOIN users u ON u.id = m.owner_user_id
+       WHERE m.id = $1 AND m.is_active = true`,
+      [metricId]
+    );
+    if (!mrows.length) {
+      res.status(404).json({ error: "Metric not found." });
+      return;
+    }
+    const m = mrows[0];
+    const freq = m.frequency === "monthly" ? "monthly" : "weekly";
+
+    const end = new Date();
+    let start;
+    let endBound;
+    if (freq === "weekly") {
+      endBound = mondayOfDate(end);
+      start = new Date(endBound);
+      start.setDate(start.getDate() - 13 * 7);
+    } else {
+      endBound = firstOfMonthContaining(end);
+      start = new Date(endBound.getFullYear(), endBound.getMonth() - 5, 1);
+    }
+    const startDate = ymd(start);
+    const endDate = ymd(endBound);
+
+    const { rows: entries } = await pool.query(
+      `SELECT week_of, month_of, value, entered_at
+       FROM scorecard_entries
+       WHERE metric_id = $1
+         AND (
+           (week_of IS NOT NULL AND week_of >= $2::date AND week_of <= $3::date)
+           OR (month_of IS NOT NULL AND month_of >= $2::date AND month_of <= $3::date)
+         )
+       ORDER BY COALESCE(week_of, month_of) ASC`,
+      [metricId, startDate, endDate]
+    );
+
+    const withValues = entries.filter((e) => e.value != null && !Number.isNaN(Number(e.value)));
+    const goal = Number(m.goal_value);
+    const direction = m.goal_direction;
+    let hits = 0;
+    const lines = [];
+    for (const e of withValues) {
+      const d = freq === "weekly" ? ymd(e.week_of) : ymd(e.month_of);
+      const v = Number(e.value);
+      const ok = meetsGoal(v, goal, direction);
+      if (ok) hits += 1;
+      lines.push(`${d}: ${v}${ok ? " (goal met)" : " (off goal)"}`);
+    }
+    const y = withValues.length;
+    let trend = "stable";
+    if (withValues.length >= 4) {
+      const mid = Math.floor(withValues.length / 2);
+      const first = withValues.slice(0, mid);
+      const second = withValues.slice(mid);
+      const avg = (arr) => arr.reduce((s, e) => s + Number(e.value), 0) / arr.length;
+      const a1 = avg(first);
+      const a2 = avg(second);
+      if (a2 > a1 * 1.03) trend = "improving";
+      else if (a2 < a1 * 0.97) trend = "declining";
+    }
+
+    const system = `You are analyzing an EOS Scorecard metric for RPM Prestige, a property management company in Houston, TX.`;
+    const userBlock = `Metric: ${m.name}
+Goal: ${m.goal_value} (${direction})
+Frequency: ${freq}
+Owner: ${m.owner_display_name ?? "—"}
+
+Recent data points:
+${lines.length ? lines.join("\n") : "(no values in this window)"}
+
+${freq === "weekly" ? "Weeks" : "Months"} hitting goal: ${hits} of ${y}
+Current trend: ${trend}
+
+The user asks: "${question}"
+
+Provide specific, actionable advice based on the data. Reference actual numbers from the data points. If the metric is off-track, suggest concrete steps to improve it. Keep your response concise (2-3 paragraphs).`;
+
+    const client = anthropicForScorecard();
+    const msg = await client.messages.create({
+      model: SCORECARD_AI_MODEL,
+      max_tokens: 1200,
+      system,
+      messages: [{ role: "user", content: userBlock }],
+    });
+    const block = msg.content?.[0];
+    const analysis = block?.type === "text" ? (block.text?.trim() ?? "") : "";
+    res.json({ analysis });
+  } catch (e) {
+    if (e?.code === "NO_AI_KEY") {
+      res.status(503).json({ error: "AI is not configured (missing ANTHROPIC_API_KEY)." });
+      return;
+    }
+    console.error(e);
+    res.status(500).json({ error: "Could not analyze metric." });
   }
 }
