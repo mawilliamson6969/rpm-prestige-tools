@@ -1,12 +1,17 @@
 /**
  * LeadSimple REST API → PostgreSQL cache (read-only).
  * https://api.leadsimple.com/rest — Bearer LEADSIMPLE_API_KEY
+ *
+ * Optimized for large accounts: scoped syncs + 2s pacing + page caps (see fetch paths below).
  */
 import { getPool } from "./db.js";
 
 const BASE = "https://api.leadsimple.com/rest";
-const GAP_MS = 500;
+const GAP_MS = 2000;
 const PER_PAGE = 200;
+/** Max pages per paginated API call (50 × 200 = 10k rows per call). */
+const MAX_PAGES_PER_CALL = 50;
+const RETRY_AFTER_BUFFER_MS = 5000;
 
 function sleepMs(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -14,6 +19,20 @@ function sleepMs(ms) {
 
 function delay() {
   return sleepMs(GAP_MS);
+}
+
+/** Unix timestamp (seconds). */
+function unixDaysAgo(days) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return Math.floor(d.getTime() / 1000);
+}
+
+/** Unix timestamp (seconds). */
+function unixMonthsAgo(months) {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return Math.floor(d.getTime() / 1000);
 }
 
 function normalizeList(json) {
@@ -31,6 +50,18 @@ function normalizeList(json) {
     if (Array.isArray(json.conversations)) return json.conversations;
   }
   return [];
+}
+
+function mergeRowsById(rowArrays) {
+  const map = new Map();
+  for (const rows of rowArrays) {
+    for (const row of rows) {
+      if (row && typeof row === "object" && row.id != null) {
+        map.set(String(row.id), row);
+      }
+    }
+  }
+  return [...map.values()];
 }
 
 async function insertJsonRows(client, tableName, rows) {
@@ -81,7 +112,7 @@ function maybeBackoffFromHeaders(res) {
 }
 
 /**
- * GET with 500ms spacing, 429 → wait X-RateLimit-Retry-After (seconds), optional light backoff from rate headers.
+ * GET with 2s spacing, 429 → wait Retry-After (seconds) + 5s buffer, then retry.
  */
 async function leadsimpleFetch(apiKey, pathWithQuery, rate429Attempts = 0) {
   await delay();
@@ -96,8 +127,11 @@ async function leadsimpleFetch(apiKey, pathWithQuery, rate429Attempts = 0) {
 
   if (res.status === 429 && rate429Attempts < 8) {
     const sec = parseRetryAfterSeconds(res);
-    const waitMs = sec != null ? sec * 1000 : 5000;
-    console.warn(`[sync] leadsimple 429, waiting ${waitMs}ms before retry (${pathWithQuery.slice(0, 80)})`);
+    const baseMs = sec != null ? sec * 1000 : 5000;
+    const waitMs = baseMs + RETRY_AFTER_BUFFER_MS;
+    console.warn(
+      `[sync] leadsimple 429, waiting ${waitMs}ms (Retry-After + 5s buffer) (${pathWithQuery.slice(0, 96)})`
+    );
     await sleepMs(waitMs);
     return leadsimpleFetch(apiKey, pathWithQuery, rate429Attempts + 1);
   }
@@ -119,12 +153,27 @@ async function leadsimpleFetch(apiKey, pathWithQuery, rate429Attempts = 0) {
   return json;
 }
 
-async function fetchAllPages(apiKey, path, logLabel) {
+function buildPagePath(basePath, page) {
+  const sep = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${sep}page=${page}&per_page=${PER_PAGE}`;
+}
+
+/**
+ * @returns {{ rows: unknown[], hitPageLimit: boolean }}
+ */
+async function fetchAllPages(apiKey, basePath, logLabel) {
   let page = 1;
   const out = [];
+  let hitPageLimit = false;
   for (;;) {
-    const sep = path.includes("?") ? "&" : "?";
-    const pathWithQuery = `${path}${sep}page=${page}&per_page=${PER_PAGE}`;
+    if (page > MAX_PAGES_PER_CALL) {
+      hitPageLimit = true;
+      console.warn(
+        `[sync] leadsimple ${logLabel}: reached maximum page limit (${MAX_PAGES_PER_CALL}), stopping pagination`
+      );
+      break;
+    }
+    const pathWithQuery = buildPagePath(basePath, page);
     const json = await leadsimpleFetch(apiKey, pathWithQuery);
     const batch = normalizeList(json);
     if (batch.length === 0) break;
@@ -132,19 +181,10 @@ async function fetchAllPages(apiKey, path, logLabel) {
     if (batch.length < PER_PAGE) break;
     page += 1;
   }
-  console.log(`[sync] leadsimple ${logLabel}: ${out.length} rows cached`);
-  return out;
+  return { rows: out, hitPageLimit };
 }
 
-const RESOURCE_SPECS = [
-  { path: "/deals", table: "cached_leadsimple_deals", label: "deals" },
-  { path: "/contacts", table: "cached_leadsimple_contacts", label: "contacts" },
-  { path: "/pipelines", table: "cached_leadsimple_pipelines", label: "pipelines" },
-  { path: "/tasks", table: "cached_leadsimple_tasks", label: "tasks" },
-  { path: "/processes", table: "cached_leadsimple_processes", label: "processes" },
-  { path: "/properties", table: "cached_leadsimple_properties", label: "properties" },
-  { path: "/conversations", table: "cached_leadsimple_conversations", label: "conversations" },
-];
+const ENDPOINT_COUNT = 7;
 
 /**
  * Runs after Boom sync. Skips if LEADSIMPLE_API_KEY unset.
@@ -160,29 +200,118 @@ export async function runLeadSimpleSync(triggeredBy) {
     return { skipped: true };
   }
 
+  const ts6mo = unixMonthsAgo(6);
+  const ts30d = unixDaysAgo(30);
+
   /** @type {{ ok: boolean, rows: unknown[], label: string, table: string }[]} */
   const results = [];
   const syncErrors = [];
+  const pageLimitNotes = [];
 
-  for (const spec of RESOURCE_SPECS) {
+  async function runFetch(label, table, fn) {
     try {
-      const rows = await fetchAllPages(apiKey, spec.path, spec.label);
-      results.push({ ok: true, rows, label: spec.label, table: spec.table });
+      const rows = await fn();
+      results.push({ ok: true, rows, label, table });
     } catch (e) {
       const msg = e?.message || String(e);
-      syncErrors.push({ step: spec.label, error: msg });
-      console.error(`[sync] leadsimple ${spec.label} failed:`, msg);
-      results.push({ ok: false, rows: [], label: spec.label, table: spec.table });
+      syncErrors.push({ step: label, error: msg });
+      console.error(`[sync] leadsimple ${label} failed:`, msg);
+      results.push({ ok: false, rows: [], label, table });
     }
   }
+
+  // Pipelines & properties — full sync (small).
+  await runFetch("pipelines", "cached_leadsimple_pipelines", async () => {
+    const { rows, hitPageLimit } = await fetchAllPages(apiKey, "/pipelines", "pipelines");
+    if (hitPageLimit) pageLimitNotes.push("pipelines");
+    return rows;
+  });
+
+  await runFetch("properties", "cached_leadsimple_properties", async () => {
+    const { rows, hitPageLimit } = await fetchAllPages(apiKey, "/properties", "properties");
+    if (hitPageLimit) pageLimitNotes.push("properties");
+    return rows;
+  });
+
+  // Contacts — full sync.
+  await runFetch("contacts", "cached_leadsimple_contacts", async () => {
+    const { rows, hitPageLimit } = await fetchAllPages(apiKey, "/contacts", "contacts");
+    if (hitPageLimit) pageLimitNotes.push("contacts");
+    return rows;
+  });
+
+  // Deals — last 6 months by updated_since (Unix seconds).
+  await runFetch("deals", "cached_leadsimple_deals", async () => {
+    const base = `/deals?updated_since=${ts6mo}`;
+    const { rows, hitPageLimit } = await fetchAllPages(apiKey, base, "deals");
+    if (hitPageLimit) pageLimitNotes.push("deals (6mo window)");
+    return rows;
+  });
+
+  // Tasks — incomplete + anything updated in last 30 days (dedupe by id).
+  await runFetch("tasks", "cached_leadsimple_tasks", async () => {
+    const openPath = `/tasks?completed=false`;
+    const recentPath = `/tasks?updated_since=${ts30d}`;
+    const a = await fetchAllPages(apiKey, openPath, "tasks (completed=false)");
+    const b = await fetchAllPages(apiKey, recentPath, "tasks (updated_since 30d)");
+    if (a.hitPageLimit) pageLimitNotes.push("tasks (open)");
+    if (b.hitPageLimit) pageLimitNotes.push("tasks (recent)");
+    return mergeRowsById([a.rows, b.rows]);
+  });
+
+  // Processes — open + completed in last 30 days (dedupe by id).
+  await runFetch("processes", "cached_leadsimple_processes", async () => {
+    const openPath = `/processes?status=open`;
+    const donePath = `/processes?status=completed&updated_since=${ts30d}`;
+    const a = await fetchAllPages(apiKey, openPath, "processes (open)");
+    const b = await fetchAllPages(apiKey, donePath, "processes (completed 30d)");
+    if (a.hitPageLimit) pageLimitNotes.push("processes (open)");
+    if (b.hitPageLimit) pageLimitNotes.push("processes (completed)");
+    return mergeRowsById([a.rows, b.rows]);
+  });
+
+  // Conversations — updated in last 30 days.
+  await runFetch("conversations", "cached_leadsimple_conversations", async () => {
+    const base = `/conversations?updated_since=${ts30d}`;
+    const { rows, hitPageLimit } = await fetchAllPages(apiKey, base, "conversations");
+    if (hitPageLimit) pageLimitNotes.push("conversations (30d)");
+    return rows;
+  });
+
+  if (pageLimitNotes.length) {
+    console.warn(
+      `[sync] leadsimple: page cap (${MAX_PAGES_PER_CALL} pages/call) hit for: ${pageLimitNotes.join(", ")}`
+    );
+  }
+
+  const n = (label) => results.find((x) => x.label === label && x.ok)?.rows.length ?? 0;
+  const dealsN = n("deals");
+  const tasksN = n("tasks");
+  const convN = n("conversations");
+  const procN = n("processes");
+  const contN = n("contacts");
+  const pipeN = n("pipelines");
+  const propN = n("properties");
+
+  console.log(`[sync] leadsimple deals: ${dealsN} rows cached (limited to last 6 months)`);
+  console.log(
+    `[sync] leadsimple tasks: ${tasksN} rows cached (incomplete + updated in last 30 days, deduped)`
+  );
+  console.log(`[sync] leadsimple conversations: ${convN} rows cached (updated in last 30 days)`);
+  console.log(`[sync] leadsimple contacts: ${contN} rows cached`);
+  console.log(
+    `[sync] leadsimple processes: ${procN} rows cached (open + completed in last 30 days, deduped)`
+  );
+  console.log(`[sync] leadsimple pipelines: ${pipeN} rows cached`);
+  console.log(`[sync] leadsimple properties: ${propN} rows cached`);
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    for (const r of results) {
-      if (!r.ok) continue;
-      await client.query(`DELETE FROM ${r.table}`);
-      await insertJsonRows(client, r.table, r.rows);
+    for (const row of results) {
+      if (!row.ok) continue;
+      await client.query(`DELETE FROM ${row.table}`);
+      await insertJsonRows(client, row.table, row.rows);
     }
     await client.query("COMMIT");
   } catch (e) {
@@ -193,24 +322,24 @@ export async function runLeadSimpleSync(triggeredBy) {
     }
     const msg = e?.message || String(e);
     syncErrors.push({ step: "database", error: msg });
-    await logLeadSimpleSync(syncTriggeredBy, "failed", RESOURCE_SPECS.length, 0, syncErrors);
+    await logLeadSimpleSync(syncTriggeredBy, "failed", ENDPOINT_COUNT, 0, syncErrors);
     throw e;
   } finally {
     client.release();
   }
 
-  const totalRows = results.filter((x) => x.ok).reduce((acc, r) => acc + r.rows.length, 0);
+  const totalRows = results.filter((x) => x.ok).reduce((acc, x) => acc + x.rows.length, 0);
   await logLeadSimpleSync(
     syncTriggeredBy,
     "completed",
-    RESOURCE_SPECS.length,
+    ENDPOINT_COUNT,
     totalRows,
     syncErrors.length ? syncErrors : null
   );
 
   return {
     skipped: false,
-    endpointsSynced: RESOURCE_SPECS.length,
+    endpointsSynced: ENDPOINT_COUNT,
     endpointsSucceeded: results.filter((x) => x.ok).length,
     totalRows,
     errors: syncErrors.length ? syncErrors : undefined,
