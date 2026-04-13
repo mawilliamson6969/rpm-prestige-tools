@@ -19,11 +19,10 @@ const DOOR_GOAL = 300;
 const QUICK_LINKS = [
   { label: "AppFolio", href: "https://rpmtx033.appfolio.com", icon: "🏠" },
   { label: "LeadSimple", href: "https://app.leadsimple.com", icon: "📋" },
-  { label: "Property Meld", href: "https://app.propertymeld.com", icon: "🔧" },
-  { label: "Microsoft Teams", href: "https://teams.microsoft.com", icon: "💬" },
-  { label: "RentEngine", href: "https://www.rentengine.com", icon: "📊" },
+  { label: "Blanket", href: "https://rpmprestige.blankethomes.com/pm", icon: "🔧" },
+  { label: "RentEngine", href: "https://app.rentengine.io/owner/default", icon: "📊" },
   { label: "Second Nature", href: "https://www.secondnature.com", icon: "🏡" },
-  { label: "BoomScreen", href: "https://www.boomscreen.com", icon: "🔍" },
+  { label: "BoomScreen", href: "https://www.boompay.app/", icon: "🔍" },
 ] as const;
 
 const TEAM = [
