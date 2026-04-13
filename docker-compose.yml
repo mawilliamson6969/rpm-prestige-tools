@@ -46,6 +46,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:4000:4000"
+    volumes:
+      - backend_uploads:/app/uploads
 
   frontend:
     build:
@@ -61,3 +63,4 @@ services:
 
 volumes:
   pgdata:
+  backend_uploads:

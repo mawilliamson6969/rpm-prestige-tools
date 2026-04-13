@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import InboxNavLink from "../components/InboxNavLink";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
+import VideoMessagesHubCard from "../components/VideoMessagesHubCard";
 import UserMenu from "../components/UserMenu";
 import AddAnnouncementModal from "./AddAnnouncementModal";
 import { useAuth } from "../context/AuthContext";
@@ -325,6 +326,7 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Communications</p>
               <div className={styles.toolGrid}>
                 <SharedInboxHubCard />
+                <VideoMessagesHubCard />
               </div>
 
               <p className={styles.catLabel}>EOS</p>

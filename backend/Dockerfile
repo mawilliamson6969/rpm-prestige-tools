@@ -1,5 +1,6 @@
 # Simple Node API image: production dependencies only, run as non-root when possible.
 FROM node:20-alpine
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev

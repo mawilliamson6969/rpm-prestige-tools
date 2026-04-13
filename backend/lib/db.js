@@ -361,6 +361,45 @@ export async function ensureInboxSchema() {
   await seedEmailSignatures(p);
 }
 
+export async function ensureVideosSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS videos (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      filename VARCHAR(255) NOT NULL,
+      thumbnail_filename VARCHAR(255),
+      duration_seconds INTEGER,
+      file_size_bytes BIGINT,
+      mime_type VARCHAR(50) DEFAULT 'video/webm',
+      recording_type VARCHAR(20) DEFAULT 'screen',
+      transcript TEXT,
+      transcript_status VARCHAR(20) DEFAULT 'pending',
+      visibility VARCHAR(20) DEFAULT 'private',
+      share_token VARCHAR(64),
+      recorded_by INTEGER REFERENCES users(id),
+      views_count INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS video_comments (
+      id SERIAL PRIMARY KEY,
+      video_id INTEGER REFERENCES videos(id),
+      user_id INTEGER REFERENCES users(id),
+      comment TEXT NOT NULL,
+      timestamp_seconds INTEGER,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS videos_recorded_by_idx ON videos (recorded_by, created_at DESC);
+    CREATE INDEX IF NOT EXISTS videos_visibility_idx ON videos (visibility);
+    CREATE INDEX IF NOT EXISTS videos_share_token_idx ON videos (share_token);
+    CREATE INDEX IF NOT EXISTS video_comments_video_idx ON video_comments (video_id, created_at ASC);
+  `);
+}
+
 const TEAM_SIGNATURE_HTML = {
   mike: `<p>Best regards,</p>
 <p><strong>Mike Williamson</strong><br>Owner/Operator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,

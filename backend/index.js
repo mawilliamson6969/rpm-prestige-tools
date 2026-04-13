@@ -15,6 +15,7 @@ import {
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
   ensureAskAiSchema,
+  ensureVideosSchema,
 } from "./lib/db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
@@ -117,6 +118,22 @@ import {
   postMicrosoftAuthorizeUrl,
   putInboxTicket,
 } from "./routes/inbox.js";
+import {
+  deleteVideoById,
+  deleteVideoShare,
+  getVideoByIdRoute,
+  getVideoByShareToken,
+  getVideoComments,
+  getVideoStream,
+  getVideoStreamByShareToken,
+  getVideoThumbnail,
+  getVideos,
+  postVideoComment,
+  postVideoShare,
+  postVideoUpload,
+  putVideoById,
+  uploadVideoMiddleware,
+} from "./routes/videos.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -301,6 +318,20 @@ app.put("/admin/signatures/:id/default", requireAuth, requireAdminRole, putAdmin
 app.put("/admin/signatures/:id", requireAuth, requireAdminRole, putAdminSignature);
 app.delete("/admin/signatures/:id", requireAuth, requireAdminRole, deleteAdminSignature);
 
+app.post("/videos/upload", requireAuth, uploadVideoMiddleware, postVideoUpload);
+app.get("/videos", requireAuth, getVideos);
+app.get("/videos/:id", requireAuth, getVideoByIdRoute);
+app.put("/videos/:id", requireAuth, putVideoById);
+app.delete("/videos/:id", requireAuth, deleteVideoById);
+app.post("/videos/:id/share", requireAuth, postVideoShare);
+app.delete("/videos/:id/share", requireAuth, deleteVideoShare);
+app.get("/videos/:id/stream", requireAuth, getVideoStream);
+app.get("/videos/:id/thumbnail", requireAuth, getVideoThumbnail);
+app.post("/videos/:id/comments", requireAuth, postVideoComment);
+app.get("/videos/:id/comments", requireAuth, getVideoComments);
+app.get("/videos/shared/:shareToken", getVideoByShareToken);
+app.get("/videos/shared/:shareToken/stream", getVideoStreamByShareToken);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -318,6 +349,8 @@ async function start() {
       console.log("Database schema OK (ask_ai_history).");
       await ensureInboxSchema();
       console.log("Database schema OK (inbox / tickets).");
+      await ensureVideosSchema();
+      console.log("Database schema OK (videos).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
