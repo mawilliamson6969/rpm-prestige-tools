@@ -1,3 +1,4 @@
+/* Video Messages — brand tokens */
 .page,
 .detailPage,
 .sharedPage {
@@ -5,6 +6,283 @@
   margin: 0 auto;
   padding: 1.25rem;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --video-navy: #1b2856;
+  --video-navy-hover: #243a70;
+  --video-red: #b32317;
+  --video-red-hover: #951f13;
+  --video-blue: #0098d0;
+  --video-blue-hover: #007fb0;
+  --video-grey-bg: #f5f5f5;
+  --video-grey-border: #6a737b;
+  --video-muted: #53606f;
+}
+
+/* ---------- Buttons (explicit contrast) ---------- */
+.btnPrimary,
+.btnSecondary,
+.btnDanger,
+.btnShare {
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  border-style: solid;
+  border-width: 1px;
+  line-height: 1.25;
+}
+
+.btnPrimary {
+  background: var(--video-navy);
+  color: #fff;
+  border-color: var(--video-navy);
+}
+.btnPrimary:hover:not(:disabled) {
+  background: var(--video-navy-hover);
+  border-color: var(--video-navy-hover);
+  color: #fff;
+}
+.btnPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+  border-color: var(--video-grey-border);
+}
+.btnSecondary:hover:not(:disabled) {
+  background: #e8eaed;
+  color: var(--video-navy);
+  border-color: var(--video-grey-border);
+}
+
+.btnDanger {
+  background: var(--video-red);
+  color: #fff;
+  border-color: var(--video-red);
+}
+.btnDanger:hover:not(:disabled) {
+  background: var(--video-red-hover);
+  border-color: var(--video-red-hover);
+  color: #fff;
+}
+
+.btnShare {
+  background: var(--video-blue);
+  color: #fff;
+  border-color: var(--video-blue);
+}
+.btnShare:hover:not(:disabled) {
+  background: var(--video-blue-hover);
+  border-color: var(--video-blue-hover);
+  color: #fff;
+}
+
+.btnTimestamp {
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+  border: 1px solid var(--video-grey-border);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.btnTimestamp:hover {
+  background: #e8eaed;
+  color: var(--video-navy);
+}
+
+.btnKebab {
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+  border: 1px solid var(--video-grey-border);
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  min-width: 2rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.btnKebab:hover:not(:disabled) {
+  background: #e8eaed;
+  color: var(--video-navy);
+}
+
+/* ---------- Library layout + sidebar ---------- */
+.libraryLayout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.sidebarToggle {
+  display: none;
+  margin-bottom: 0.5rem;
+}
+
+.sidebar {
+  flex: 0 0 240px;
+  background: #fff;
+  border: 1px solid #d7dbe2;
+  border-radius: 12px;
+  padding: 0.65rem 0.5rem;
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.sidebarCollapsed {
+  display: none;
+}
+
+.sidebarMobileOpen {
+  display: block !important;
+  position: fixed;
+  z-index: 60;
+  left: 0.75rem;
+  right: 0.75rem;
+  top: 4rem;
+  max-height: min(70vh, 520px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.libraryMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.folderNavBtn {
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--video-navy);
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+.folderNavBtn:hover {
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+}
+.folderNavActive {
+  background: #e8eef8;
+  border-color: #c5d0e6;
+  font-weight: 600;
+}
+
+.folderChevron {
+  flex-shrink: 0;
+  width: 1.25rem;
+  text-align: center;
+  color: var(--video-muted);
+  font-size: 0.7rem;
+}
+
+.folderBadge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--video-navy);
+  color: #fff;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  min-width: 1.25rem;
+  text-align: center;
+}
+
+.folderIndent {
+  padding-left: 0.5rem;
+  border-left: 2px solid #e0e4ea;
+  margin-left: 0.35rem;
+}
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--video-muted);
+}
+.breadcrumb button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--video-blue);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.breadcrumb button:hover {
+  color: var(--video-blue-hover);
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 80;
+  background: #fff;
+  border: 1px solid var(--video-grey-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 180px;
+  padding: 0.25rem 0;
+}
+.contextMenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  background: #fff;
+  color: var(--video-navy);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.contextMenu button:hover {
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+}
+
+.moveMenu {
+  position: absolute;
+  z-index: 50;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--video-grey-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 200px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 0.25rem 0;
+}
+.moveMenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: #fff;
+  color: var(--video-navy);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.moveMenu button:hover {
+  background: var(--video-grey-bg);
 }
 
 .pageHeader {
@@ -17,23 +295,12 @@
 
 .pageHeader h1 {
   margin: 0;
-  color: #1b2856;
+  color: var(--video-navy);
 }
 
 .pageHeader p {
   margin: 0.3rem 0 0;
-  color: #53606f;
-}
-
-.recordBtn,
-.primaryRecordBtn {
-  background: #b32317;
-  color: #fff;
-  border: 0;
-  border-radius: 10px;
-  padding: 0.7rem 1rem;
-  font-weight: 700;
-  cursor: pointer;
+  color: var(--video-muted);
 }
 
 .toolbar {
@@ -57,12 +324,36 @@
   border-radius: 8px;
   padding: 0.6rem;
   font-size: 0.95rem;
+  color: #1a1a1a;
+  background: #fff;
 }
 
 .videoGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.videoCardWrap {
+  position: relative;
+  border-radius: 14px;
+}
+.videoCardWrap[draggable="true"] {
+  cursor: grab;
+}
+.videoCardWrap:active {
+  cursor: grabbing;
+}
+
+.cardMenuRow {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+}
+
+.cardMenuHost {
+  position: relative;
 }
 
 .videoCard {
@@ -72,6 +363,7 @@
   color: inherit;
   text-decoration: none;
   overflow: hidden;
+  display: block;
 }
 
 .thumbWrap {
@@ -113,6 +405,7 @@
 .cardBody h3 {
   margin: 0;
   font-size: 1rem;
+  color: var(--video-navy);
 }
 
 .metaRow {
@@ -139,7 +432,7 @@
   color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
-  background: #1b2856;
+  background: var(--video-navy);
 }
 
 .libraryFooter,
@@ -148,6 +441,13 @@
   color: #647383;
 }
 
+.folderDropTarget {
+  outline: 2px dashed var(--video-blue);
+  outline-offset: 2px;
+  background: #e3f4fb;
+}
+
+/* ---------- Recorder ---------- */
 .recorderOverlay {
   position: fixed;
   inset: 0;
@@ -167,18 +467,14 @@
   gap: 0.75rem;
 }
 
+.recorderShell h2 {
+  color: #fff;
+}
+
 .recorderHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.closeBtn {
-  border: 1px solid #3f4f64;
-  background: transparent;
-  color: #fff;
-  border-radius: 8px;
-  padding: 0.45rem 0.75rem;
 }
 
 .modeRow {
@@ -188,16 +484,32 @@
 }
 
 .modeButton {
-  background: #1b2856;
-  color: #fff;
-  border: 1px solid #32426f;
+  background: var(--video-grey-bg);
+  color: var(--video-navy);
+  border: 1px solid var(--video-grey-border);
   border-radius: 8px;
-  padding: 0.45rem 0.7rem;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modeButton:hover:not(:disabled) {
+  background: #e8eaed;
+  color: var(--video-navy);
+}
+.modeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .modeActive {
-  border-color: #00b4d8;
-  box-shadow: 0 0 0 1px #00b4d8 inset;
+  background: var(--video-navy);
+  color: #fff;
+  border-color: var(--video-navy);
+}
+.modeActive:hover:not(:disabled) {
+  background: var(--video-navy-hover);
+  border-color: var(--video-navy-hover);
+  color: #fff;
 }
 
 .recorderBody {
@@ -234,6 +546,27 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  color: #eef2f7;
+}
+
+.recorderControls label {
+  font-size: 0.85rem;
+  color: #cfd7e1;
+}
+
+.recorderControls select {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #4a5c78;
+  background: #1b2856;
+  color: #fff;
+  font-size: 0.9rem;
+}
+.recorderControls select option {
+  background: #1b2856;
+  color: #fff;
 }
 
 .audioMeter {
@@ -251,6 +584,7 @@
 .timer {
   font-size: 1.1rem;
   font-weight: 700;
+  color: #fff;
 }
 
 .timerYellow {
@@ -264,26 +598,7 @@
 .recordingActions {
   display: flex;
   gap: 0.6rem;
-}
-
-.recordingActions button,
-.detailActions button,
-.commentComposer button,
-.reviewActions button,
-.shareBox button,
-.timestampBtn {
-  border: 1px solid #c7d0dd;
-  border-radius: 8px;
-  background: #fff;
-  padding: 0.45rem 0.7rem;
-  cursor: pointer;
-}
-
-.stopBtn,
-.deleteBtn {
-  background: #b32317;
-  color: #fff;
-  border-color: #b32317;
+  flex-wrap: wrap;
 }
 
 .reviewPane {
@@ -297,16 +612,40 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  color: #eef2f7;
+}
+
+.reviewForm label {
+  font-size: 0.85rem;
+  color: #cfd7e1;
+}
+
+.reviewForm input,
+.reviewForm textarea {
+  background: #1a2332;
+  border-color: #3d4f6a;
+  color: #fff;
+}
+.reviewForm input::placeholder,
+.reviewForm textarea::placeholder {
+  color: #8a9aaf;
 }
 
 .reviewActions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.progressLabel {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+  color: #cfd7e1;
 }
 
 .progressWrap {
   width: 100%;
-  height: 10px;
+  height: 12px;
   background: #2d3748;
   border-radius: 999px;
   overflow: hidden;
@@ -314,7 +653,14 @@
 
 .progressBar {
   height: 100%;
-  background: #00b4d8;
+  background: var(--video-blue);
+  transition: width 0.15s ease;
+}
+
+.phaseMessage {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+  color: #a8c7ff;
 }
 
 .transcribing,
@@ -324,11 +670,12 @@
 }
 
 .errorText {
-  color: #ff8f8f;
+  color: #ffb4b4;
 }
 
 .detailHeader h1 {
   margin: 0;
+  color: var(--video-navy);
 }
 
 .detailHeader p {
@@ -342,6 +689,13 @@
   gap: 0.6rem;
 }
 
+.detailActionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .descriptionInput {
   min-height: 80px;
 }
@@ -349,6 +703,8 @@
 .shareBox {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .transcriptSection,
@@ -366,11 +722,6 @@
   overflow: auto;
 }
 
-.timestampBtn {
-  margin-right: 0.3rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
 .commentComposer {
   display: flex;
   flex-direction: column;
@@ -381,6 +732,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  color: #3a4553;
 }
 
 .commentList {
@@ -402,7 +754,7 @@
 
 .sharedHeader h1 {
   margin: 0;
-  color: #1b2856;
+  color: var(--video-navy);
 }
 
 .sharedHeader p {
@@ -422,6 +774,18 @@
   .reviewPane,
   .recorderBody {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebarToggle {
+    display: inline-flex;
+  }
+  .sidebar {
+    display: none;
+  }
+  .sidebarMobileOpen.sidebar {
+    display: block;
   }
 }
 

@@ -1,3 +1,13 @@
+export type VideoFolderNode = {
+  id: number;
+  name: string;
+  parentFolderId: number | null;
+  createdBy: number | null;
+  createdAt: string;
+  videoCount: number;
+  children: VideoFolderNode[];
+};
+
 export type VideoRow = {
   id: number;
   title: string;
@@ -10,11 +20,14 @@ export type VideoRow = {
   recordingType: "screen" | "webcam" | "both" | string;
   transcript: string | null;
   transcriptStatus: "pending" | "processing" | "completed" | "failed" | string;
+  /** `ffmpeg` while generating thumbnail/audio; `none` when ready for / during transcription; `error` if FFmpeg failed */
+  processingStatus: "none" | "ffmpeg" | "error" | string;
   visibility: "private" | "shared" | string;
   shareToken: string | null;
   shareUrl: string | null;
   recordedBy: number | null;
   recordedByName: string;
+  folderId: number | null;
   viewsCount: number;
   createdAt: string;
   updatedAt: string;
@@ -62,4 +75,30 @@ export function timestampLabel(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `[${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}]`;
+}
+
+/** Flatten folder tree for move menus (depth for indentation). */
+export function flattenFolderTree(nodes: VideoFolderNode[], depth = 0): { id: number; name: string; depth: number }[] {
+  const out: { id: number; name: string; depth: number }[] = [];
+  for (const n of nodes) {
+    out.push({ id: n.id, name: n.name, depth });
+    if (n.children?.length) out.push(...flattenFolderTree(n.children, depth + 1));
+  }
+  return out;
+}
+
+/** Path from root to folder id (names only), or null if not found */
+export function folderBreadcrumbPath(nodes: VideoFolderNode[], targetId: number): string[] | null {
+  function walk(list: VideoFolderNode[], acc: string[]): string[] | null {
+    for (const n of list) {
+      const next = [...acc, n.name];
+      if (n.id === targetId) return next;
+      if (n.children?.length) {
+        const found = walk(n.children, next);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  return walk(nodes, []);
 }

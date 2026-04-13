@@ -364,6 +364,14 @@ export async function ensureInboxSchema() {
 export async function ensureVideosSchema() {
   const p = getPool();
   await p.query(`
+    CREATE TABLE IF NOT EXISTS video_folders (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      parent_folder_id INTEGER REFERENCES video_folders(id),
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS videos (
       id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
@@ -376,9 +384,11 @@ export async function ensureVideosSchema() {
       recording_type VARCHAR(20) DEFAULT 'screen',
       transcript TEXT,
       transcript_status VARCHAR(20) DEFAULT 'pending',
+      processing_status VARCHAR(20) DEFAULT 'none',
       visibility VARCHAR(20) DEFAULT 'private',
       share_token VARCHAR(64),
       recorded_by INTEGER REFERENCES users(id),
+      folder_id INTEGER REFERENCES video_folders(id),
       views_count INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
@@ -397,7 +407,11 @@ export async function ensureVideosSchema() {
     CREATE INDEX IF NOT EXISTS videos_visibility_idx ON videos (visibility);
     CREATE INDEX IF NOT EXISTS videos_share_token_idx ON videos (share_token);
     CREATE INDEX IF NOT EXISTS video_comments_video_idx ON video_comments (video_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS videos_folder_idx ON videos (folder_id);
+    CREATE INDEX IF NOT EXISTS video_folders_parent_idx ON video_folders (parent_folder_id);
   `);
+  await p.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS folder_id INTEGER REFERENCES video_folders(id)`);
+  await p.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) DEFAULT 'none'`);
 }
 
 const TEAM_SIGNATURE_HTML = {

@@ -37,7 +37,6 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
   }, [isAdmin, user, video]);
 
   const loadVideo = useCallback(async () => {
-    setLoading(true);
     const res = await fetch(apiUrl(`/videos/${videoId}`), {
       headers: { ...authHeaders() },
       cache: "no-store",
@@ -48,7 +47,6 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
       setTitle(body.video.title || "");
       setDescription(body.video.description || "");
     }
-    setLoading(false);
   }, [authHeaders, videoId]);
 
   const loadComments = useCallback(async () => {
@@ -61,9 +59,33 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
   }, [authHeaders, videoId]);
 
   useEffect(() => {
-    loadVideo();
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await loadVideo();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadVideo]);
+
+  useEffect(() => {
     loadComments();
-  }, [loadVideo, loadComments]);
+  }, [loadComments]);
+
+  useEffect(() => {
+    if (!video) return;
+    const processing =
+      video.processingStatus === "ffmpeg" ||
+      video.transcriptStatus === "pending" ||
+      video.transcriptStatus === "processing";
+    if (!processing && video.processingStatus !== "error") return;
+    const id = setInterval(() => {
+      void loadVideo();
+    }, 2000);
+    return () => clearInterval(id);
+  }, [loadVideo, video]);
 
   const saveMetadata = async () => {
     if (!video) return;
@@ -88,7 +110,9 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
     const res = await fetch(apiUrl(`/videos/${video.id}/share`), { method: "POST", headers: { ...authHeaders() } });
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
-      setVideo((prev) => (prev ? { ...prev, visibility: "shared", shareUrl: body.shareUrl, shareToken: body.shareToken } : prev));
+      setVideo((prev) =>
+        prev ? { ...prev, visibility: "shared", shareUrl: body.shareUrl, shareToken: body.shareToken } : prev
+      );
     }
     setShareBusy(false);
   };
@@ -123,9 +147,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
   const transcriptLines = useMemo(() => {
     if (!video?.transcript) return [];
     return parseTranscript(video.transcript).filter((line) =>
-      transcriptSearch.trim()
-        ? line.toLowerCase().includes(transcriptSearch.trim().toLowerCase())
-        : true
+      transcriptSearch.trim() ? line.toLowerCase().includes(transcriptSearch.trim().toLowerCase()) : true
     );
   }, [transcriptSearch, video?.transcript]);
 
@@ -138,6 +160,17 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
   if (loading || !video) {
     return <main className={styles.page}>Loading video...</main>;
   }
+
+  const transcriptStatusMessage =
+    video.processingStatus === "error" ? (
+      <p>Video processing failed.</p>
+    ) : video.processingStatus === "ffmpeg" ? (
+      <p>Processing video...</p>
+    ) : video.transcriptStatus === "failed" ? (
+      <p>Transcription failed.</p>
+    ) : video.transcriptStatus === "processing" || video.transcriptStatus === "pending" ? (
+      <p>Transcribing...</p>
+    ) : null;
 
   return (
     <main className={styles.detailPage}>
@@ -165,23 +198,31 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
               rows={3}
               placeholder="Description"
             />
-            <button type="button" onClick={saveMetadata}>
-              Save Details
-            </button>
-            <button type="button" onClick={toggleShare} disabled={shareBusy}>
-              {video.visibility === "shared" ? "Revoke Link" : "Create Share Link"}
-            </button>
+            <div className={styles.detailActionsRow}>
+              <button type="button" className={styles.btnPrimary} onClick={saveMetadata}>
+                Save Details
+              </button>
+              {video.visibility === "shared" ? (
+                <button type="button" className={styles.btnSecondary} onClick={toggleShare} disabled={shareBusy}>
+                  Revoke Link
+                </button>
+              ) : (
+                <button type="button" className={styles.btnShare} onClick={toggleShare} disabled={shareBusy}>
+                  Create Share Link
+                </button>
+              )}
+              <button type="button" className={styles.btnDanger} onClick={removeVideo}>
+                Delete Video
+              </button>
+            </div>
             {video.shareUrl ? (
               <div className={styles.shareBox}>
                 <input value={video.shareUrl} readOnly />
-                <button type="button" onClick={copyShareLink}>
+                <button type="button" className={styles.btnSecondary} onClick={copyShareLink}>
                   Copy Link
                 </button>
               </div>
             ) : null}
-            <button type="button" className={styles.deleteBtn} onClick={removeVideo}>
-              Delete Video
-            </button>
           </>
         ) : (
           <p>{video.description || "No description provided."}</p>
@@ -190,10 +231,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
 
       <section className={styles.transcriptSection}>
         <h2>Transcript</h2>
-        {video.transcriptStatus === "pending" || video.transcriptStatus === "processing" ? (
-          <p>Transcribing...</p>
-        ) : null}
-        {video.transcriptStatus === "failed" ? <p>Transcription failed.</p> : null}
+        {transcriptStatusMessage}
         {video.transcript ? (
           <>
             <input
@@ -208,7 +246,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
                 return (
                   <p key={`${index}-${line.slice(0, 20)}`}>
                     {timestamp != null ? (
-                      <button type="button" onClick={() => jumpTo(timestamp)} className={styles.timestampBtn}>
+                      <button type="button" onClick={() => jumpTo(timestamp)} className={styles.btnTimestamp}>
                         {timestampLabel(timestamp)}
                       </button>
                     ) : null}{" "}
@@ -238,7 +276,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
             />
             At current playback time
           </label>
-          <button type="button" onClick={addComment}>
+          <button type="button" className={styles.btnPrimary} onClick={addComment}>
             Add Comment
           </button>
         </div>
@@ -249,7 +287,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
                 <strong>{comment.displayName}</strong> · {new Date(comment.createdAt).toLocaleString()}
               </div>
               {comment.timestampSeconds != null ? (
-                <button type="button" onClick={() => jumpTo(comment.timestampSeconds)} className={styles.timestampBtn}>
+                <button type="button" onClick={() => jumpTo(comment.timestampSeconds)} className={styles.btnTimestamp}>
                   {timestampLabel(comment.timestampSeconds)}
                 </button>
               ) : null}

@@ -120,18 +120,23 @@ import {
 } from "./routes/inbox.js";
 import {
   deleteVideoById,
+  deleteVideoFolder,
   deleteVideoShare,
   getVideoByIdRoute,
   getVideoByShareToken,
   getVideoComments,
+  getVideoFolders,
   getVideoStream,
   getVideoStreamByShareToken,
   getVideoThumbnail,
   getVideos,
   postVideoComment,
+  postVideoFolder,
   postVideoShare,
   postVideoUpload,
   putVideoById,
+  putVideoFolder,
+  putVideoMove,
   uploadVideoMiddleware,
 } from "./routes/videos.js";
 
@@ -319,7 +324,12 @@ app.put("/admin/signatures/:id", requireAuth, requireAdminRole, putAdminSignatur
 app.delete("/admin/signatures/:id", requireAuth, requireAdminRole, deleteAdminSignature);
 
 app.post("/videos/upload", requireAuth, uploadVideoMiddleware, postVideoUpload);
+app.get("/videos/folders", requireAuth, getVideoFolders);
+app.post("/videos/folders", requireAuth, postVideoFolder);
+app.put("/videos/folders/:id", requireAuth, putVideoFolder);
+app.delete("/videos/folders/:id", requireAuth, deleteVideoFolder);
 app.get("/videos", requireAuth, getVideos);
+app.put("/videos/:id/move", requireAuth, putVideoMove);
 app.get("/videos/:id", requireAuth, getVideoByIdRoute);
 app.put("/videos/:id", requireAuth, putVideoById);
 app.delete("/videos/:id", requireAuth, deleteVideoById);

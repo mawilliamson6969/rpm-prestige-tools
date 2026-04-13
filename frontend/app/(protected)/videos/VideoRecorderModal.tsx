@@ -2,16 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "../../../lib/api";
-import { formatDuration } from "../../../lib/videos";
+import { formatDuration, type VideoRow } from "../../../lib/videos";
 import { useAuth } from "../../../context/AuthContext";
 import styles from "./videos.module.css";
 
 type RecordingMode = "screen" | "webcam" | "both";
 
+type UploadPhase = "idle" | "uploading" | "processing" | "transcribing" | "error";
+
 type Props = {
   open: boolean;
   onClose: () => void;
   onUploaded: (videoId: number) => void;
+  /** When set, new uploads are filed under this folder */
+  defaultFolderId?: number | null;
 };
 
 function defaultTitle() {
@@ -32,7 +36,16 @@ async function mixAudioStreams(streams: MediaStream[]): Promise<MediaStreamTrack
   return destination.stream.getAudioTracks()[0] || null;
 }
 
-export default function VideoRecorderModal({ open, onClose, onUploaded }: Props) {
+function pickRecorderMime(): { mimeType: string; bits: number } {
+  const preferred = "video/webm;codecs=vp9,opus";
+  if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(preferred)) {
+    return { mimeType: preferred, bits: 1_500_000 };
+  }
+  const fallback = "video/webm";
+  return { mimeType: fallback, bits: 1_500_000 };
+}
+
+export default function VideoRecorderModal({ open, onClose, onUploaded, defaultFolderId = null }: Props) {
   const { authHeaders } = useAuth();
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -41,6 +54,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
   const drawLoopRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterAnimationRef = useRef<number | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mode, setMode] = useState<RecordingMode>("screen");
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
@@ -53,10 +67,9 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
   const [blobUrl, setBlobUrl] = useState<string>("");
   const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [transcribing, setTranscribing] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -94,8 +107,16 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
     }
   }, []);
 
+  const clearPoll = useCallback(() => {
+    if (pollTimerRef.current != null) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) {
+      clearPoll();
       stopEverything();
       setIsRecording(false);
       setIsPaused(false);
@@ -103,14 +124,13 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
       setBlob(null);
       setError(null);
       setUploadProgress(0);
-      setUploading(false);
-      setTranscribing(false);
+      setUploadPhase("idle");
       setDescription("");
       setTitle(defaultTitle());
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       setBlobUrl("");
     }
-  }, [open, stopEverything, blobUrl]);
+  }, [open, stopEverything, blobUrl, clearPoll]);
 
   useEffect(() => {
     if (!isRecording || isPaused) return;
@@ -220,8 +240,10 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
       startAudioMeter(rawStreamsRef.current.find((s) => s.getAudioTracks().length > 0) || null);
 
       const chunks: BlobPart[] = [];
+      const { mimeType, bits } = pickRecorderMime();
       const recorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp9,opus",
+        mimeType,
+        videoBitsPerSecond: bits,
       });
       recorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
@@ -280,7 +302,57 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
     setTitle(defaultTitle());
     setDescription("");
     setError(null);
+    setUploadPhase("idle");
+    setUploadProgress(0);
   }, [blobUrl]);
+
+  const pollUntilReady = useCallback(
+    (videoId: number) => {
+      const poll = async () => {
+        try {
+          const res = await fetch(apiUrl(`/videos/${videoId}`), {
+            headers: { ...authHeaders() },
+            cache: "no-store",
+          });
+          const body = await res.json().catch(() => ({}));
+          const v = body.video as VideoRow | undefined;
+          if (!v) {
+            pollTimerRef.current = setTimeout(poll, 1200);
+            return;
+          }
+          if (v.processingStatus === "error") {
+            setUploadPhase("error");
+            setError("Video processing failed.");
+            return;
+          }
+          if (v.processingStatus === "ffmpeg") {
+            setUploadPhase("processing");
+            pollTimerRef.current = setTimeout(poll, 1000);
+            return;
+          }
+          if (v.transcriptStatus === "processing") {
+            setUploadPhase("transcribing");
+            pollTimerRef.current = setTimeout(poll, 1200);
+            return;
+          }
+          if (v.transcriptStatus === "pending") {
+            setUploadPhase("transcribing");
+            pollTimerRef.current = setTimeout(poll, 1000);
+            return;
+          }
+          if (v.transcriptStatus === "completed" || v.transcriptStatus === "failed") {
+            onUploaded(videoId);
+            return;
+          }
+          pollTimerRef.current = setTimeout(poll, 1000);
+        } catch {
+          pollTimerRef.current = setTimeout(poll, 1500);
+        }
+      };
+      pollTimerRef.current = setTimeout(poll, 400);
+    },
+    [authHeaders, onUploaded]
+  );
 
   const saveAndUpload = useCallback(async () => {
     if (!blob) return;
@@ -289,7 +361,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
       return;
     }
     setError(null);
-    setUploading(true);
+    setUploadPhase("uploading");
     setUploadProgress(0);
 
     const payload = new FormData();
@@ -297,39 +369,52 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
     payload.append("title", title.trim());
     payload.append("description", description.trim());
     payload.append("recording_type", mode);
+    if (defaultFolderId != null && defaultFolderId > 0) {
+      payload.append("folder_id", String(defaultFolderId));
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", apiUrl("/videos/upload"));
-      const headers = authHeaders();
-      Object.entries(headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return;
-        setUploadProgress(Math.round((event.loaded / event.total) * 100));
-      };
-      xhr.onload = () => {
-        const body = JSON.parse(xhr.responseText || "{}");
-        if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(body.error || "Upload failed."));
-          return;
-        }
-        const id = body.video?.id;
-        if (!id) {
-          reject(new Error("Invalid upload response."));
-          return;
-        }
-        setTranscribing(true);
-        setTimeout(() => onUploaded(id), 300);
-        resolve();
-      };
-      xhr.onerror = () => reject(new Error("Network error during upload."));
-      xhr.send(payload);
-    }).catch((e) => {
+    try {
+      const videoId = await new Promise<number>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", apiUrl("/videos/upload"));
+        const headers = authHeaders();
+        Object.entries(headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        };
+        xhr.onload = () => {
+          let body: { error?: string; video?: { id?: number } } = {};
+          try {
+            body = JSON.parse(xhr.responseText || "{}");
+          } catch {
+            body = {};
+          }
+          if (xhr.status < 200 || xhr.status >= 300) {
+            reject(new Error(body.error || "Upload failed."));
+            return;
+          }
+          const id = body.video?.id;
+          if (!id) {
+            reject(new Error("Invalid upload response."));
+            return;
+          }
+          resolve(id);
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload."));
+        xhr.send(payload);
+      });
+
+      setUploadProgress(100);
+      setUploadPhase("processing");
+      pollUntilReady(videoId);
+    } catch (e) {
+      setUploadPhase("error");
       setError(e instanceof Error ? e.message : "Upload failed.");
-    });
+    }
+  }, [authHeaders, blob, defaultFolderId, description, mode, pollUntilReady, title]);
 
-    setUploading(false);
-  }, [authHeaders, blob, description, mode, onUploaded, title]);
+  const pipelineBusy = uploadPhase === "uploading" || uploadPhase === "processing" || uploadPhase === "transcribing";
 
   if (!open) return null;
 
@@ -338,7 +423,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
       <div className={styles.recorderShell}>
         <div className={styles.recorderHeader}>
           <h2>Record Video Message</h2>
-          <button type="button" onClick={onClose} className={styles.closeBtn} disabled={uploading}>
+          <button type="button" onClick={onClose} className={`${styles.btnSecondary}`} disabled={pipelineBusy}>
             Close
           </button>
         </div>
@@ -386,16 +471,16 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
                 </div>
                 <div className={`${styles.timer} ${timerTone}`}>⏺ {formatDuration(seconds)}</div>
                 {!isRecording ? (
-                  <button type="button" className={styles.primaryRecordBtn} onClick={startRecording}>
+                  <button type="button" className={styles.btnPrimary} onClick={startRecording}>
                     Start Recording
                   </button>
                 ) : (
                   <div className={styles.recordingActions}>
-                    <button type="button" onClick={togglePause}>
+                    <button type="button" className={styles.btnSecondary} onClick={togglePause}>
                       {isPaused ? "Resume" : "Pause"}
                     </button>
-                    <button type="button" onClick={stopRecording} className={styles.stopBtn}>
-                      Stop
+                    <button type="button" className={styles.btnDanger} onClick={stopRecording}>
+                      Stop Recording
                     </button>
                   </div>
                 )}
@@ -409,27 +494,31 @@ export default function VideoRecorderModal({ open, onClose, onUploaded }: Props)
             <div className={styles.reviewForm}>
               <label>
                 Title
-                <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} />
+                <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} disabled={pipelineBusy} />
               </label>
               <label>
                 Description
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} disabled={pipelineBusy} />
               </label>
               <div className={styles.reviewActions}>
-                <button type="button" onClick={reRecord} disabled={uploading}>
+                <button type="button" className={styles.btnSecondary} onClick={reRecord} disabled={pipelineBusy}>
                   Re-record
                 </button>
-                <button type="button" className={styles.primaryRecordBtn} onClick={saveAndUpload} disabled={uploading}>
+                <button type="button" className={styles.btnPrimary} onClick={saveAndUpload} disabled={pipelineBusy}>
                   Save & Upload
                 </button>
               </div>
-              {uploading ? (
-                <div className={styles.progressWrap}>
-                  <div className={styles.progressBar} style={{ width: `${uploadProgress}%` }} />
-                </div>
+              {uploadPhase === "uploading" ? (
+                <>
+                  <p className={styles.progressLabel}>Uploading... {uploadProgress}%</p>
+                  <div className={styles.progressWrap}>
+                    <div className={styles.progressBar} style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                </>
               ) : null}
-              {transcribing ? <p className={styles.transcribing}>Transcribing...</p> : null}
-              {error ? <p className={styles.errorText}>{error}</p> : null}
+              {uploadPhase === "processing" ? <p className={styles.phaseMessage}>Processing video...</p> : null}
+              {uploadPhase === "transcribing" ? <p className={styles.phaseMessage}>Transcribing...</p> : null}
+              {uploadPhase === "error" && error ? <p className={styles.errorText}>{error}</p> : null}
             </div>
           </div>
         )}

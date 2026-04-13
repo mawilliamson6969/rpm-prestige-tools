@@ -103,11 +103,13 @@ function mapVideoRow(row) {
     recordingType: row.recording_type,
     transcript: row.transcript,
     transcriptStatus: row.transcript_status,
+    processingStatus: row.processing_status || "none",
     visibility: row.visibility,
     shareToken: row.share_token,
     shareUrl,
     recordedBy: row.recorded_by,
     recordedByName: row.recorded_by_name || "Unknown",
+    folderId: row.folder_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     viewsCount: row.views_count ?? 0,
@@ -133,7 +135,10 @@ function canManageVideo(user, videoRow) {
 async function runVideoTranscription(videoId, audioPath) {
   const pool = getPool();
   try {
-    await pool.query(`UPDATE videos SET transcript_status = 'processing', updated_at = NOW() WHERE id = $1`, [videoId]);
+    await pool.query(
+      `UPDATE videos SET transcript_status = 'processing', processing_status = 'none', updated_at = NOW() WHERE id = $1`,
+      [videoId]
+    );
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY is not configured");
@@ -187,6 +192,7 @@ const storage = multer.diskStorage({
   },
 });
 
+/** 500MB max per uploaded video */
 export const uploadVideoMiddleware = multer({
   storage,
   limits: { fileSize: 500 * 1024 * 1024 },
@@ -199,11 +205,49 @@ export const uploadVideoMiddleware = multer({
   },
 }).single("video");
 
+async function processUploadedVideoInBackground(videoId, filePath, fileSize, mimeType) {
+  const pool = getPool();
+  const baseName = path.basename(filePath, path.extname(filePath));
+  const thumbnailFilename = `${baseName}.jpg`;
+  const thumbnailPath = path.join(UPLOAD_DIR, thumbnailFilename);
+  const audioFilename = `${baseName}.mp3`;
+  const audioPath = path.join(UPLOAD_DIR, audioFilename);
+  try {
+    const durationSeconds = await probeDurationSeconds(filePath);
+    await generateThumbnail(filePath, thumbnailPath);
+    await extractMp3Audio(filePath, audioPath);
+    await pool.query(
+      `UPDATE videos SET
+        thumbnail_filename = $2,
+        duration_seconds = $3,
+        file_size_bytes = $4,
+        mime_type = COALESCE(NULLIF(trim($5), ''), mime_type),
+        processing_status = 'none',
+        updated_at = NOW()
+       WHERE id = $1`,
+      [videoId, thumbnailFilename, durationSeconds, fileSize, mimeType || "video/webm"]
+    );
+    runVideoTranscription(videoId, audioPath).catch((e) => {
+      console.error("[videos] background transcription crashed", e);
+    });
+  } catch (error) {
+    console.error("[videos] ffmpeg processing failed", error);
+    await pool.query(`UPDATE videos SET processing_status = 'error', updated_at = NOW() WHERE id = $1`, [videoId]);
+    fs.unlink(audioPath).catch(() => {});
+    fs.unlink(thumbnailPath).catch(() => {});
+  }
+}
+
 export async function postVideoUpload(req, res) {
   const file = req.file;
   const title = String(req.body?.title || "").trim();
   const description = String(req.body?.description || "").trim() || null;
   const recordingType = String(req.body?.recording_type || "screen").trim().slice(0, 20) || "screen";
+  let folderId = null;
+  if (req.body?.folder_id != null && String(req.body.folder_id).trim() !== "") {
+    const n = Number(req.body.folder_id);
+    if (Number.isFinite(n) && n > 0) folderId = n;
+  }
   if (!file) {
     res.status(400).json({ error: "video file is required (field: video)." });
     return;
@@ -214,42 +258,30 @@ export async function postVideoUpload(req, res) {
   }
 
   try {
-    const durationSeconds = await probeDurationSeconds(file.path);
-    const baseName = path.basename(file.filename, path.extname(file.filename));
-    const thumbnailFilename = `${baseName}.jpg`;
-    const thumbnailPath = path.join(UPLOAD_DIR, thumbnailFilename);
-    const audioFilename = `${baseName}.mp3`;
-    const audioPath = path.join(UPLOAD_DIR, audioFilename);
-    await generateThumbnail(file.path, thumbnailPath);
-    await extractMp3Audio(file.path, audioPath);
-
     const pool = getPool();
+    if (folderId != null) {
+      const { rows: frows } = await pool.query(`SELECT id FROM video_folders WHERE id = $1`, [folderId]);
+      if (!frows.length) {
+        res.status(400).json({ error: "Invalid folder_id." });
+        return;
+      }
+    }
     const { rows } = await pool.query(
       `INSERT INTO videos (
         title, description, filename, thumbnail_filename, duration_seconds, file_size_bytes,
-        mime_type, recording_type, transcript_status, visibility, recorded_by, created_at, updated_at
+        mime_type, recording_type, transcript_status, processing_status, visibility, recorded_by, folder_id, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'private', $9, NOW(), NOW()
+        $1, $2, $3, NULL, NULL, $4, $5, $6, 'pending', 'ffmpeg', 'private', $7, $8, NOW(), NOW()
       )
       RETURNING *`,
-      [
-        title,
-        description,
-        file.filename,
-        thumbnailFilename,
-        durationSeconds,
-        file.size,
-        file.mimetype || "video/webm",
-        recordingType,
-        req.user.id,
-      ]
+      [title, description, file.filename, file.size, file.mimetype || "video/webm", recordingType, req.user.id, folderId]
     );
 
     const created = await getVideoById(rows[0].id);
     res.status(201).json({ video: mapVideoRow(created) });
 
-    runVideoTranscription(rows[0].id, audioPath).catch((e) => {
-      console.error("[videos] background transcription crashed", e);
+    processUploadedVideoInBackground(rows[0].id, file.path, file.size, file.mimetype || "video/webm").catch((e) => {
+      console.error("[videos] background processing crashed", e);
     });
   } catch (error) {
     console.error("[videos] upload failed", error);
@@ -280,6 +312,15 @@ export async function getVideos(req, res) {
       params.push(req.user.id);
     } else if (filter === "shared") {
       parts.push(`v.visibility = 'shared'`);
+    }
+    if (req.query.unfiled === "1") {
+      parts.push(`v.folder_id IS NULL`);
+    } else if (req.query.folderId != null && String(req.query.folderId).trim() !== "" && req.query.folderId !== "all") {
+      const fid = Number(req.query.folderId);
+      if (Number.isFinite(fid) && fid > 0) {
+        parts.push(`v.folder_id = $${n++}`);
+        params.push(fid);
+      }
     }
     if (search) {
       parts.push(`(v.title ILIKE $${n} OR coalesce(v.transcript, '') ILIKE $${n})`);
@@ -628,5 +669,162 @@ export async function getVideoStreamByShareToken(req, res) {
     if (!res.headersSent) {
       res.status(404).json({ error: "Video file unavailable." });
     }
+  }
+}
+
+function mapFolderNode(row, children) {
+  return {
+    id: row.id,
+    name: row.name,
+    parentFolderId: row.parent_folder_id,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    videoCount: row.video_count ?? 0,
+    children: children || [],
+  };
+}
+
+export async function getVideoFolders(req, res) {
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT f.*,
+        (SELECT COUNT(*)::int FROM videos v WHERE v.folder_id = f.id) AS video_count
+       FROM video_folders f
+       ORDER BY f.name ASC`
+    );
+    const byParent = new Map();
+    for (const row of rows) {
+      const pid = row.parent_folder_id;
+      if (!byParent.has(pid)) byParent.set(pid, []);
+      byParent.get(pid).push(row);
+    }
+    function buildTree(parentId) {
+      const list = byParent.get(parentId) || [];
+      return list.map((r) => mapFolderNode(r, buildTree(r.id)));
+    }
+    const { rows: uc } = await pool.query(`SELECT COUNT(*)::int AS c FROM videos WHERE folder_id IS NULL`);
+    res.json({ folders: buildTree(null), unfiledVideoCount: uc[0]?.c ?? 0 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load folders." });
+  }
+}
+
+export async function postVideoFolder(req, res) {
+  try {
+    const name = String(req.body?.name || "").trim().slice(0, 255);
+    if (!name) {
+      res.status(400).json({ error: "name is required." });
+      return;
+    }
+    let parentFolderId = null;
+    const pool = getPool();
+    if (req.body?.parentFolderId != null && req.body?.parentFolderId !== "") {
+      const p = Number(req.body.parentFolderId);
+      if (!Number.isFinite(p) || p <= 0) {
+        res.status(400).json({ error: "Invalid parentFolderId." });
+        return;
+      }
+      const { rows } = await pool.query(`SELECT id FROM video_folders WHERE id = $1`, [p]);
+      if (!rows.length) {
+        res.status(400).json({ error: "Parent folder not found." });
+        return;
+      }
+      parentFolderId = p;
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO video_folders (name, parent_folder_id, created_by)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [name, parentFolderId, req.user.id]
+    );
+    const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS c FROM videos WHERE folder_id = $1`, [rows[0].id]);
+    res.status(201).json({ folder: mapFolderNode({ ...rows[0], video_count: cnt[0].c }, []) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not create folder." });
+  }
+}
+
+export async function putVideoFolder(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const name = String(req.body?.name || "").trim().slice(0, 255);
+    if (!name) {
+      res.status(400).json({ error: "name is required." });
+      return;
+    }
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `UPDATE video_folders SET name = $2 WHERE id = $1 RETURNING *`,
+      [id, name]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS c FROM videos WHERE folder_id = $1`, [id]);
+    res.json({ folder: mapFolderNode({ ...rows[0], video_count: cnt[0].c }, []) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not rename folder." });
+  }
+}
+
+export async function deleteVideoFolder(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const pool = getPool();
+    const { rows: cur } = await pool.query(`SELECT id, parent_folder_id FROM video_folders WHERE id = $1`, [id]);
+    if (!cur.length) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    const parentId = cur[0].parent_folder_id;
+    await pool.query(`UPDATE videos SET folder_id = NULL, updated_at = NOW() WHERE folder_id = $1`, [id]);
+    await pool.query(`UPDATE video_folders SET parent_folder_id = $2 WHERE parent_folder_id = $1`, [id, parentId]);
+    await pool.query(`DELETE FROM video_folders WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not delete folder." });
+  }
+}
+
+export async function putVideoMove(req, res) {
+  try {
+    const id = Number(req.params.id);
+    const raw = req.body?.folderId;
+    const folderId =
+      raw === null || raw === undefined || raw === "" || raw === "null"
+        ? null
+        : (() => {
+            const n = Number(raw);
+            return Number.isFinite(n) && n > 0 ? n : null;
+          })();
+    const current = await getVideoById(id);
+    if (!current) {
+      res.status(404).json({ error: "Not found." });
+      return;
+    }
+    if (!canManageVideo(req.user, current)) {
+      res.status(403).json({ error: "Only the owner or an admin can move this video." });
+      return;
+    }
+    if (folderId != null) {
+      const pool = getPool();
+      const { rows } = await pool.query(`SELECT id FROM video_folders WHERE id = $1`, [folderId]);
+      if (!rows.length) {
+        res.status(400).json({ error: "Folder not found." });
+        return;
+      }
+    }
+    await getPool().query(`UPDATE videos SET folder_id = $2, updated_at = NOW() WHERE id = $1`, [id, folderId]);
+    const updated = await getVideoById(id);
+    res.json({ video: mapVideoRow(updated) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not move video." });
   }
 }
