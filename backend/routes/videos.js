@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "crypto";
+import { createReadStream } from "fs";
 import { promises as fs } from "fs";
+import OpenAI from "openai";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,7 +11,7 @@ import { getPool } from "../lib/db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.resolve(__dirname, "..", "uploads", "videos");
 const SHARE_BASE_URL = "https://dashboard.prestigedash.com/videos/shared";
-const TRANSCRIPT_UNAVAILABLE_MSG = "Audio transcription coming soon";
+const TRANSCRIPT_NO_OPENAI_MSG = "Transcription not configured. Add OPENAI_API_KEY to enable.";
 
 async function ensureUploadDir() {
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
@@ -110,17 +112,15 @@ function canManageVideo(user, videoRow) {
   return user?.role === "admin" || Number(videoRow?.recorded_by) === Number(user?.id);
 }
 
-/** Transcription via Claude audio documents is not supported; Whisper can be added later. */
-async function markTranscriptUnavailable(videoId) {
-  const pool = getPool();
-  await pool.query(
+async function setVideoTranscriptUnavailable(videoId, message) {
+  await getPool().query(
     `UPDATE videos
      SET transcript_status = 'unavailable',
          transcript = $2,
          processing_status = 'none',
          updated_at = NOW()
      WHERE id = $1`,
-    [videoId, TRANSCRIPT_UNAVAILABLE_MSG]
+    [videoId, message]
   );
 }
 
@@ -153,6 +153,7 @@ async function processUploadedVideoInBackground(videoId, filePath, fileSize, mim
   const baseName = path.basename(filePath, path.extname(filePath));
   const thumbnailFilename = `${baseName}.jpg`;
   const thumbnailPath = path.join(UPLOAD_DIR, thumbnailFilename);
+  const audioPath = path.join(UPLOAD_DIR, `${baseName}.mp3`);
   try {
     const durationSeconds = await probeDurationSeconds(filePath);
     await generateThumbnail(filePath, thumbnailPath);
@@ -167,13 +168,52 @@ async function processUploadedVideoInBackground(videoId, filePath, fileSize, mim
        WHERE id = $1`,
       [videoId, thumbnailFilename, durationSeconds, fileSize, mimeType || "video/webm"]
     );
-    markTranscriptUnavailable(videoId).catch((e) => {
-      console.error("[videos] mark transcript unavailable failed", e);
-    });
+
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      await setVideoTranscriptUnavailable(videoId, TRANSCRIPT_NO_OPENAI_MSG);
+      return;
+    }
+
+    await pool.query(`UPDATE videos SET transcript_status = 'processing', updated_at = NOW() WHERE id = $1`, [videoId]);
+
+    try {
+      await runProcess("ffmpeg", [
+        "-y",
+        "-i",
+        filePath,
+        "-vn",
+        "-acodec",
+        "libmp3lame",
+        "-q:a",
+        "4",
+        audioPath,
+      ]);
+      const openai = new OpenAI({ apiKey });
+      const transcription = await openai.audio.transcriptions.create({
+        file: createReadStream(audioPath),
+        model: "whisper-1",
+        response_format: "text",
+      });
+      const text = typeof transcription === "string" ? transcription : String(transcription ?? "");
+      await pool.query(
+        `UPDATE videos SET transcript_status = 'completed', transcript = $2, updated_at = NOW() WHERE id = $1`,
+        [videoId, text]
+      );
+    } catch (transcriptionError) {
+      console.error("[videos] transcription failed", transcriptionError);
+      await pool.query(
+        `UPDATE videos SET transcript_status = 'failed', transcript = NULL, updated_at = NOW() WHERE id = $1`,
+        [videoId]
+      );
+    } finally {
+      await fs.unlink(audioPath).catch(() => {});
+    }
   } catch (error) {
     console.error("[videos] ffmpeg processing failed", error);
     await pool.query(`UPDATE videos SET processing_status = 'error', updated_at = NOW() WHERE id = $1`, [videoId]);
     fs.unlink(thumbnailPath).catch(() => {});
+    await fs.unlink(audioPath).catch(() => {});
   }
 }
 
