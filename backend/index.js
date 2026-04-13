@@ -22,6 +22,7 @@ import {
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema } from "./lib/eosSchema.js";
+import { ensureAgentsSchema } from "./lib/agents-schema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
 import {
@@ -82,6 +83,7 @@ import {
   deleteRockMilestone,
   deleteScorecardEntry,
   deleteScorecardMetric,
+  deleteScorecardMetricPermanent,
   getEosTeamUsers,
   getL10Issues,
   getL10Meeting,
@@ -224,6 +226,33 @@ import {
   updateMarketingChannel,
   updateMarketingContent,
 } from "./routes/marketing.js";
+import {
+  deleteAgent,
+  deleteAgentTraining,
+  getAgentActivity,
+  getAgentDetail,
+  getAgentMetrics,
+  getAgentPrompts,
+  getAgentPromptVersion,
+  getAgentQueue,
+  getAgentTraining,
+  getAgentsList,
+  getAgentsSummary,
+  getAllQueues,
+  postAgent,
+  postAgentRun,
+  postAgentTestPrompt,
+  postAgentTraining,
+  postPauseAllAgents,
+  postRestoreAgentPrompt,
+  putActivityFeedback,
+  putAgent,
+  putAgentPrompt,
+  putAgentStatus,
+  putQueueApprove,
+  putQueueEdit,
+  putQueueReject,
+} from "./routes/agents.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -354,6 +383,12 @@ app.get("/eos/team-users", requireAuth, getEosTeamUsers);
 app.get("/eos/scorecard/metrics", requireAuth, getScorecardMetrics);
 app.post("/eos/scorecard/metrics", requireAuth, requireAdminRole, postScorecardMetric);
 app.put("/eos/scorecard/metrics/:id", requireAuth, requireAdminRole, putScorecardMetric);
+app.delete(
+  "/eos/scorecard/metrics/:id/permanent",
+  requireAuth,
+  requireAdminRole,
+  deleteScorecardMetricPermanent
+);
 app.delete("/eos/scorecard/metrics/:id", requireAuth, requireAdminRole, deleteScorecardMetric);
 app.get("/eos/scorecard/entries", requireAuth, getScorecardEntries);
 app.post("/eos/scorecard/entries", requireAuth, postScorecardEntry);
@@ -508,6 +543,37 @@ app.put("/marketing/content/:id", requireAuth, updateMarketingContent);
 app.delete("/marketing/content/:id", requireAuth, deleteMarketingContent);
 app.post("/marketing/content/:id/duplicate", requireAuth, duplicateMarketingContent);
 
+/** AI Agent Control Center */
+app.get("/agents/metrics/summary", requireAuth, getAgentsSummary);
+app.get("/agents/queue/all", requireAuth, getAllQueues);
+app.put("/agents/activity/:activityId/feedback", requireAuth, putActivityFeedback);
+app.put("/agents/queue/:queueId/approve", requireAuth, requireAdminRole, putQueueApprove);
+app.put("/agents/queue/:queueId/reject", requireAuth, requireAdminRole, putQueueReject);
+app.put("/agents/queue/:queueId/edit", requireAuth, requireAdminRole, putQueueEdit);
+app.post("/agents/emergency/pause-all", requireAuth, requireAdminRole, postPauseAllAgents);
+
+app.get("/agents", requireAuth, getAgentsList);
+app.post("/agents", requireAuth, requireAdminRole, postAgent);
+
+app.get("/agents/:id/prompts/:version", requireAuth, getAgentPromptVersion);
+app.post("/agents/:id/prompts/:version/restore", requireAuth, requireAdminRole, postRestoreAgentPrompt);
+app.get("/agents/:id/prompts", requireAuth, getAgentPrompts);
+app.put("/agents/:id/prompts", requireAuth, requireAdminRole, putAgentPrompt);
+app.post("/agents/:id/test-prompt", requireAuth, postAgentTestPrompt);
+
+app.get("/agents/:id/activity", requireAuth, getAgentActivity);
+app.get("/agents/:id/training", requireAuth, getAgentTraining);
+app.post("/agents/:id/training", requireAuth, requireAdminRole, postAgentTraining);
+app.delete("/agents/:id/training/:exampleId", requireAuth, requireAdminRole, deleteAgentTraining);
+app.get("/agents/:id/queue", requireAuth, getAgentQueue);
+app.get("/agents/:id/metrics", requireAuth, getAgentMetrics);
+
+app.put("/agents/:id/status", requireAuth, requireAdminRole, putAgentStatus);
+app.post("/agents/:id/run", requireAuth, requireAdminRole, postAgentRun);
+app.put("/agents/:id", requireAuth, requireAdminRole, putAgent);
+app.delete("/agents/:id", requireAuth, requireAdminRole, deleteAgent);
+app.get("/agents/:id", requireAuth, getAgentDetail);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -536,6 +602,8 @@ async function start() {
       console.log("Database schema OK (files / file_folders).");
       await ensureMarketingSchema();
       console.log("Database schema OK (marketing).");
+      await ensureAgentsSchema();
+      console.log("Database schema OK (agents).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

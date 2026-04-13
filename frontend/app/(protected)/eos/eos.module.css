@@ -279,6 +279,11 @@
   overflow: auto;
 }
 
+/* Stacked above another modal (e.g. confirm over Manage metrics) */
+.modalOverlayNested {
+  z-index: 120;
+}
+
 .modal {
   background: var(--white);
   border-radius: 14px;
@@ -530,18 +535,18 @@
 
 .gearBtn {
   border: none;
-  background: transparent;
-  color: var(--grey);
+  background: rgba(106, 115, 123, 0.12);
+  color: #6a737b;
   cursor: pointer;
   font-size: 1rem;
-  padding: 0.15rem 0.35rem;
+  padding: 0.2rem 0.45rem;
   border-radius: 6px;
   line-height: 1;
 }
 
 .gearBtn:hover {
-  background: rgba(27, 40, 86, 0.06);
-  color: var(--navy);
+  background: rgba(27, 40, 86, 0.08);
+  color: #1b2856;
 }
 
 .gearMenu {

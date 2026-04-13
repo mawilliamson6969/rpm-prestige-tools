@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import EosNavDropdown from "./EosNavDropdown";
+import AgentsNavLink from "./AgentsNavLink";
 import InboxNavLink from "./InboxNavLink";
 import UserMenu from "./UserMenu";
 import styles from "./files-top-bar.module.css";
@@ -26,6 +27,7 @@ export default function FilesTopBar() {
         </Link>
       </div>
       <div className={styles.right}>
+        <AgentsNavLink />
         <InboxNavLink />
         <UserMenu variant="light" />
       </div>

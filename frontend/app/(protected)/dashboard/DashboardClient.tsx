@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import EosNavDropdown from "../../../components/EosNavDropdown";
+import AgentsNavLink from "../../../components/AgentsNavLink";
 import InboxNavLink from "../../../components/InboxNavLink";
 import UserMenu from "../../../components/UserMenu";
 import { useAuth } from "../../../context/AuthContext";
@@ -288,6 +289,7 @@ export default function DashboardClient() {
           <Link href="/files" className={styles.headerWikiLink}>
             Files
           </Link>
+          <AgentsNavLink />
           <InboxNavLink />
           <UserMenu />
         </div>

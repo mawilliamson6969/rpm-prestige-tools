@@ -25,7 +25,7 @@ type Metric = {
   ownerUserId: number;
   ownerDisplayName: string | null;
   frequency: "weekly" | "monthly";
-  goalValue: number;
+  goalValue: number | null;
   goalDirection: string;
   unit: string;
   displayOrder: number;
@@ -137,7 +137,9 @@ export default function ScorecardClient() {
   }, [loadReport]);
 
   const loadAllMetrics = useCallback(async () => {
-    const res = await fetch(apiUrl("/eos/scorecard/metrics?all=1"), { headers: { ...authHeaders() } });
+    const res = await fetch(apiUrl("/eos/scorecard/metrics?all=1&includeArchived=true"), {
+      headers: { ...authHeaders() },
+    });
     const j = await res.json().catch(() => ({}));
     if (res.ok && Array.isArray(j.metrics)) setAllMetrics(j.metrics);
   }, [authHeaders]);
@@ -214,7 +216,7 @@ export default function ScorecardClient() {
       return {
         label: p.label,
         value: c ? c.value : null,
-        goal: m.goalValue,
+        goal: m.goalValue ?? 0,
       };
     });
   }, [report, trendMetricId]);
@@ -356,7 +358,7 @@ export default function ScorecardClient() {
                             </button>
                           </div>
                           <div className={styles.metricMeta}>
-                            {m.ownerDisplayName ?? "—"} · Goal {formatGoal(m.unit, m.goalValue)} (
+                            {m.ownerDisplayName ?? "—"} · Goal {formatGoal(m.unit, m.goalValue ?? 0)} (
                             {m.goalDirection})
                           </div>
                         </div>
@@ -494,14 +496,15 @@ export default function ScorecardClient() {
 
       {editMetric && isAdmin ? (
         <EditMetricModal
+          key={editMetric.id}
           metric={editMetric}
           team={team}
           authHeaders={authHeaders}
           onClose={() => setEditMetric(null)}
-          onSaved={() => {
+          onSaved={async () => {
             setEditMetric(null);
             setMetricMenuFor(null);
-            loadReport();
+            await loadReport();
           }}
         />
       ) : null}
@@ -509,14 +512,19 @@ export default function ScorecardClient() {
       {deleteMetric && isAdmin ? (
         <ConfirmModal
           title={`Archive ${deleteMetric.name}?`}
-          body="Historical data will be preserved but the metric will be removed from the scorecard."
+          body="It will be removed from the scorecard but historical data is preserved."
           confirmLabel="Archive"
           onClose={() => setDeleteMetric(null)}
           onConfirm={async () => {
-            await fetch(apiUrl(`/eos/scorecard/metrics/${deleteMetric.id}`), {
+            const res = await fetch(apiUrl(`/eos/scorecard/metrics/${deleteMetric.id}`), {
               method: "DELETE",
               headers: { ...authHeaders() },
             });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              alert(typeof j.error === "string" ? j.error : "Could not archive metric.");
+              return;
+            }
             setDeleteMetric(null);
             setMetricMenuFor(null);
             await loadReport();
@@ -603,11 +611,20 @@ function MetricGearMenu({
         ⚙
       </button>
       {open ? (
-        <div className={styles.gearMenu} role="menu">
+        <div
+          className={styles.gearMenu}
+          role="menu"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             role="menuitem"
-            onClick={() => {
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
               onEdit();
               onClose();
             }}
@@ -618,12 +635,17 @@ function MetricGearMenu({
             type="button"
             className={styles.gearMenuDanger}
             role="menuitem"
-            onClick={() => {
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
               onDelete();
               onClose();
             }}
           >
-            Delete Metric
+            Archive Metric
           </button>
         </div>
       ) : null}
@@ -637,16 +659,22 @@ function ConfirmModal({
   confirmLabel,
   onClose,
   onConfirm,
+  nested,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
+  nested?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className={styles.modalOverlay} role="dialog" aria-modal>
+    <div
+      className={`${styles.modalOverlay}${nested ? ` ${styles.modalOverlayNested}` : ""}`}
+      role="dialog"
+      aria-modal
+    >
       <div className={styles.modal}>
         <h2>{title}</h2>
         <p className={styles.muted}>{body}</p>
@@ -686,17 +714,28 @@ function EditMetricModal({
   team: TeamUser[];
   authHeaders: () => Record<string, string>;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => void | Promise<void>;
 }) {
   const [name, setName] = useState(metric.name);
   const [description, setDescription] = useState(metric.description ?? "");
   const [ownerUserId, setOwnerUserId] = useState(String(metric.ownerUserId));
   const [frequency, setFrequency] = useState<"weekly" | "monthly">(metric.frequency);
-  const [goalValue, setGoalValue] = useState(String(metric.goalValue));
+  const [goalValue, setGoalValue] = useState(String(metric.goalValue ?? ""));
   const [goalDirection, setGoalDirection] = useState(metric.goalDirection);
   const [unit, setUnit] = useState(metric.unit);
   const [displayOrder, setDisplayOrder] = useState(String(metric.displayOrder));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setName(metric.name);
+    setDescription(metric.description ?? "");
+    setOwnerUserId(String(metric.ownerUserId));
+    setFrequency(metric.frequency);
+    setGoalValue(String(metric.goalValue ?? ""));
+    setGoalDirection(metric.goalDirection);
+    setUnit(metric.unit);
+    setDisplayOrder(String(metric.displayOrder));
+  }, [metric]);
 
   return (
     <div className={styles.modalOverlay} role="dialog" aria-modal>
@@ -798,7 +837,7 @@ function EditMetricModal({
                 });
                 const j = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(typeof j.error === "string" ? j.error : "Save failed");
-                onSaved();
+                await Promise.resolve(onSaved());
               } catch (e) {
                 alert(e instanceof Error ? e.message : "Save failed");
               } finally {
@@ -806,7 +845,7 @@ function EditMetricModal({
               }
             }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -965,11 +1004,27 @@ function ManageMetricsModal({
     unit: "number",
   });
 
-  const sorted = [...metrics].sort((a, b) => a.displayOrder - b.displayOrder);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [permanentTarget, setPermanentTarget] = useState<Metric | null>(null);
+
+  const activeSorted = useMemo(
+    () =>
+      [...metrics]
+        .filter((m) => m.isActive !== false)
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id),
+    [metrics]
+  );
+  const archivedSorted = useMemo(
+    () =>
+      [...metrics]
+        .filter((m) => m.isActive === false)
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id),
+    [metrics]
+  );
 
   const moveMetric = async (id: number, dir: -1 | 1) => {
-    const idx = sorted.findIndex((m) => m.id === id);
-    const swap = sorted[idx + dir];
+    const idx = activeSorted.findIndex((m) => m.id === id);
+    const swap = activeSorted[idx + dir];
     if (!swap) return;
     await fetch(apiUrl(`/eos/scorecard/metrics/${id}`), {
       method: "PUT",
@@ -979,7 +1034,7 @@ function ManageMetricsModal({
     await fetch(apiUrl(`/eos/scorecard/metrics/${swap.id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ displayOrder: sorted[idx].displayOrder }),
+      body: JSON.stringify({ displayOrder: activeSorted[idx].displayOrder }),
     });
     onSaved();
   };
@@ -989,10 +1044,12 @@ function ManageMetricsModal({
       <div className={styles.modal} style={{ maxWidth: "36rem" }}>
         <h2>Manage metrics</h2>
         <p className={styles.muted} style={{ marginTop: "-0.5rem" }}>
-          Archive hides a metric from the scorecard; entry history is kept.
+          Archive hides a metric from the scorecard; entry history is kept. Permanently delete removes all history.
         </p>
+
+        <h3 style={{ fontSize: "0.95rem", color: "#1b2856", marginBottom: "0.35rem" }}>Active metrics</h3>
         <ul style={{ listStyle: "none", padding: 0, margin: "0 0 1rem" }}>
-          {sorted.map((m) => (
+          {activeSorted.map((m) => (
             <li
               key={m.id}
               style={{
@@ -1020,10 +1077,15 @@ function ManageMetricsModal({
                     )
                   )
                     return;
-                  await fetch(apiUrl(`/eos/scorecard/metrics/${m.id}`), {
+                  const res = await fetch(apiUrl(`/eos/scorecard/metrics/${m.id}`), {
                     method: "DELETE",
                     headers: { ...authHeaders() },
                   });
+                  const j = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    alert(typeof j.error === "string" ? j.error : "Archive failed");
+                    return;
+                  }
                   onSaved();
                 }}
               >
@@ -1032,6 +1094,99 @@ function ManageMetricsModal({
             </li>
           ))}
         </ul>
+
+        <div style={{ marginBottom: "1rem", borderTop: "1px solid rgba(27,40,86,0.1)", paddingTop: "0.75rem" }}>
+          <button
+            type="button"
+            onClick={() => setArchivedOpen((o) => !o)}
+            className={styles.presetBtn}
+            style={{ width: "100%", textAlign: "left", fontWeight: 700, marginBottom: archivedOpen ? "0.5rem" : 0 }}
+            aria-expanded={archivedOpen}
+          >
+            Archived ({archivedSorted.length}) {archivedOpen ? "▾" : "▸"}
+          </button>
+          {archivedOpen ? (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {archivedSorted.length === 0 ? (
+                <li className={styles.muted} style={{ padding: "0.25rem 0" }}>
+                  No archived metrics.
+                </li>
+              ) : (
+                archivedSorted.map((m) => (
+                  <li
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.45rem 0",
+                      borderBottom: "1px solid rgba(27,40,86,0.06)",
+                    }}
+                  >
+                    <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: "#6a737b" }}>{m.name}</div>
+                      <div className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                        {m.ownerDisplayName ?? "—"} · Goal {formatGoal(m.unit, m.goalValue ?? 0)} ({m.goalDirection})
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.presetBtn}
+                      onClick={async () => {
+                        const res = await fetch(apiUrl(`/eos/scorecard/metrics/${m.id}`), {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json", ...authHeaders() },
+                          body: JSON.stringify({ isActive: true }),
+                        });
+                        const j = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          alert(typeof j.error === "string" ? j.error : "Restore failed");
+                          return;
+                        }
+                        onSaved();
+                      }}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.presetBtn}
+                      style={{ color: "#b32317", borderColor: "rgba(179,35,23,0.35)" }}
+                      onClick={() => setPermanentTarget(m)}
+                    >
+                      Delete permanently
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : null}
+        </div>
+
+        {permanentTarget ? (
+          <ConfirmModal
+            nested
+            title="Delete metric"
+            body={`Permanently delete ${permanentTarget.name} and all its historical data? This cannot be undone.`}
+            confirmLabel="Delete permanently"
+            onClose={() => setPermanentTarget(null)}
+            onConfirm={async () => {
+              const res = await fetch(apiUrl(`/eos/scorecard/metrics/${permanentTarget.id}/permanent`), {
+                method: "DELETE",
+                headers: { ...authHeaders() },
+              });
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                alert(typeof j.error === "string" ? j.error : "Delete failed");
+                return;
+              }
+              setPermanentTarget(null);
+              onSaved();
+            }}
+          />
+        ) : null}
+
         <h3 style={{ fontSize: "0.95rem", color: "#1b2856" }}>Add metric</h3>
         <div className={styles.formGrid}>
           <label>

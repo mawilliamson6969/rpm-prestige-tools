@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import AgentsHubCard from "../components/AgentsHubCard";
+import AgentsNavLink from "../components/AgentsNavLink";
 import InboxNavLink from "../components/InboxNavLink";
 import MarketingNavDropdown from "../components/MarketingNavDropdown";
 import WikiHubCard from "../components/WikiHubCard";
@@ -237,6 +239,7 @@ export default function IntranetHub() {
             Files
           </Link>
           <MarketingNavDropdown variant="hub" />
+          <AgentsNavLink />
           <InboxNavLink />
           <UserMenu />
         </div>
@@ -324,8 +327,9 @@ export default function IntranetHub() {
                 />
               </div>
 
-              <p className={styles.catLabel}>AI Tools</p>
+              <p className={styles.catLabel}>AI &amp; Automation</p>
               <div className={styles.toolGrid}>
+                <AgentsHubCard />
                 <ToolCardLive
                   href="/ask"
                   title="Ask the AI"

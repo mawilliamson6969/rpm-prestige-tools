@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import EosNavDropdown from "./EosNavDropdown";
 import MarketingNavDropdown from "./MarketingNavDropdown";
+import AgentsNavLink from "./AgentsNavLink";
 import InboxNavLink from "./InboxNavLink";
 import UserMenu from "./UserMenu";
 import styles from "./wiki-top-bar.module.css";
@@ -28,6 +29,7 @@ export default function WikiTopBar() {
         </Link>
       </div>
       <div className={styles.right}>
+        <AgentsNavLink />
         <InboxNavLink />
         <UserMenu variant="light" />
       </div>

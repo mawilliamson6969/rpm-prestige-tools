@@ -92,12 +92,16 @@ export async function getEosTeamUsers(req, res) {
   }
 }
 
-/** GET /eos/scorecard/metrics */
+/** GET /eos/scorecard/metrics — ?all=1 or ?includeArchived=true (admin): active + archived */
 export async function getScorecardMetrics(req, res) {
   try {
     const pool = getPool();
-    const all = req.query.all === "1" && req.user.role === "admin";
-    const activeClause = all ? "" : "WHERE m.is_active = true";
+    const includeArchived =
+      req.query.includeArchived === "true" ||
+      req.query.includeArchived === "1" ||
+      req.query.all === "1";
+    const adminExtended = req.user.role === "admin" && includeArchived;
+    const activeClause = adminExtended ? "" : "WHERE m.is_active = true";
     const { rows } = await pool.query(
       `SELECT m.*, u.display_name AS owner_display_name,
         (SELECT row_to_json(sq) FROM (
@@ -267,6 +271,31 @@ export async function deleteScorecardMetric(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not archive metric." });
+  }
+}
+
+/** DELETE /eos/scorecard/metrics/:id/permanent — hard delete metric and entries (CASCADE) */
+export async function deleteScorecardMetricPermanent(req, res) {
+  if (req.user.role !== "admin") {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rowCount } = await pool.query(`DELETE FROM scorecard_metrics WHERE id = $1`, [id]);
+    if (!rowCount) {
+      res.status(404).json({ error: "Metric not found." });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not permanently delete metric." });
   }
 }
 

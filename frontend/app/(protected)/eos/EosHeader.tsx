@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import AgentsNavLink from "../../../components/AgentsNavLink";
 import InboxNavLink from "../../../components/InboxNavLink";
 import UserMenu from "../../../components/UserMenu";
 import EosNavDropdown from "../../../components/EosNavDropdown";
@@ -41,6 +42,7 @@ export default function EosHeader() {
       <Link href="/files" className={styles.headerWikiLink}>
         Files
       </Link>
+      <AgentsNavLink />
       <InboxNavLink />
       <UserMenu />
     </header>
