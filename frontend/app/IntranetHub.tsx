@@ -354,6 +354,11 @@ export default function IntranetHub() {
                   title="Owner Termination Request"
                   description="Process owner requests to terminate management"
                 />
+                <ToolCardLive
+                  href="/admin/walkthru"
+                  title="Walk-Thru Reports"
+                  description="Digital move-in/move-out property condition reports"
+                />
                 <ToolCardSoon
                   title="Maintenance Request"
                   description="Tenant maintenance issue submission"

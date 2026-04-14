@@ -608,6 +608,59 @@ export async function ensureWikiSchema() {
   }
 }
 
+export async function ensureWalkthruSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS walkthru_reports (
+      id SERIAL PRIMARY KEY,
+      report_type VARCHAR(20) NOT NULL DEFAULT 'move_in',
+      status VARCHAR(20) DEFAULT 'in_progress',
+      property_address VARCHAR(500) NOT NULL,
+      unit_number VARCHAR(50),
+      resident_name VARCHAR(255) NOT NULL,
+      resident_email VARCHAR(255),
+      resident_phone VARCHAR(50),
+      lease_start_date DATE,
+      lease_end_date DATE,
+      report_date DATE DEFAULT CURRENT_DATE,
+      access_token VARCHAR(64) UNIQUE NOT NULL,
+      signature_data TEXT,
+      signed_at TIMESTAMP,
+      pdf_filename VARCHAR(255),
+      linked_file_id INTEGER REFERENCES files(id),
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      completed_at TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS walkthru_rooms (
+      id SERIAL PRIMARY KEY,
+      report_id INTEGER REFERENCES walkthru_reports(id) ON DELETE CASCADE,
+      room_name VARCHAR(100) NOT NULL,
+      room_order INTEGER DEFAULT 0,
+      is_custom BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS walkthru_items (
+      id SERIAL PRIMARY KEY,
+      room_id INTEGER REFERENCES walkthru_rooms(id) ON DELETE CASCADE,
+      item_name VARCHAR(200) NOT NULL,
+      item_order INTEGER DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'pending',
+      comment TEXT,
+      photo_filenames TEXT[] DEFAULT '{}',
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await p.query(`CREATE INDEX IF NOT EXISTS walkthru_reports_status_idx ON walkthru_reports (status, created_at DESC)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS walkthru_reports_access_token_idx ON walkthru_reports (access_token)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS walkthru_rooms_report_idx ON walkthru_rooms (report_id, room_order ASC)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS walkthru_items_room_idx ON walkthru_items (room_id, item_order ASC)`);
+}
+
 const TEAM_SIGNATURE_HTML = {
   mike: `<p>Best regards,</p>
 <p><strong>Mike Williamson</strong><br>Owner/Operator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,

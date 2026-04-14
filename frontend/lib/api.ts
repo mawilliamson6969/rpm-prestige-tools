@@ -17,6 +17,15 @@ export function ownerTerminationBasePath(): string {
   return "/api/forms/owner-termination";
 }
 
+export function walkthruBasePath(): string {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  if (base) return `${base}/walkthru`;
+  if (process.env.NODE_ENV === "development") {
+    return "http://localhost:4000/walkthru";
+  }
+  return "/api/walkthru";
+}
+
 /**
  * Express paths like `/dashboard/executive` (no `/api` in env base).
  * Production: same-origin `/api/...` → Nginx → Express.

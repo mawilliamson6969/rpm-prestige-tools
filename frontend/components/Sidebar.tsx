@@ -507,6 +507,17 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
               </span>
               {showLabels ? <span className={styles.label}>Form Submissions</span> : null}
             </Link>
+            <Link
+              href="/admin/walkthru"
+              className={`${styles.row} ${pathname.startsWith("/admin/walkthru") ? styles.rowActive : ""}`}
+              onClick={closeMobileIfNav}
+              title={showCollapsedTooltips ? "Walk-Thru Reports" : undefined}
+            >
+              <span className={styles.icon} aria-hidden>
+                📝
+              </span>
+              {showLabels ? <span className={styles.label}>Walk-Thru Reports</span> : null}
+            </Link>
           </>
         ) : null}
       </nav>

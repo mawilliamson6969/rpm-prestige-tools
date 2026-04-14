@@ -17,6 +17,7 @@ import {
   ensureAskAiSchema,
   ensureVideoFoldersTable,
   ensureVideosSchema,
+  ensureWalkthruSchema,
   ensureWikiSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
@@ -181,6 +182,24 @@ import {
   putWikiPageReorder,
   wikiUploadMiddleware,
 } from "./routes/wiki.js";
+import {
+  deleteWalkthruAdminRoom,
+  deleteWalkthruPublicItemPhoto,
+  deleteWalkthruReport,
+  getWalkthruPublic,
+  getWalkthruReportById,
+  getWalkthruReportPdf,
+  getWalkthruReports,
+  postWalkthruAdminRoom,
+  postWalkthruPublicComplete,
+  postWalkthruPublicItemPhoto,
+  postWalkthruPublicRoom,
+  postWalkthruReport,
+  postWalkthruSendLink,
+  putWalkthruPublicItem,
+  putWalkthruReportStatus,
+  uploadWalkthruPhotoMiddleware,
+} from "./routes/walkthru.js";
 import {
   deleteFile,
   deleteFileShare,
@@ -523,6 +542,28 @@ app.post("/files/:id/share", requireAuth, postFileShare);
 app.delete("/files/:id/share", requireAuth, deleteFileShare);
 app.post("/files/:id/analyze", requireAuth, postFileAnalyze);
 
+/** Tenant walk-thru reports */
+app.post("/walkthru/reports", requireAuth, requireAdminRole, postWalkthruReport);
+app.get("/walkthru/reports", requireAuth, getWalkthruReports);
+app.get("/walkthru/reports/:id", requireAuth, getWalkthruReportById);
+app.put("/walkthru/reports/:id/status", requireAuth, requireAdminRole, putWalkthruReportStatus);
+app.delete("/walkthru/reports/:id", requireAuth, requireAdminRole, deleteWalkthruReport);
+app.post("/walkthru/reports/:id/send-link", requireAuth, requireAdminRole, postWalkthruSendLink);
+app.get("/walkthru/reports/:id/pdf", requireAuth, getWalkthruReportPdf);
+app.post("/walkthru/reports/:id/rooms", requireAuth, requireAdminRole, postWalkthruAdminRoom);
+app.delete("/walkthru/reports/:id/rooms/:roomId", requireAuth, requireAdminRole, deleteWalkthruAdminRoom);
+
+app.get("/walkthru/public/:token", getWalkthruPublic);
+app.put("/walkthru/public/:token/items/:itemId", putWalkthruPublicItem);
+app.post(
+  "/walkthru/public/:token/items/:itemId/photo",
+  uploadWalkthruPhotoMiddleware,
+  postWalkthruPublicItemPhoto
+);
+app.delete("/walkthru/public/:token/items/:itemId/photo/:photoIndex", deleteWalkthruPublicItemPhoto);
+app.post("/walkthru/public/:token/rooms", postWalkthruPublicRoom);
+app.post("/walkthru/public/:token/complete", postWalkthruPublicComplete);
+
 /** Marketing content calendar */
 app.get("/marketing/stats", requireAuth, getMarketingStats);
 app.get("/marketing/channels", requireAuth, listMarketingChannels);
@@ -600,6 +641,8 @@ async function start() {
       console.log("Database schema OK (wiki).");
       await ensureFilesSchema();
       console.log("Database schema OK (files / file_folders).");
+      await ensureWalkthruSchema();
+      console.log("Database schema OK (walkthru reports).");
       await ensureMarketingSchema();
       console.log("Database schema OK (marketing).");
       await ensureAgentsSchema();
