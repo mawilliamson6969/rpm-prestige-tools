@@ -1,0 +1,166 @@
+.editorPage {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.titleInput {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #d8dee4;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1b2856;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.select {
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #d8dee4;
+  min-width: 200px;
+}
+
+.toggle {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #d8dee4;
+}
+
+.toggleBtn {
+  border: none;
+  background: #fff;
+  padding: 0.45rem 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #6a737b;
+}
+
+.toggleBtnActive {
+  background: #1b2856;
+  color: #fff;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.toolBtn {
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #d8dee4;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #1b2856;
+}
+
+.toolBtn:hover {
+  border-color: #0098d0;
+  color: #0098d0;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  min-height: 60vh;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+}
+
+.paneLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6a737b;
+  margin-bottom: 0.35rem;
+}
+
+.textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  padding: 0.85rem;
+  border-radius: 10px;
+  border: 1px solid #d8dee4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.previewPane {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e6eaef;
+  padding: 1rem 1.1rem;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.tabs {
+  display: none;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.tabBtn {
+  flex: 1;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #d8dee4;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tabBtnActive {
+  border-color: #0098d0;
+  color: #0098d0;
+  background: #f4fbfd;
+}
+
+@media (max-width: 900px) {
+  .tabs {
+    display: flex;
+  }
+
+  .hideMobile {
+    display: none !important;
+  }
+}
+
+.hint {
+  font-size: 0.82rem;
+  color: #6a737b;
+}

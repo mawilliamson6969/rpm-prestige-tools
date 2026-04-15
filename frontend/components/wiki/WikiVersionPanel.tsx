@@ -23,11 +23,13 @@ export default function WikiVersionPanel({
   pageId,
   onClose,
   onRestored,
+  basePath = "wiki",
 }: {
   open: boolean;
   pageId: number;
   onClose: () => void;
   onRestored: () => void;
+  basePath?: string;
 }) {
   const { authHeaders } = useAuth();
   const [versions, setVersions] = useState<VersionRow[]>([]);
@@ -42,7 +44,7 @@ export default function WikiVersionPanel({
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch(apiUrl(`/wiki/pages/${pageId}/versions`), {
+      const res = await fetch(apiUrl(`/${basePath}/pages/${pageId}/versions`), {
         headers: { ...authHeaders() },
         cache: "no-store",
       });

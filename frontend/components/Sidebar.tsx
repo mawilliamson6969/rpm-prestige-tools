@@ -437,6 +437,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             { href: "/ask", label: "Ask the AI", icon: "💬" },
             { href: "/videos", label: "Videos", icon: "🎬" },
             { href: "/wiki", label: "Wiki", icon: "📚" },
+            { href: "/playbooks", label: "Playbooks", icon: "📋" },
             { href: "/files", label: "Files", icon: "📁" },
             { href: "/marketing/calendar", label: "Marketing", icon: "📅" },
           ] as const

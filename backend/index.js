@@ -19,6 +19,7 @@ import {
   ensureVideosSchema,
   ensureWalkthruSchema,
   ensureWikiSchema,
+  ensurePlaybookSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
@@ -182,6 +183,27 @@ import {
   putWikiPageReorder,
   wikiUploadMiddleware,
 } from "./routes/wiki.js";
+import {
+  deletePlaybookAttachment,
+  deletePlaybookCategory,
+  deletePlaybookPage,
+  getPlaybookAttachment,
+  getPlaybookCategories,
+  getPlaybookPage,
+  getPlaybookPages,
+  getPlaybookSearch,
+  getPlaybookPageVersion,
+  getPlaybookPageVersions,
+  postPlaybookAttachment,
+  postPlaybookCategory,
+  postPlaybookPage,
+  postPlaybookRestoreVersion,
+  putPlaybookCategory,
+  putPlaybookPage,
+  putPlaybookPagePin,
+  putPlaybookPageReorder,
+  playbookUploadMiddleware,
+} from "./routes/playbooks.js";
 import {
   deleteWalkthruAdminRoom,
   deleteWalkthruPublicItemPhoto,
@@ -518,6 +540,26 @@ app.post("/wiki/pages", requireAuth, postWikiPage);
 app.get("/wiki/attachments/:id", requireAuth, getWikiAttachment);
 app.delete("/wiki/attachments/:id", requireAuth, deleteWikiAttachment);
 
+/** Playbooks / SOPs */
+app.get("/playbooks/categories", requireAuth, getPlaybookCategories);
+app.post("/playbooks/categories", requireAuth, requireAdminRole, postPlaybookCategory);
+app.put("/playbooks/categories/:id", requireAuth, requireAdminRole, putPlaybookCategory);
+app.delete("/playbooks/categories/:id", requireAuth, requireAdminRole, deletePlaybookCategory);
+app.get("/playbooks/search", requireAuth, getPlaybookSearch);
+app.get("/playbooks/pages/:id/versions/:versionId", requireAuth, getPlaybookPageVersion);
+app.post("/playbooks/pages/:id/versions/:versionId/restore", requireAuth, postPlaybookRestoreVersion);
+app.get("/playbooks/pages/:id/versions", requireAuth, getPlaybookPageVersions);
+app.post("/playbooks/pages/:id/attachments", requireAuth, playbookUploadMiddleware, postPlaybookAttachment);
+app.put("/playbooks/pages/:id/pin", requireAuth, requireAdminRole, putPlaybookPagePin);
+app.put("/playbooks/pages/:id/reorder", requireAuth, requireAdminRole, putPlaybookPageReorder);
+app.get("/playbooks/pages/:id", requireAuth, getPlaybookPage);
+app.put("/playbooks/pages/:id", requireAuth, putPlaybookPage);
+app.delete("/playbooks/pages/:id", requireAuth, deletePlaybookPage);
+app.get("/playbooks/pages", requireAuth, getPlaybookPages);
+app.post("/playbooks/pages", requireAuth, postPlaybookPage);
+app.get("/playbooks/attachments/:id", requireAuth, getPlaybookAttachment);
+app.delete("/playbooks/attachments/:id", requireAuth, deletePlaybookAttachment);
+
 /** Company file manager (JWT; public share routes below) */
 app.post("/files/upload", requireAuth, uploadFilesMiddleware.array("files"), postFilesUpload);
 app.get("/files/stats", requireAuth, getFilesStats);
@@ -639,6 +681,8 @@ async function start() {
       console.log("Database schema OK (videos).");
       await ensureWikiSchema();
       console.log("Database schema OK (wiki).");
+      await ensurePlaybookSchema();
+      console.log("Database schema OK (playbooks).");
       await ensureFilesSchema();
       console.log("Database schema OK (files / file_folders).");
       await ensureWalkthruSchema();

@@ -608,6 +608,86 @@ export async function ensureWikiSchema() {
   }
 }
 
+export async function ensurePlaybookSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS playbook_categories (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) UNIQUE NOT NULL,
+      description TEXT,
+      icon VARCHAR(50) DEFAULT '📋',
+      display_order INTEGER DEFAULT 0,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS playbook_pages (
+      id SERIAL PRIMARY KEY,
+      category_id INTEGER REFERENCES playbook_categories(id),
+      parent_page_id INTEGER REFERENCES playbook_pages(id),
+      title VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) NOT NULL,
+      content_markdown TEXT DEFAULT '',
+      status VARCHAR(20) DEFAULT 'published',
+      is_pinned BOOLEAN DEFAULT false,
+      display_order INTEGER DEFAULT 0,
+      created_by INTEGER REFERENCES users(id),
+      last_edited_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(category_id, slug)
+    );
+
+    CREATE TABLE IF NOT EXISTS playbook_page_versions (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER REFERENCES playbook_pages(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      title VARCHAR(255),
+      content_markdown TEXT,
+      change_summary VARCHAR(255),
+      edited_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS playbook_attachments (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER REFERENCES playbook_pages(id) ON DELETE CASCADE,
+      filename VARCHAR(255) NOT NULL,
+      stored_filename VARCHAR(255) NOT NULL,
+      file_size_bytes BIGINT,
+      mime_type VARCHAR(100),
+      uploaded_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS playbook_pages_category_idx ON playbook_pages (category_id, display_order, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS playbook_page_versions_page_idx ON playbook_page_versions (page_id, version_number DESC);
+  `);
+
+  const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM playbook_categories`);
+  if (rows[0].c > 0) return;
+
+  const seeds = [
+    ["Leasing", "leasing", "🏠", "Showing procedures, application processing, lease agreements"],
+    ["Maintenance", "maintenance", "🔧", "Work order workflows, vendor management, emergency procedures"],
+    ["Move-In", "move-in", "📦", "Move-in inspections, key handoff, tenant onboarding"],
+    ["Move-Out", "move-out", "🚚", "Move-out procedures, deposit reconciliation, turnover"],
+    ["Owner Onboarding", "owner-onboarding", "🤝", "PMA signing, property setup, owner portal access"],
+    ["Rent Collection", "rent-collection", "💰", "Payment processing, delinquency notices, eviction timelines"],
+    ["Lease Renewals", "lease-renewals", "📝", "Renewal offers, rent adjustments, re-signing process"],
+    ["Inspections", "inspections", "🔍", "Routine inspections, drive-by checks, compliance audits"],
+  ];
+  let order = 0;
+  for (const [name, slug, icon, description] of seeds) {
+    await p.query(
+      `INSERT INTO playbook_categories (name, slug, description, icon, display_order)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [name, slug, description, icon, order++]
+    );
+  }
+}
+
 export async function ensureWalkthruSchema() {
   const p = getPool();
   await p.query(`
