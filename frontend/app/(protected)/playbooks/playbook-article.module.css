@@ -6,7 +6,7 @@
   color: #6a737b;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid #e6eaef;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.1);
 }
 
 .actions {
@@ -20,7 +20,7 @@
 .attachSection {
   margin-top: 3rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #e6eaef;
+  border-top: 1px solid rgba(27, 40, 86, 0.1);
 }
 
 .attachTitle {
@@ -42,7 +42,7 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.06);
   font-size: 0.92rem;
 }
 
@@ -80,7 +80,7 @@
 
 .modal {
   background: #fff;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 1.5rem;
   max-width: 420px;
   width: 100%;

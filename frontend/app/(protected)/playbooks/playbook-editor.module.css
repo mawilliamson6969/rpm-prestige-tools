@@ -14,7 +14,7 @@
   width: 100%;
   padding: 0.65rem 0.85rem;
   border-radius: 8px;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
   font-size: 1.25rem;
   font-weight: 700;
   color: #1b2856;
@@ -30,7 +30,7 @@
 .select {
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
   min-width: 200px;
 }
 
@@ -38,7 +38,7 @@
   display: flex;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
 }
 
 .toggleBtn {
@@ -65,7 +65,7 @@
 .toolBtn {
   padding: 0.35rem 0.55rem;
   border-radius: 6px;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
   background: #fff;
   font-size: 0.78rem;
   font-weight: 600;
@@ -112,7 +112,7 @@
   min-height: 400px;
   padding: 0.85rem;
   border-radius: 10px;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -122,7 +122,7 @@
 .previewPane {
   background: #fff;
   border-radius: 10px;
-  border: 1px solid #e6eaef;
+  border: 1px solid rgba(27, 40, 86, 0.1);
   padding: 1rem 1.1rem;
   overflow-y: auto;
   max-height: 70vh;
@@ -138,7 +138,7 @@
   flex: 1;
   padding: 0.5rem;
   border-radius: 8px;
-  border: 1px solid #d8dee4;
+  border: 1px solid rgba(27, 40, 86, 0.15);
   background: #fff;
   font-weight: 700;
   cursor: pointer;
