@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AgentsHubCard from "../components/AgentsHubCard";
 import WikiHubCard from "../components/WikiHubCard";
+import PlaybookHubCard from "../components/PlaybookHubCard";
 import FileManagerHubCard from "../components/FileManagerHubCard";
 import SharedInboxHubCard from "../components/SharedInboxHubCard";
 import VideoMessagesHubCard from "../components/VideoMessagesHubCard";
@@ -303,6 +304,7 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Knowledge Base</p>
               <div className={styles.toolGrid}>
                 <WikiHubCard />
+                <PlaybookHubCard />
               </div>
 
               <p className={styles.catLabel}>Tools</p>
