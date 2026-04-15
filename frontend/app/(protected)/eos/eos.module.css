@@ -271,7 +271,7 @@
   position: fixed;
   inset: 0;
   background: rgba(27, 40, 86, 0.45);
-  z-index: 100;
+  z-index: 10000;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -281,7 +281,7 @@
 
 /* Stacked above another modal (e.g. confirm over Manage metrics) */
 .modalOverlayNested {
-  z-index: 120;
+  z-index: 10010;
 }
 
 .modal {
