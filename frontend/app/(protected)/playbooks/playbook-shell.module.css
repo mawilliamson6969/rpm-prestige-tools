@@ -1,4 +1,4 @@
-.shell {
+.page {
   --navy: #1b2856;
   --blue: #0098d0;
   --red: #b32317;
@@ -7,7 +7,7 @@
   --off: #f5f5f5;
   min-height: 100vh;
   background: var(--off);
-  color: #2c3338;
+  color: var(--grey);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
