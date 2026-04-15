@@ -47,12 +47,15 @@ export async function syncConnection(connectionRow) {
   const { accessToken } = await getValidAccessTokenForConnection(connId);
 
   let since = new Date(Date.now() - 7 * 86400000);
+  let lastMessageReceived = null;
   if (connectionRow.sync_last_message_at) {
     since = new Date(new Date(connectionRow.sync_last_message_at).getTime() - 60_000);
+    lastMessageReceived = new Date(connectionRow.sync_last_message_at);
   } else {
     const { rows: st } = await pool.query(`SELECT * FROM email_sync_state WHERE user_id = $1`, [userId]);
     if (st[0]?.last_message_received_at) {
       since = new Date(new Date(st[0].last_message_received_at).getTime() - 60_000);
+      lastMessageReceived = new Date(st[0].last_message_received_at);
     }
   }
 
@@ -81,7 +84,7 @@ export async function syncConnection(connectionRow) {
 
   const messages = data.value || [];
   let synced = 0;
-  let newest = st[0]?.last_message_received_at ? new Date(st[0].last_message_received_at) : null;
+  let newest = lastMessageReceived;
 
   for (const msg of messages) {
     const extId = msg.id;
