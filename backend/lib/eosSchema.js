@@ -241,3 +241,50 @@ export async function ensureEosSchema() {
 
   console.log("[eos] Seeded scorecard metrics and Q2 2026 rocks.");
 }
+
+export async function ensureIndividualScorecardSchema() {
+  const pool = getPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS individual_scorecards (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      owner_user_id INTEGER REFERENCES users(id) NOT NULL,
+      status VARCHAR(20) DEFAULT 'active',
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS individual_scorecard_metrics (
+      id SERIAL PRIMARY KEY,
+      scorecard_id INTEGER REFERENCES individual_scorecards(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      frequency VARCHAR(10) DEFAULT 'weekly',
+      goal_value NUMERIC(12,2),
+      goal_direction VARCHAR(10) DEFAULT 'above',
+      unit VARCHAR(20) DEFAULT 'number',
+      display_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS individual_scorecard_entries (
+      id SERIAL PRIMARY KEY,
+      metric_id INTEGER REFERENCES individual_scorecard_metrics(id) ON DELETE CASCADE,
+      week_start DATE NOT NULL,
+      value NUMERIC(12,2),
+      notes TEXT,
+      updated_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(metric_id, week_start)
+    );
+
+    CREATE INDEX IF NOT EXISTS individual_scorecard_metrics_sc_idx
+      ON individual_scorecard_metrics (scorecard_id, display_order ASC);
+    CREATE INDEX IF NOT EXISTS individual_scorecard_entries_metric_idx
+      ON individual_scorecard_entries (metric_id, week_start);
+  `);
+}

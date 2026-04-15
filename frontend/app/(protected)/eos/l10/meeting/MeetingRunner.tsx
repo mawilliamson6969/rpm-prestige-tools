@@ -54,6 +54,8 @@ export default function MeetingRunner({ meetingId }: { meetingId: string }) {
     cells: Record<number, Record<string, { meetsGoal: boolean | null; value: number } | null>>;
   } | null>(null);
   const [team, setTeam] = useState<{ id: number; displayName: string }[]>([]);
+  const [indScorecards, setIndScorecards] = useState<{ id: number; name: string; ownerDisplayName: string }[]>([]);
+  const [scorecardSource, setScorecardSource] = useState<string>("company");
   const [ratings, setRatings] = useState<Record<number, number>>({});
   const [startedAt] = useState(() => Date.now());
 
@@ -85,12 +87,27 @@ export default function MeetingRunner({ meetingId }: { meetingId: string }) {
       { headers: { ...authHeaders() } }
     ).then((x) => x.json());
     if (rep.metrics) setScorecard(rep);
+    const indRes = await fetch(apiUrl("/eos/individual-scorecards"), { headers: { ...authHeaders() } }).then((x) => x.json());
+    if (Array.isArray(indRes.scorecards)) setIndScorecards(indRes.scorecards);
   }, [authHeaders]);
 
   useEffect(() => {
     loadMeeting();
     loadRest();
   }, [loadMeeting, loadRest]);
+
+  useEffect(() => {
+    if (scorecardSource === "company") return;
+    const scId = Number(scorecardSource);
+    if (!Number.isFinite(scId)) return;
+    const mon = mondayOf(new Date());
+    const s = ymd(mon);
+    fetch(apiUrl(`/eos/individual-scorecards/${scId}/report?startDate=${s}&endDate=${s}&frequency=weekly`), {
+      headers: { ...authHeaders() },
+    })
+      .then((x) => x.json())
+      .then((rep) => { if (rep.metrics) setScorecard(rep); });
+  }, [scorecardSource, authHeaders]);
 
   useEffect(() => {
     setRemain(SECTIONS[sectionIdx].seconds);
@@ -161,6 +178,30 @@ export default function MeetingRunner({ meetingId }: { meetingId: string }) {
         <NotesField noteKey={sec.noteKey} meeting={meeting} onSave={(body) => saveNotes(body)} />
       ) : null}
 
+      {sectionIdx === 1 ? (
+        <>
+          <div style={{ marginBottom: "0.75rem" }}>
+            <label className={styles.muted} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.82rem" }}>
+              Scorecard
+              <select className={styles.select} value={scorecardSource} onChange={(e) => {
+                setScorecardSource(e.target.value);
+                if (e.target.value === "company") {
+                  const mon = mondayOf(new Date());
+                  const s = ymd(mon);
+                  fetch(apiUrl(`/eos/scorecard/report?startDate=${s}&endDate=${s}&frequency=weekly`), {
+                    headers: { ...authHeaders() },
+                  }).then((x) => x.json()).then((rep) => { if (rep.metrics) setScorecard(rep); });
+                }
+              }}>
+                <option value="company">Company Scorecard</option>
+                {indScorecards.map((sc) => (
+                  <option key={sc.id} value={sc.id}>{sc.name} ({sc.ownerDisplayName})</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </>
+      ) : null}
       {sectionIdx === 1 && scorecard ? (
         <div className={`${styles.gridWrap} ${styles.compactGrid}`}>
           <table className={styles.scoreTable}>

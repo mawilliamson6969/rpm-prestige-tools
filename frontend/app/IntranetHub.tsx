@@ -338,6 +338,11 @@ export default function IntranetHub() {
                   description="Track weekly and monthly measurables"
                 />
                 <ToolCardLive
+                  href="/eos/scorecards"
+                  title="Individual Scorecards"
+                  description="Personal metrics and accountability per team member"
+                />
+                <ToolCardLive
                   href="/eos/rocks"
                   title="Rocks"
                   description="Quarterly Rock tracking with milestones"

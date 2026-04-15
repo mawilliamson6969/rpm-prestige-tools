@@ -23,7 +23,7 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
-import { ensureEosSchema } from "./lib/eosSchema.js";
+import { ensureEosSchema, ensureIndividualScorecardSchema } from "./lib/eosSchema.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -115,6 +115,23 @@ import {
   putScorecardMetric,
   postScorecardAiAnalyze,
 } from "./routes/eos.js";
+import {
+  getIndividualScorecards,
+  getIndividualScorecard,
+  postIndividualScorecard,
+  putIndividualScorecard,
+  deleteIndividualScorecard,
+  postDuplicateScorecard,
+  getTemplates,
+  getIndividualScorecardMetrics,
+  postIndividualScorecardMetric,
+  putIndividualScorecardMetric,
+  deleteIndividualScorecardMetric,
+  deleteIndividualScorecardMetricPermanent,
+  putIndividualScorecardEntry,
+  getIndividualScorecardReport,
+  postIndividualScorecardAiAnalyze,
+} from "./routes/individual-scorecards.js";
 import {
   deleteInboxConnection,
   deleteInboxConnectionPermission,
@@ -438,6 +455,23 @@ app.delete("/eos/scorecard/entries/:id", requireAuth, requireAdminRole, deleteSc
 app.get("/eos/scorecard/report", requireAuth, getScorecardReport);
 app.post("/eos/scorecard/ai-analyze", requireAuth, postScorecardAiAnalyze);
 
+/** Individual scorecards */
+app.get("/eos/individual-scorecards/templates", requireAuth, getTemplates);
+app.get("/eos/individual-scorecards", requireAuth, getIndividualScorecards);
+app.post("/eos/individual-scorecards", requireAuth, requireAdminRole, postIndividualScorecard);
+app.get("/eos/individual-scorecards/:id/report", requireAuth, getIndividualScorecardReport);
+app.get("/eos/individual-scorecards/:id/metrics", requireAuth, getIndividualScorecardMetrics);
+app.post("/eos/individual-scorecards/:id/metrics", requireAuth, requireAdminRole, postIndividualScorecardMetric);
+app.post("/eos/individual-scorecards/:id/duplicate", requireAuth, requireAdminRole, postDuplicateScorecard);
+app.post("/eos/individual-scorecards/:id/ai-analyze", requireAuth, postIndividualScorecardAiAnalyze);
+app.get("/eos/individual-scorecards/:id", requireAuth, getIndividualScorecard);
+app.put("/eos/individual-scorecards/:id", requireAuth, requireAdminRole, putIndividualScorecard);
+app.delete("/eos/individual-scorecards/:id", requireAuth, requireAdminRole, deleteIndividualScorecard);
+app.put("/eos/individual-scorecard-metrics/:metricId", requireAuth, requireAdminRole, putIndividualScorecardMetric);
+app.delete("/eos/individual-scorecard-metrics/:metricId/permanent", requireAuth, requireAdminRole, deleteIndividualScorecardMetricPermanent);
+app.delete("/eos/individual-scorecard-metrics/:metricId", requireAuth, requireAdminRole, deleteIndividualScorecardMetric);
+app.put("/eos/individual-scorecard-entries", requireAuth, putIndividualScorecardEntry);
+
 app.get("/eos/rocks", requireAuth, getRocks);
 app.post("/eos/rocks", requireAuth, requireAdminRole, postRock);
 app.put("/eos/rocks/:id", requireAuth, putRock);
@@ -670,6 +704,8 @@ async function start() {
       console.log("Database schema OK (users).");
       await ensureEosSchema();
       console.log("Database schema OK (EOS).");
+      await ensureIndividualScorecardSchema();
+      console.log("Database schema OK (individual scorecards).");
       await ensureAskAiSchema();
       console.log("Database schema OK (ask_ai_history).");
       await ensureInboxSchema();

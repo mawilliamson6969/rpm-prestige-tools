@@ -195,6 +195,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     () =>
       [
         { href: "/eos/scorecard", label: "Scorecard" },
+        { href: "/eos/scorecards", label: "Individual Scorecards" },
         { href: "/eos/rocks", label: "Rocks" },
         { href: "/eos/l10", label: "L10 Meetings" },
       ] as const,
