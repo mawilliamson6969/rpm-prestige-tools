@@ -49,6 +49,7 @@ export default function DashboardClient() {
   const [maintenance, setMaintenance] = useState<Record<string, unknown> | null>(null);
   const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
   const [crm, setCrm] = useState<Record<string, unknown> | null>(null);
+  const [executiveV2, setExecutiveV2] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,21 +111,23 @@ export default function DashboardClient() {
     });
     const h = authHeaders();
     try {
-      const [rEx, rFi, rLe, rMa, rPo, rCr] = await Promise.all([
+      const [rEx, rFi, rLe, rMa, rPo, rCr, rExV2] = await Promise.all([
         fetch(apiUrl(`/dashboard/executive${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/finance${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/leasing${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/maintenance${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/portfolio${q}`), { cache: "no-store", headers: { ...h } }),
         fetch(apiUrl(`/dashboard/crm${q}`), { cache: "no-store", headers: { ...h } }),
+        fetch(apiUrl("/dashboard/executive-v2"), { cache: "no-store", headers: { ...h } }),
       ]);
-      const [jEx, jFi, jLe, jMa, jPo, jCr] = await Promise.all([
+      const [jEx, jFi, jLe, jMa, jPo, jCr, jExV2] = await Promise.all([
         rEx.json().catch(() => ({})),
         rFi.json().catch(() => ({})),
         rLe.json().catch(() => ({})),
         rMa.json().catch(() => ({})),
         rPo.json().catch(() => ({})),
         rCr.json().catch(() => ({})),
+        rExV2.json().catch(() => ({})),
       ]);
       if (!rEx.ok) throw new Error(typeof jEx.error === "string" ? jEx.error : `Executive ${rEx.status}`);
       if (!rFi.ok) throw new Error(typeof jFi.error === "string" ? jFi.error : `Finance ${rFi.status}`);
@@ -136,6 +139,8 @@ export default function DashboardClient() {
       setLeasing(jLe);
       setMaintenance(jMa);
       setPortfolio(jPo);
+      if (rExV2.ok) setExecutiveV2(jExV2);
+      else setExecutiveV2(null);
       if (rCr.ok) {
         setCrm(jCr);
       } else {
@@ -368,15 +373,9 @@ export default function DashboardClient() {
         {tab === "executive" && (
           <div className={styles.tabPanel}>
             <ExecutivePanel
-              executive={executive as never}
-              finance={finance as never}
-              maintenance={maintenance as never}
-              portfolio={portfolio as never}
+              data={executiveV2 as never}
               loading={loading}
               error={error}
-              dateLabel={range.label}
-              rangeStart={range.start}
-              rangeEnd={range.end}
             />
           </div>
         )}

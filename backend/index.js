@@ -23,7 +23,8 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
-import { ensureEosSchema, ensureIndividualScorecardSchema } from "./lib/eosSchema.js";
+import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
+import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -422,6 +423,7 @@ app.get("/sync/status", requireAuth, getSyncStatus);
 app.get("/sync/history", requireAuth, getSyncHistoryRoute);
 
 app.get("/dashboard/executive", requireAuth, getDashboardExecutive);
+app.get("/dashboard/executive-v2", requireAuth, getExecutiveDashboardV2);
 app.get("/dashboard/leasing", requireAuth, getDashboardLeasing);
 app.get("/dashboard/maintenance", requireAuth, getDashboardMaintenance);
 app.get("/dashboard/finance", requireAuth, getDashboardFinance);
@@ -704,6 +706,8 @@ async function start() {
       console.log("Database schema OK (users).");
       await ensureEosSchema();
       console.log("Database schema OK (EOS).");
+      await ensurePortfolioSnapshotsSchema();
+      console.log("Database schema OK (portfolio_snapshots).");
       await ensureIndividualScorecardSchema();
       console.log("Database schema OK (individual scorecards).");
       await ensureAskAiSchema();
@@ -752,6 +756,14 @@ async function start() {
       runEmailSyncOnce().catch((e) => console.error("[inbox sync cron]", e.message || e));
     });
     console.log("Scheduled inbox email sync: */2 * * * * (every 2 minutes).");
+
+    cron.schedule("0 6 * * *", () => {
+      takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot cron]", e.message || e));
+    });
+    console.log("Scheduled portfolio snapshot: 0 6 * * * (daily at 6 AM).");
+
+    // Take initial snapshot on startup if none exists today
+    takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot startup]", e.message || e));
   }
 }
 

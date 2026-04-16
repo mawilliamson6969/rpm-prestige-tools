@@ -1,14 +1,12 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,607 +14,332 @@ import {
 } from "recharts";
 import styles from "./dashboard.module.css";
 
-const GOLD = "#c5960c";
 const NAVY = "#1b2856";
 const BLUE = "#0098d0";
 const RED = "#b32317";
 const GREY = "#6a737b";
+const GREEN = "#1a7f4c";
+const GOLD = "#c5960c";
 
+const AGING_COLORS = { "0-30": "#0098d0", "30-60": GOLD, "60-90": "#e65100", "90+": RED };
 const DOOR_GOAL = 300;
-const REVENUE_GOAL = 775_000;
-const MARGIN_GOAL = 20;
 
-const PIE_COLORS = [BLUE, NAVY, GREY, GOLD, RED];
-
-/** AppFolio work order status colors (aligned with Maintenance tab). */
-const WO_STATUS_PIE_FILL: Record<string, string> = {
-  New: RED,
-  Assigned: BLUE,
-  Estimated: GOLD,
-  Scheduled: "#2d8b4e",
-  Completed: GREY,
-  Canceled: GREY,
-};
-
-type Exec = {
-  totalUnits: number;
-  occupiedUnits: number;
-  vacantUnits: number;
-  onNoticeUnits?: number;
-  occupancyRatePercent: number;
-  totalRevenueYtd: number;
-  profitMarginPercent: number;
-  openWorkOrders: number;
-  totalDelinquency: number;
-  activeLeads: number;
-  /** Count of Boom screening applications in cache (0 if not synced). */
-  screeningsTotal?: number;
-  /** LeadSimple CRM: incomplete tasks with due date before today. */
-  leadSimpleOverdueTasks?: number;
-  /** LeadSimple CRM: deals with status open. */
-  leadSimpleOpenDeals?: number;
-};
-
-type FinanceRow = Record<string, unknown> & { _period?: string };
-
-type Finance = {
-  incomeStatement?: FinanceRow[];
-  totalRevenueInCache?: number;
-};
-
-type Maintenance = {
-  summary?: { byStatus?: Record<string, number> };
-  workOrdersByStatus: Record<string, number>;
-  workOrdersByProperty: Record<string, number>;
-};
-
-type PropRow = {
-  propertyName: string;
-  unitCount: number;
-  vacantCount: number;
-  onNoticeCount?: number;
-  occupiedCount?: number;
-  occupancyRatePercent: number;
-};
-
-type Portfolio = {
-  /** Rent-roll aggregates by property (occupancy / units). */
-  occupancyByProperty?: PropRow[];
-  properties: PropRow[];
-  propertyDirectory?: Record<string, unknown>[];
+type ExecV2 = {
+  portfolioHealth: { totalDoors: number; occupied: number; vacant: number; onNotice: number; occupancyRate: number };
+  pmIncome: {
+    revenueMtd: number; revenueYtd: number; lastYearYtd: number;
+    yoyChangePercent: number; revenuePerDoor: number;
+    topAccounts: { accountName: string; mtd: number; ytd: number }[];
+  };
+  maintenanceIncome: {
+    revenueMtd: number; revenueYtd: number; cogsMtd: number; cogsYtd: number;
+    profitMtd: number; profitYtd: number; marginMtd: number;
+  };
+  companyPL: {
+    totalRevenueMtd: number; totalRevenueYtd: number;
+    totalCogsMtd: number; totalCogsYtd: number;
+    grossProfitMtd: number; grossProfitYtd: number;
+    opexMtd: number; opexYtd: number;
+    payrollMtd: number; payrollYtd: number;
+    netProfitMtd: number; netProfitYtd: number;
+    netMarginMtd: number; netMarginYtd: number;
+  };
+  delinquency: {
+    totalReceivable: number; accountCount: number;
+    aging: { bucket00to30: number; bucket30to60: number; bucket60to90: number; bucket90plus: number };
+  };
+  rentAnalysis: {
+    singleFamily: { avgRent: number; avgMgmtFee: number; unitCount: number; propCount: number };
+    multiFamily: { avgRent: number; avgMgmtFee: number; unitCount: number; propCount: number };
+  };
+  growth: {
+    available: boolean; message?: string;
+    newDoorsMtd?: number; doorsLostMtd?: number; netNewDoors?: number;
+    churnRate?: number | null; churnMessage?: string | null;
+  };
+  lastSyncAt: string | null;
 };
 
 function fmtMoney(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
-    n
-  );
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
-function occupancyColor(p: number) {
-  if (p > 95) return "#1a7f4c";
-  if (p >= 90) return GOLD;
-  return RED;
+function fmtPct(n: number) { return `${n.toFixed(1)}%`; }
+
+function occColor(p: number) { return p >= 95 ? GREEN : p >= 90 ? GOLD : RED; }
+function marginColor(p: number) { return p >= 20 ? GREEN : p >= 10 ? GOLD : RED; }
+function delinqColor(n: number) { return n > 20000 ? RED : n > 10000 ? GOLD : GREEN; }
+
+function relTime(iso: string | null) {
+  if (!iso) return "Never";
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min} min ago`;
+  return `${Math.floor(min / 60)}h ago`;
 }
 
-function vacantColor(n: number) {
-  if (n < 5) return "#1a7f4c";
-  if (n <= 10) return GOLD;
-  return RED;
-}
-
-function delinqColor(n: number) {
-  return n > 5000 ? RED : NAVY;
-}
-
-function marginColor(p: number) {
-  if (p >= 20) return "#1a7f4c";
-  if (p >= 15) return GOLD;
-  return RED;
-}
-
-function accountNumberFromFinanceRow(row: FinanceRow): string {
-  return String(row.account_number ?? row.AccountNumber ?? "").trim();
-}
-
-function monthToDateFromRow(row: FinanceRow): number {
-  const raw = row.month_to_date ?? row.monthToDate;
-  if (raw != null && raw !== "") {
-    if (typeof raw === "number" && !Number.isNaN(raw)) return raw;
-    const n = parseFloat(String(raw).replace(/[$,]/g, ""));
-    return Number.isNaN(n) ? 0 : n;
-  }
-  return pickAmount(row);
-}
-
-function pickAmount(row: FinanceRow): number {
-  const v =
-    (row.amount as number | string | undefined) ??
-    (row.Amount as number | string | undefined) ??
-    (row.net_amount as number | string | undefined) ??
-    (row.NetAmount as number | string | undefined) ??
-    (row.total as number | string | undefined) ??
-    0;
-  if (typeof v === "number" && !Number.isNaN(v)) return Math.abs(v);
-  const s = String(v).replace(/[$,]/g, "");
-  const n = parseFloat(s);
-  return Number.isNaN(n) ? 0 : Math.abs(n);
-}
-
-function monthKeyFromRow(row: FinanceRow): string | null {
-  const per = row._period ?? row.period ?? row.posted_on ?? row.PostedOn;
-  if (per == null) return null;
-  const s = String(per);
-  if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
-  return null;
-}
-
-function last12MonthKeys(endStr: string): string[] {
-  const [y0, mo0] = endStr.split("-").map(Number);
-  const out: string[] = [];
-  let yy = y0;
-  let mm = mo0;
-  for (let i = 0; i < 12; i++) {
-    out.unshift(`${yy}-${String(mm).padStart(2, "0")}`);
-    mm -= 1;
-    if (mm < 1) {
-      mm = 12;
-      yy -= 1;
-    }
-  }
-  return out;
-}
-
-function bucketWoStatus(label: string): string {
-  const s = label.toLowerCase();
-  if (/complete|closed|resolved|cancel/.test(s)) return "Completed";
-  if (/hold|paused/.test(s)) return "On Hold";
-  if (/progress|in progress/.test(s)) return "In Progress";
-  if (/open|pending|new|assigned|scheduled|active/.test(s)) return "Open";
-  return "Other";
-}
-
-type SortKey = "propertyName" | "unitCount" | "occupied" | "vacant" | "onNotice" | "occPct" | "wo";
-
-export default function ExecutivePanel(props: {
-  executive: Exec | null;
-  finance: Finance | null;
-  maintenance: Maintenance | null;
-  portfolio: Portfolio | null;
-  loading: boolean;
-  error: string | null;
-  dateLabel: string;
-  rangeStart: string;
-  rangeEnd: string;
+export default function ExecutivePanel({ data, loading, error }: {
+  data: ExecV2 | null; loading: boolean; error: string | null;
 }) {
-  const { executive, finance, maintenance, portfolio, loading, error, dateLabel, rangeStart, rangeEnd } = props;
-
-  const [sortKey, setSortKey] = useState<SortKey>("propertyName");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const doorPct = executive
-    ? Math.min(100, Math.round((executive.totalUnits / DOOR_GOAL) * 1000) / 10)
-    : 0;
-  const revPct = executive
-    ? Math.min(100, Math.round((executive.totalRevenueYtd / REVENUE_GOAL) * 1000) / 10)
-    : 0;
-
-  const monthly = useMemo(() => {
-    const stmt = finance?.incomeStatement;
-    if (!stmt?.length) {
-      return { points: [] as { month: string; revenue: number }[], hasData: false };
-    }
-    const keys = last12MonthKeys(rangeEnd);
-    const amounts = new Map<string, number>();
-    for (const k of keys) amounts.set(k, 0);
-    const rs = rangeStart.slice(0, 7);
-    const re = rangeEnd.slice(0, 7);
-    for (const row of stmt) {
-      const an = accountNumberFromFinanceRow(row);
-      if (!(an.startsWith("4") && !an.startsWith("0-4"))) continue;
-      const mk = monthKeyFromRow(row);
-      if (!mk || !amounts.has(mk)) continue;
-      if (mk < rs || mk > re) continue;
-      amounts.set(mk, (amounts.get(mk) ?? 0) + monthToDateFromRow(row));
-    }
-    const points = keys.map((m) => ({
-      month: m,
-      revenue: amounts.get(m) ?? 0,
-    }));
-    const hasData = points.some((p) => p.revenue > 0);
-    return { points, hasData };
-  }, [finance, rangeStart, rangeEnd]);
-
-  const pieData = useMemo(() => {
-    const raw =
-      maintenance?.summary?.byStatus ?? maintenance?.workOrdersByStatus ?? {};
-    const appfolioKeys = new Set([
-      "New",
-      "Assigned",
-      "Estimated",
-      "Scheduled",
-      "Completed",
-      "Canceled",
-    ]);
-    const keys = Object.keys(raw);
-    const looksAppfolio = keys.some((k) => appfolioKeys.has(k));
-    if (looksAppfolio) {
-      return Object.entries(raw)
-        .filter(([, v]) => v > 0)
-        .map(([name, value]) => ({ name, value }));
-    }
-    const agg: Record<string, number> = {
-      Open: 0,
-      "In Progress": 0,
-      Completed: 0,
-      "On Hold": 0,
-      Other: 0,
-    };
-    for (const [k, v] of Object.entries(raw)) {
-      const b = bucketWoStatus(k);
-      if (b in agg) agg[b] += v;
-      else agg.Other += v;
-    }
-    return Object.entries(agg)
-      .filter(([, n]) => n > 0)
-      .map(([name, value]) => ({ name, value }));
-  }, [maintenance]);
-
-  const tableRows = useMemo(() => {
-    const propsList = portfolio?.occupancyByProperty ?? portfolio?.properties ?? [];
-    const wo = maintenance?.workOrdersByProperty ?? {};
-    return propsList.map((p) => {
-      const occ = p.occupiedCount ?? p.unitCount - p.vacantCount;
-      const occPct = p.occupancyRatePercent;
-      const onNotice = p.onNoticeCount ?? 0;
-      const woCount =
-        wo[p.propertyName] ??
-        Object.entries(wo).find(([k]) => k.toLowerCase() === p.propertyName.toLowerCase())?.[1] ??
-        0;
-      return {
-        propertyName: p.propertyName,
-        unitCount: p.unitCount,
-        occupied: occ,
-        vacant: p.vacantCount,
-        onNotice,
-        occPct,
-        woCount: typeof woCount === "number" ? woCount : 0,
-      };
-    });
-  }, [portfolio, maintenance]);
-
-  const sortedFiltered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let rows = tableRows.filter((r) => !q || r.propertyName.toLowerCase().includes(q));
-    const dir = sortDir === "asc" ? 1 : -1;
-    rows = [...rows].sort((a, b) => {
-      let va: string | number = 0;
-      let vb: string | number = 0;
-      switch (sortKey) {
-        case "propertyName":
-          va = a.propertyName;
-          vb = b.propertyName;
-          return dir * String(va).localeCompare(String(vb));
-        case "unitCount":
-          va = a.unitCount;
-          vb = b.unitCount;
-          break;
-        case "occupied":
-          va = a.occupied;
-          vb = b.occupied;
-          break;
-        case "vacant":
-          va = a.vacant;
-          vb = b.vacant;
-          break;
-        case "onNotice":
-          va = a.onNotice;
-          vb = b.onNotice;
-          break;
-        case "occPct":
-          va = a.occPct;
-          vb = b.occPct;
-          break;
-        case "wo":
-          va = a.woCount;
-          vb = b.woCount;
-          break;
-        default:
-          return 0;
-      }
-      return dir * ((va as number) - (vb as number));
-    });
-    return rows;
-  }, [tableRows, search, sortKey, sortDir]);
-
-  const toggleSort = (k: SortKey) => {
-    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(k);
-      setSortDir("asc");
-    }
-  };
-
-  const expandedDetail = useMemo(() => {
-    if (!expanded || !portfolio?.propertyDirectory) return null;
-    const match = portfolio.propertyDirectory.find(
-      (row) =>
-        String(
-          (row as { property_name?: string }).property_name ??
-            (row as { PropertyName?: string }).PropertyName ??
-            ""
-        ).toLowerCase() === expanded.toLowerCase()
-    );
-    return match ?? { note: "No extra directory row matched this property name." };
-  }, [expanded, portfolio]);
-
-  if (loading && !executive) {
+  if (loading && !data) {
     return (
       <>
-        <div className={styles.skeletonGrid}>
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className={styles.skeleton} />
-          ))}
-        </div>
-        <div className={styles.skeletonGrid}>
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className={styles.skeleton} />
-          ))}
-        </div>
-        <div className={styles.chartRow}>
-          <div className={styles.skeleton} style={{ minHeight: 300 }} />
-          <div className={styles.skeleton} style={{ minHeight: 300 }} />
-        </div>
+        <div className={styles.skeletonGrid}>{[1, 2, 3, 4, 5].map((i) => <div key={i} className={styles.skeleton} />)}</div>
+        <div className={styles.chartRow}><div className={styles.skeleton} style={{ minHeight: 200 }} /><div className={styles.skeleton} style={{ minHeight: 200 }} /></div>
       </>
     );
   }
+  if (error) return <div className={styles.alert} role="alert"><strong>Could not load dashboard.</strong> {error}</div>;
+  if (!data) return <p style={{ color: GREY }}>No data yet. Run a sync from admin controls.</p>;
 
-  if (error) {
-    return (
-      <div className={styles.alert} role="alert">
-        <strong>Could not load dashboard.</strong> {error}
-      </div>
-    );
-  }
+  const { portfolioHealth: ph, pmIncome: pm, maintenanceIncome: mi, companyPL: pl, delinquency: dq, rentAnalysis: ra, growth: gr } = data;
 
-  if (!executive) {
-    return <p style={{ color: GREY }}>No executive data yet. Run a sync from the admin refresh control.</p>;
-  }
+  const agingTotal = dq.aging.bucket00to30 + dq.aging.bucket30to60 + dq.aging.bucket60to90 + dq.aging.bucket90plus;
+  const agingData = [
+    { name: "0-30 days", value: dq.aging.bucket00to30, fill: AGING_COLORS["0-30"] },
+    { name: "30-60 days", value: dq.aging.bucket30to60, fill: AGING_COLORS["30-60"] },
+    { name: "60-90 days", value: dq.aging.bucket60to90, fill: AGING_COLORS["60-90"] },
+    { name: "90+ days", value: dq.aging.bucket90plus, fill: AGING_COLORS["90+"] },
+  ];
+
+  const doorPct = Math.min(100, Math.round((ph.totalDoors / DOOR_GOAL) * 1000) / 10);
 
   return (
     <>
-      <p style={{ fontSize: "0.85rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
-        Date context: <strong>{dateLabel}</strong> ({rangeStart} → {rangeEnd}) · Revenue chart uses{" "}
-        <strong>company</strong> accounts (4xxxxx, excluding 0-4 property lines){" "}
-        <code className={styles.codeInline}>month_to_date</code> by period.
+      <p style={{ fontSize: "0.82rem", color: GREY, marginTop: 0, marginBottom: "1rem" }}>
+        Last synced: <strong>{relTime(data.lastSyncAt)}</strong> · All amounts from AppFolio GL accounts · Owner pass-through (0-xxxx) excluded
       </p>
 
-      <div className={styles.grid4}>
+      {/* ---- Section 1: Portfolio Health ---- */}
+      <h3 className={styles.sectionLabel}>Portfolio Health</h3>
+      <div className={styles.grid5}>
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Total doors</div>
-          <div className={styles.kpiValue}>{executive.totalUnits}</div>
-          <div className={styles.kpiSub}>Goal: {DOOR_GOAL} units</div>
+          <div className={styles.kpiValue}>{ph.totalDoors}</div>
+          <div className={styles.kpiSub}>Goal: {DOOR_GOAL}</div>
           <div className={styles.progressTrack}>
             <div className={styles.progressFill} style={{ width: `${doorPct}%`, background: GOLD }} />
           </div>
-          <div className={styles.kpiSub}>{doorPct}% of goal</div>
+          <div className={styles.kpiSub}>{doorPct}%</div>
         </div>
-
+        <div className={styles.kpiCard}>
+          <div className={styles.kpiLabel}>Occupied</div>
+          <div className={styles.kpiValue}>{ph.occupied}</div>
+          <div className={styles.kpiSub}>Current tenants</div>
+        </div>
+        <div className={styles.kpiCard}>
+          <div className={styles.kpiLabel}>Vacant</div>
+          <div className={styles.kpiValue} style={{ color: ph.vacant > 10 ? RED : ph.vacant > 5 ? GOLD : GREEN }}>{ph.vacant}</div>
+          <div className={styles.kpiSub}>Vacant-Unrented</div>
+        </div>
+        <div className={styles.kpiCard}>
+          <div className={styles.kpiLabel}>On notice</div>
+          <div className={styles.kpiValue}>{ph.onNotice}</div>
+          <div className={styles.kpiSub}>Notice-Unrented</div>
+        </div>
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Occupancy rate</div>
-          <div className={styles.kpiValue} style={{ color: occupancyColor(executive.occupancyRatePercent) }}>
-            {executive.occupancyRatePercent}%
+          <div className={styles.kpiValue} style={{ color: occColor(ph.occupancyRate) }}>{fmtPct(ph.occupancyRate)}</div>
+          <div className={styles.kpiSub}>{ph.occupancyRate >= 95 ? "On target" : ph.occupancyRate >= 90 ? "Below target" : "Critical"}</div>
+        </div>
+      </div>
+
+      {/* ---- Section 2 & 3: PM Income + Maintenance Income ---- */}
+      <h3 className={styles.sectionLabel}>Revenue Breakdown</h3>
+      <div className={styles.chartRow}>
+        <div className={styles.incomeCard}>
+          <div className={styles.incomeCardTitle}>PM Income (Management Revenue)</div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Revenue MTD</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(pm.revenueMtd)}</span>
           </div>
-          <div className={styles.kpiSub}>
-            {executive.occupiedUnits} occupied · {executive.vacantUnits} vacant
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Revenue YTD</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(pm.revenueYtd)}</span>
           </div>
-          {(executive.onNoticeUnits ?? 0) > 0 ? (
-            <div className={styles.kpiSub} style={{ marginTop: "0.35rem", fontWeight: 600 }}>
-              {executive.onNoticeUnits} on notice
-            </div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Last Year YTD</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(pm.lastYearYtd)}</span>
+          </div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>YoY Change</span>
+            <span className={pm.yoyChangePercent >= 0 ? styles.arrowUp : styles.arrowDown}>
+              {pm.yoyChangePercent >= 0 ? "↑" : "↓"} {Math.abs(pm.yoyChangePercent).toFixed(1)}%
+            </span>
+          </div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Revenue Per Door (MTD)</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(pm.revenuePerDoor)}</span>
+          </div>
+          {pm.topAccounts.length > 0 ? (
+            <>
+              <div style={{ fontSize: "0.78rem", color: GREY, marginTop: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Top PM Revenue Accounts (MTD)
+              </div>
+              <ul className={styles.topAccountsList}>
+                {pm.topAccounts.filter((a) => a.mtd > 0).map((a) => (
+                  <li key={a.accountName}><span>{a.accountName}</span><span>{fmtMoney(a.mtd)}</span></li>
+                ))}
+              </ul>
+            </>
           ) : null}
         </div>
 
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Company revenue (YTD)</div>
-          <div className={styles.kpiValue}>{fmtMoney(executive.totalRevenueYtd)}</div>
-          <div className={styles.kpiSub}>Company books (4xxxxx) · Goal {fmtMoney(REVENUE_GOAL)} · {revPct}% of goal</div>
-          <div className={styles.progressTrack}>
-            <div className={styles.progressFill} style={{ width: `${revPct}%`, background: BLUE }} />
+        <div className={styles.incomeCard}>
+          <div className={styles.incomeCardTitle}>Maintenance Income</div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Revenue MTD</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(mi.revenueMtd)}</span>
           </div>
-        </div>
-
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Profit margin</div>
-          <div className={styles.kpiValue} style={{ color: marginColor(executive.profitMarginPercent) }}>
-            {executive.profitMarginPercent.toFixed(1)}%
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>COGS MTD</span>
+            <span className={styles.incomeRowValue}>{fmtMoney(mi.cogsMtd)}</span>
           </div>
-          <div className={styles.kpiSub}>Net profit ÷ company revenue (4/5/6/7 accounts) · Target {MARGIN_GOAL}%</div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Gross Profit MTD</span>
+            <span className={styles.incomeRowValue} style={{ color: mi.profitMtd >= 0 ? GREEN : RED }}>{fmtMoney(mi.profitMtd)}</span>
+          </div>
+          <div className={styles.incomeRow}>
+            <span className={styles.incomeRowLabel}>Margin MTD</span>
+            <span className={styles.incomeRowValue}>{fmtPct(mi.marginMtd)}</span>
+          </div>
+          <div style={{ borderTop: "1px solid rgba(27,40,86,0.08)", marginTop: "0.65rem", paddingTop: "0.65rem" }}>
+            <div className={styles.incomeRow}>
+              <span className={styles.incomeRowLabel}>Revenue YTD</span>
+              <span className={styles.incomeRowValue}>{fmtMoney(mi.revenueYtd)}</span>
+            </div>
+            <div className={styles.incomeRow}>
+              <span className={styles.incomeRowLabel}>COGS YTD</span>
+              <span className={styles.incomeRowValue}>{fmtMoney(mi.cogsYtd)}</span>
+            </div>
+            <div className={styles.incomeRow}>
+              <span className={styles.incomeRowLabel}>Profit YTD</span>
+              <span className={styles.incomeRowValue} style={{ color: mi.profitYtd >= 0 ? GREEN : RED }}>{fmtMoney(mi.profitYtd)}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className={styles.grid4b}>
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Open work orders</div>
-          <div className={styles.kpiValue}>{executive.openWorkOrders}</div>
-          <div className={styles.kpiSub}>Avg. days to complete — (timing fields in a later phase)</div>
-        </div>
+      {/* ---- Section 4: Total Company P&L ---- */}
+      <h3 className={styles.sectionLabel}>Total Company P&L</h3>
+      <div className={styles.tableCard}>
+        <table className={styles.plTable}>
+          <thead>
+            <tr>
+              <td className={styles.plColHeader}> </td>
+              <td className={styles.plColHeader}>MTD</td>
+              <td className={styles.plColHeader}>YTD</td>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Total Revenue</td><td style={{ textAlign: "right" }}>{fmtMoney(pl.totalRevenueMtd)}</td><td style={{ textAlign: "right" }}>{fmtMoney(pl.totalRevenueYtd)}</td></tr>
+            <tr><td>Cost of Goods Sold</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.totalCogsMtd)})</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.totalCogsYtd)})</td></tr>
+            <tr className={styles.plRowTotal}><td>Gross Profit</td><td style={{ textAlign: "right" }}>{fmtMoney(pl.grossProfitMtd)}</td><td style={{ textAlign: "right" }}>{fmtMoney(pl.grossProfitYtd)}</td></tr>
+            <tr><td>Operating Expenses</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.opexMtd)})</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.opexYtd)})</td></tr>
+            <tr><td>Payroll</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.payrollMtd)})</td><td style={{ textAlign: "right" }}>({fmtMoney(pl.payrollYtd)})</td></tr>
+            <tr className={styles.plRowTotal}>
+              <td>Net Profit</td>
+              <td style={{ textAlign: "right", color: pl.netProfitMtd >= 0 ? GREEN : RED }}>{fmtMoney(pl.netProfitMtd)}</td>
+              <td style={{ textAlign: "right", color: pl.netProfitYtd >= 0 ? GREEN : RED }}>{fmtMoney(pl.netProfitYtd)}</td>
+            </tr>
+            <tr>
+              <td>Net Margin</td>
+              <td style={{ textAlign: "right", color: marginColor(pl.netMarginMtd), fontWeight: 700 }}>{fmtPct(pl.netMarginMtd)}</td>
+              <td style={{ textAlign: "right", color: marginColor(pl.netMarginYtd), fontWeight: 700 }}>{fmtPct(pl.netMarginYtd)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
+      {/* ---- Section 5: Delinquency ---- */}
+      <h3 className={styles.sectionLabel}>Delinquency</h3>
+      <div className={styles.chartRow}>
         <div className={styles.kpiCard}>
           <div className={styles.kpiLabel}>Total delinquency</div>
-          <div className={styles.kpiValue} style={{ color: delinqColor(executive.totalDelinquency) }}>
-            {fmtMoney(executive.totalDelinquency)}
-          </div>
-          <div className={styles.kpiSub}>{executive.totalDelinquency > 5000 ? "Above $5K threshold" : "Within range"}</div>
-        </div>
-
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Active leads</div>
-          <div className={styles.kpiValue}>{executive.activeLeads}</div>
-          <div className={styles.kpiSub}>
-            {(executive.screeningsTotal ?? 0) > 0
-              ? "RentEngine or guest cards (Boom separate)"
-              : "Guest cards (non-closed) or RentEngine count"}
+          <div className={styles.kpiValue} style={{ color: delinqColor(dq.totalReceivable) }}>{fmtMoney(dq.totalReceivable)}</div>
+          <div className={styles.kpiSub}>{dq.accountCount} delinquent accounts</div>
+          <div className={styles.kpiSub} style={{ marginTop: "0.25rem" }}>
+            {dq.totalReceivable > 20000 ? "⚠ Above $20K threshold" : dq.totalReceivable > 10000 ? "⚠ Above $10K threshold" : "Within acceptable range"}
           </div>
         </div>
-
-        {(executive.screeningsTotal ?? 0) > 0 ? (
-          <div className={styles.kpiCard}>
-            <div className={styles.kpiLabel}>Boom screenings</div>
-            <div className={styles.kpiValue}>{executive.screeningsTotal}</div>
-            <div className={styles.kpiSub}>Applications synced from BoomScreen</div>
-          </div>
-        ) : null}
-
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>LeadSimple open deals</div>
-          <div className={styles.kpiValue}>{executive.leadSimpleOpenDeals ?? 0}</div>
-          <div className={styles.kpiSub}>Deals with status open (cached)</div>
-        </div>
-
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>LeadSimple overdue tasks</div>
-          <div className={styles.kpiValue} style={{ color: (executive.leadSimpleOverdueTasks ?? 0) > 0 ? RED : undefined }}>
-            {executive.leadSimpleOverdueTasks ?? 0}
-          </div>
-          <div className={styles.kpiSub}>Incomplete with due date before today</div>
-        </div>
-
-        <div className={styles.kpiCard}>
-          <div className={styles.kpiLabel}>Vacant units</div>
-          <div className={styles.kpiValue} style={{ color: vacantColor(executive.vacantUnits) }}>
-            {executive.vacantUnits}
-          </div>
-          <div className={styles.kpiSub}>Rent roll (Vacant-Unrented)</div>
-        </div>
-      </div>
-
-      <div className={styles.chartRow}>
-        <div className={styles.chartCard}>
-          <h3 className={styles.chartTitle}>Monthly company revenue trend</h3>
-          {!monthly.hasData ? (
-            <div className={styles.chartPlaceholder}>Revenue data syncing… (no amounts in selected range yet)</div>
+        <div className={styles.chartCard} style={{ minHeight: "auto" }}>
+          <h3 className={styles.chartTitle}>Aging Breakdown</h3>
+          {agingTotal > 0 ? (
+            <>
+              <div className={styles.agingBarWrap}>
+                {agingData.map((d) => (
+                  d.value > 0 ? (
+                    <div key={d.name} style={{ width: `${(d.value / agingTotal) * 100}%`, background: d.fill }}>
+                      {(d.value / agingTotal) > 0.12 ? fmtMoney(d.value) : ""}
+                    </div>
+                  ) : null
+                ))}
+              </div>
+              <div className={styles.agingLegend}>
+                {agingData.map((d) => (
+                  <span key={d.name} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: d.fill, flexShrink: 0 }} />
+                    {d.name}: {fmtMoney(d.value)}
+                  </span>
+                ))}
+              </div>
+            </>
           ) : (
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <LineChart data={monthly.points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e8eaee" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke={GREY} />
-                  <YAxis
-                    tick={{ fontSize: 11 }}
-                    stroke={GREY}
-                    tickFormatter={(v) =>
-                      new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(v)
-                    }
-                  />
-                  <Tooltip
-                    formatter={(v: number) => fmtMoney(v)}
-                    labelFormatter={(l) => `Month ${l}`}
-                  />
-                  <Line type="monotone" dataKey="revenue" stroke={BLUE} strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.chartCard}>
-          <h3 className={styles.chartTitle}>Work orders by status</h3>
-          {pieData.length === 0 ? (
-            <div className={styles.chartPlaceholder}>No work order data in cache.</div>
-          ) : (
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={52}
-                    outerRadius={88}
-                    paddingAngle={2}
-                  >
-                    {pieData.map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={WO_STATUS_PIE_FILL[entry.name] ?? PIE_COLORS[i % PIE_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <div className={styles.chartPlaceholder}>No delinquency data.</div>
           )}
         </div>
       </div>
 
+      {/* ---- Section 6: Rent & Fee Analysis ---- */}
+      <h3 className={styles.sectionLabel}>Rent &amp; Fee Analysis</h3>
       <div className={styles.tableCard}>
-        <h3 className={styles.chartTitle} style={{ marginBottom: "0.65rem" }}>
-          Property performance
-        </h3>
-        <div className={styles.tableSearch}>
-          <input
-            type="search"
-            placeholder="Search properties…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search properties"
-          />
-        </div>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th onClick={() => toggleSort("propertyName")}>Property {sortKey === "propertyName" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
-                <th onClick={() => toggleSort("unitCount")}>Units</th>
-                <th onClick={() => toggleSort("occupied")}>Occupied</th>
-                <th onClick={() => toggleSort("vacant")}>Vacant</th>
-                <th onClick={() => toggleSort("onNotice")}>On notice</th>
-                <th onClick={() => toggleSort("occPct")}>Occ %</th>
-                <th onClick={() => toggleSort("wo")}>Open WO</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedFiltered.map((row) => (
-                <Fragment key={row.propertyName}>
-                  <tr>
-                    <td>
-                      <button
-                        type="button"
-                        className={styles.rowBtn}
-                        onClick={() =>
-                          setExpanded((e) => (e === row.propertyName ? null : row.propertyName))
-                        }
-                      >
-                        {row.propertyName}
-                      </button>
-                    </td>
-                    <td>{row.unitCount}</td>
-                    <td>{row.occupied}</td>
-                    <td>{row.vacant}</td>
-                    <td>{row.onNotice}</td>
-                    <td>{row.occPct}%</td>
-                    <td>{row.woCount}</td>
-                  </tr>
-                  {expanded === row.propertyName && (
-                    <tr className={styles.expandRow}>
-                      <td colSpan={7}>
-                        <strong>Details</strong>
-                        <pre className={styles.expandPre}>{JSON.stringify(expandedDetail, null, 2)}</pre>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+        <div className={styles.compGrid}>
+          <div className={styles.compGridHeader}> </div>
+          <div className={styles.compGridHeader} style={{ textAlign: "right" }}>Avg Rent</div>
+          <div className={styles.compGridHeader} style={{ textAlign: "right" }}>Avg Mgmt Fee %</div>
+
+          <div className={styles.compGridLabel}>Single-Family ({ra.singleFamily.unitCount} units)</div>
+          <div className={styles.compGridValue}>{fmtMoney(ra.singleFamily.avgRent)}</div>
+          <div className={styles.compGridValue}>{ra.singleFamily.avgMgmtFee > 0 ? `${ra.singleFamily.avgMgmtFee}%` : "—"}</div>
+
+          <div className={styles.compGridLabel}>Multi-Family ({ra.multiFamily.unitCount} units)</div>
+          <div className={styles.compGridValue}>{fmtMoney(ra.multiFamily.avgRent)}</div>
+          <div className={styles.compGridValue}>{ra.multiFamily.avgMgmtFee > 0 ? `${ra.multiFamily.avgMgmtFee}%` : "—"}</div>
         </div>
       </div>
+
+      {/* ---- Section 7: Growth ---- */}
+      <h3 className={styles.sectionLabel}>Growth</h3>
+      {gr.available ? (
+        <div className={styles.grid4}>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>New doors (MTD)</div>
+            <div className={styles.kpiValue} style={{ color: GREEN }}>{gr.newDoorsMtd ?? 0}</div>
+          </div>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>Doors lost (MTD)</div>
+            <div className={styles.kpiValue} style={{ color: (gr.doorsLostMtd ?? 0) > 0 ? RED : NAVY }}>{gr.doorsLostMtd ?? 0}</div>
+          </div>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>Net new doors</div>
+            <div className={styles.kpiValue} style={{ color: (gr.netNewDoors ?? 0) >= 0 ? GREEN : RED }}>
+              {(gr.netNewDoors ?? 0) >= 0 ? "+" : ""}{gr.netNewDoors ?? 0}
+            </div>
+          </div>
+          <div className={styles.kpiCard}>
+            <div className={styles.kpiLabel}>T12 churn rate</div>
+            <div className={styles.kpiValue}>
+              {gr.churnRate != null ? fmtPct(gr.churnRate) : "—"}
+            </div>
+            <div className={styles.kpiSub}>{gr.churnMessage || "Trailing 12-month"}</div>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.kpiCard} style={{ marginBottom: "1rem" }}>
+          <div className={styles.kpiSub}>{gr.message}</div>
+        </div>
+      )}
     </>
   );
 }

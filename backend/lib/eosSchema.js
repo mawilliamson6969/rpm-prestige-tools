@@ -242,6 +242,19 @@ export async function ensureEosSchema() {
   console.log("[eos] Seeded scorecard metrics and Q2 2026 rocks.");
 }
 
+export async function ensurePortfolioSnapshotsSchema() {
+  const pool = getPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+      id SERIAL PRIMARY KEY,
+      snapshot_date DATE NOT NULL UNIQUE,
+      total_doors INTEGER NOT NULL,
+      property_ids JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+}
+
 export async function ensureIndividualScorecardSchema() {
   const pool = getPool();
   await pool.query(`
