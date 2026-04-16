@@ -898,3 +898,77 @@
   color: var(--navy);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- Maintenance V2 ---- */
+
+.filterToggle {
+  display: inline-flex;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--white);
+}
+
+.filterToggleBtn {
+  border: none;
+  background: var(--white);
+  color: var(--grey);
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border-right: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.filterToggleBtn:last-child { border-right: none; }
+
+.filterToggleBtnActive {
+  background: rgba(0, 152, 208, 0.15);
+  color: var(--navy);
+}
+
+.filterToggleBtn:hover:not(.filterToggleBtnActive) {
+  background: rgba(0, 152, 208, 0.06);
+  color: var(--navy);
+}
+
+.woStatus {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.woStatusNew { background: rgba(106, 115, 123, 0.15); color: #4a5259; }
+.woStatusEstimateRequested { background: rgba(230, 81, 0, 0.12); color: #b34a00; }
+.woStatusEstimated { background: rgba(230, 81, 0, 0.12); color: #b34a00; }
+.woStatusAssigned { background: rgba(0, 152, 208, 0.15); color: #0076a3; }
+.woStatusScheduled { background: rgba(197, 150, 12, 0.18); color: #8a6700; }
+.woStatusWaiting { background: rgba(124, 58, 237, 0.15); color: #5b23b5; }
+.woStatusWorkDone { background: rgba(14, 165, 153, 0.15); color: #0a7a71; }
+.woStatusReadyToBill { background: rgba(45, 139, 78, 0.15); color: #1a6b3d; }
+.woStatusCompleted { background: rgba(45, 139, 78, 0.15); color: #1a6b3d; }
+.woStatusCanceled { background: rgba(106, 115, 123, 0.2); color: #4a5259; }
+
+.priorityBadge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.priorityNormal { background: rgba(106, 115, 123, 0.15); color: #4a5259; }
+.priorityUrgent { background: rgba(230, 81, 0, 0.15); color: #b34a00; }
+.priorityEmergency { background: rgba(179, 35, 23, 0.15); color: #8a1a10; }
+
+.maintCaption {
+  font-size: 0.82rem;
+  color: var(--grey);
+  background: rgba(0, 152, 208, 0.06);
+  border: 1px solid rgba(0, 152, 208, 0.15);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  margin-bottom: 1rem;
+}

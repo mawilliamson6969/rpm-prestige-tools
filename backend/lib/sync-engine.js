@@ -2,6 +2,8 @@
  * Phase 1: AppFolio Reports API v2 → PostgreSQL cache. Runs on cron / manual / startup.
  */
 import {
+  getAppfolioReportAbsoluteUrl,
+  getAppfolioSavedReport,
   getNextPageUrl,
   normalizeReportResults,
   postAppfolioReport,
@@ -20,6 +22,8 @@ const TABLES = {
   rent_roll: "cached_rent_roll",
   income_statement: "cached_income_statement",
   work_orders: "cached_work_orders",
+  work_orders_all: "cached_work_orders_all",
+  work_order_labor: "cached_work_order_labor",
   delinquency: "cached_delinquency",
   owners: "cached_owners",
   guest_cards: "cached_guest_cards",
@@ -65,6 +69,15 @@ function ninetyDaysAgoYyyyMmDd() {
   return `${y}-${m}-${day}`;
 }
 
+function twoYearsAgoYyyyMmDd() {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - 2);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 let httpCallIndex = 0;
 
 async function reportHttp(runFetch) {
@@ -86,6 +99,31 @@ async function fetchAllReportRows(endpointFilename, initialBody) {
       nextUrl
         ? postAppfolioReportAbsoluteUrl(nextUrl, {})
         : postAppfolioReport(endpointFilename, initialBody)
+    );
+    if (firstResponse === null) firstResponse = json;
+    collected.push(...normalizeReportResults(json));
+    const nxt = getNextPageUrl(json);
+    if (!nxt) break;
+    nextUrl = nxt;
+  }
+  return { rows: collected, firstResponse };
+}
+
+/**
+ * Fetch all rows from an AppFolio saved report (GET-based pagination).
+ * @param {string} uuid — saved report UUID
+ * @returns {{ rows: unknown[], firstResponse: unknown }}
+ */
+async function fetchAllSavedReportRows(uuid) {
+  const collected = [];
+  let nextUrl = null;
+  let firstResponse = null;
+
+  for (;;) {
+    const json = await reportHttp(() =>
+      nextUrl
+        ? getAppfolioReportAbsoluteUrl(nextUrl)
+        : getAppfolioSavedReport(uuid)
     );
     if (firstResponse === null) firstResponse = json;
     collected.push(...normalizeReportResults(json));
@@ -162,6 +200,11 @@ const ENDPOINTS = [
     body: () => ({
       property_visibility: "active",
       from_date: ninetyDaysAgoYyyyMmDd(),
+      work_order_status: [
+        "New", "Estimate Requested", "Estimated", "Assigned",
+        "Scheduled", "Waiting", "Work Done", "Ready to Bill",
+      ],
+      work_order_type: ["Internal", "Resident", "Unit Turn"],
       paginate_results: false,
     }),
   },
@@ -207,6 +250,20 @@ const ENDPOINTS = [
     table: TABLES.vendors,
     body: () => ({ paginate_results: false }),
   },
+  {
+    key: "work_order_all",
+    type: "saved_report",
+    uuid: () => process.env.APPFOLIO_WO_ALL_UUID || "",
+    table: TABLES.work_orders_all,
+    dailyOnly: true,
+  },
+  {
+    key: "work_order_labor",
+    type: "saved_report",
+    uuid: () => process.env.APPFOLIO_WO_LABOR_UUID || "",
+    table: TABLES.work_order_labor,
+    dailyOnly: true,
+  },
 ];
 
 let syncInProgress = false;
@@ -218,7 +275,17 @@ export function isSyncRunning() {
 async function syncOneEndpoint(def, syncErrors) {
   const client = await getPool().connect();
   try {
-    const { rows, firstResponse } = await fetchAllReportRows(def.file, def.body());
+    let rows, firstResponse;
+    if (def.type === "saved_report") {
+      const uuid = typeof def.uuid === "function" ? def.uuid() : def.uuid;
+      if (!uuid) {
+        console.log(`[sync] ${def.key}: skipped (no UUID configured)`);
+        return { rowCount: 0, endpoint: def.key };
+      }
+      ({ rows, firstResponse } = await fetchAllSavedReportRows(uuid));
+    } else {
+      ({ rows, firstResponse } = await fetchAllReportRows(def.file, def.body()));
+    }
     const period = typeof def.period === "function" ? def.period() : null;
     await client.query("BEGIN");
     await client.query(`DELETE FROM ${def.table}`);
@@ -272,7 +339,7 @@ async function insertSyncLog(triggeredBy) {
   return logRow.id;
 }
 
-async function runSyncEndpointsForId(syncId, triggeredBy) {
+async function runSyncEndpointsForId(syncId, triggeredBy, { includeDaily = false } = {}) {
   const pool = getPool();
   const syncErrors = [];
   let endpointsSynced = 0;
@@ -280,6 +347,9 @@ async function runSyncEndpointsForId(syncId, triggeredBy) {
 
   try {
     for (const def of ENDPOINTS) {
+      if (def.dailyOnly && !includeDaily) {
+        continue;
+      }
       const result = await syncOneEndpoint(def, syncErrors);
       if (!result.failed) endpointsSynced += 1;
       totalRows += result.rowCount;
@@ -331,7 +401,7 @@ async function runSyncEndpointsForId(syncId, triggeredBy) {
  * Awaited sync (cron / startup).
  * @param {string} triggeredBy — 'cron' | 'manual' | 'startup'
  */
-export async function runFullSync(triggeredBy) {
+export async function runFullSync(triggeredBy, opts = {}) {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not set");
   }
@@ -346,7 +416,7 @@ export async function runFullSync(triggeredBy) {
 
   try {
     const syncId = await insertSyncLog(triggeredBy);
-    return await runSyncEndpointsForId(syncId, triggeredBy);
+    return await runSyncEndpointsForId(syncId, triggeredBy, { includeDaily: !!opts.includeDaily });
   } finally {
     syncInProgress = false;
   }

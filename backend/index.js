@@ -20,11 +20,13 @@ import {
   ensureWalkthruSchema,
   ensureWikiSchema,
   ensurePlaybookSchema,
+  ensureMaintenanceDashboardSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
+import { getMaintenanceDashboardV2, getTechnicianConfig, putTechnicianConfig } from "./routes/maintenance-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
 import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
@@ -424,6 +426,9 @@ app.get("/sync/history", requireAuth, getSyncHistoryRoute);
 
 app.get("/dashboard/executive", requireAuth, getDashboardExecutive);
 app.get("/dashboard/executive-v2", requireAuth, getExecutiveDashboardV2);
+app.get("/dashboard/maintenance-v2", requireAuth, getMaintenanceDashboardV2);
+app.get("/admin/technician-config", requireAuth, getTechnicianConfig);
+app.put("/admin/technician-config/:id", requireAuth, requireAdminRole, putTechnicianConfig);
 app.get("/dashboard/leasing", requireAuth, getDashboardLeasing);
 app.get("/dashboard/maintenance", requireAuth, getDashboardMaintenance);
 app.get("/dashboard/finance", requireAuth, getDashboardFinance);
@@ -723,6 +728,8 @@ async function start() {
       console.log("Database schema OK (wiki).");
       await ensurePlaybookSchema();
       console.log("Database schema OK (playbooks).");
+      await ensureMaintenanceDashboardSchema();
+      console.log("Database schema OK (maintenance dashboard).");
       await ensureFilesSchema();
       console.log("Database schema OK (files / file_folders).");
       await ensureWalkthruSchema();
@@ -744,9 +751,14 @@ async function start() {
 
   if (process.env.DATABASE_URL) {
     cron.schedule("0 */4 * * *", () => {
-      runFullSync("cron").catch((e) => console.error("[sync cron]", e.message || e));
+      runFullSync("cron", { includeDaily: false }).catch((e) => console.error("[sync cron]", e.message || e));
     });
     console.log("Scheduled AppFolio cache sync: 0 */4 * * * (every 4 hours).");
+
+    cron.schedule("0 2 * * *", () => {
+      runFullSync("daily", { includeDaily: true }).catch((e) => console.error("[sync daily]", e.message || e));
+    });
+    console.log("Scheduled daily full sync (incl. all WOs): 0 2 * * * (2 AM).");
 
     setTimeout(() => {
       runFullSync("startup").catch((e) => console.error("[sync startup]", e.message || e));

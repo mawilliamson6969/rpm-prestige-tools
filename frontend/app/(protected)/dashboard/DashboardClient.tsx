@@ -381,12 +381,7 @@ export default function DashboardClient() {
         )}
         {tab === "maintenance" && (
           <div className={styles.tabPanel}>
-            <MaintenancePanel
-              maintenance={maintenance as never}
-              executive={executive as never}
-              loading={loading}
-              error={error}
-            />
+            <MaintenancePanel />
           </div>
         )}
         {tab === "finance" && (

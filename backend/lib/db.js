@@ -608,6 +608,72 @@ export async function ensureWikiSchema() {
   }
 }
 
+export async function ensureMaintenanceDashboardSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS cached_work_orders_all (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_wo_all_status ON cached_work_orders_all ((appfolio_data->>'status'));
+    CREATE INDEX IF NOT EXISTS idx_wo_all_vendor ON cached_work_orders_all ((appfolio_data->>'vendor'));
+    CREATE INDEX IF NOT EXISTS idx_wo_all_created ON cached_work_orders_all ((appfolio_data->>'created_at'));
+    CREATE INDEX IF NOT EXISTS idx_wo_all_completed ON cached_work_orders_all ((appfolio_data->>'completed_on'));
+    CREATE INDEX IF NOT EXISTS idx_wo_all_wo_id ON cached_work_orders_all ((appfolio_data->>'work_order_id'));
+
+    CREATE TABLE IF NOT EXISTS cached_work_order_labor (
+      id SERIAL PRIMARY KEY,
+      appfolio_data JSONB NOT NULL,
+      synced_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_wo_labor_wo_id ON cached_work_order_labor ((appfolio_data->>'work_order_id'));
+    CREATE INDEX IF NOT EXISTS idx_wo_labor_tech ON cached_work_order_labor ((appfolio_data->>'maintenance_tech'));
+    CREATE INDEX IF NOT EXISTS idx_wo_labor_date ON cached_work_order_labor ((appfolio_data->>'date'));
+
+    CREATE TABLE IF NOT EXISTS technician_config (
+      id SERIAL PRIMARY KEY,
+      technician_name VARCHAR(255) UNIQUE NOT NULL,
+      hourly_cost NUMERIC(10,2) DEFAULT 25.00,
+      is_active BOOLEAN DEFAULT true,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS maintenance_surveys (
+      id SERIAL PRIMARY KEY,
+      work_order_id VARCHAR(50),
+      access_token VARCHAR(64) UNIQUE NOT NULL,
+      tenant_email VARCHAR(255),
+      tenant_name VARCHAR(255),
+      property_name VARCHAR(255),
+      vendor_name VARCHAR(255),
+      is_inhouse BOOLEAN,
+      satisfaction_score INTEGER,
+      completely_resolved BOOLEAN,
+      timely_completion BOOLEAN,
+      comments TEXT,
+      submitted_at TIMESTAMP,
+      sent_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // Auto-seed technician_config from labor data
+  try {
+    await p.query(`
+      INSERT INTO technician_config (technician_name, hourly_cost, is_active)
+      SELECT DISTINCT appfolio_data->>'maintenance_tech', 25.00, true
+      FROM cached_work_order_labor
+      WHERE appfolio_data->>'maintenance_tech' IS NOT NULL
+        AND appfolio_data->>'maintenance_tech' != ''
+      ON CONFLICT (technician_name) DO NOTHING
+    `);
+  } catch (e) {
+    // Labor table may be empty on first run
+  }
+}
+
 export async function ensurePlaybookSchema() {
   const p = getPool();
   await p.query(`

@@ -248,6 +248,57 @@ export async function postAppfolioReport(endpointFilename, bodyObj) {
   return postAppfolioReportAbsoluteUrl(url, bodyObj);
 }
 
+/**
+ * GET a saved AppFolio report by absolute URL (for saved reports + pagination).
+ */
+export async function getAppfolioReportAbsoluteUrl(url) {
+  const { clientId, clientSecret } = requireAppfolioConfig();
+  await acquireAppfolioRateSlot();
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: basicAuthHeader(clientId, clientSecret),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (e) {
+    const err = new Error(`Could not reach AppFolio: ${e.message || "network error"}`);
+    err.code = "APPFOLIO_NETWORK";
+    err.cause = e;
+    throw err;
+  }
+  const text = await res.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const err = new Error("AppFolio returned a non-JSON response.");
+    err.code = "APPFOLIO_PARSE";
+    err.status = res.status;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(json?.error || json?.message || `AppFolio request failed (${res.status})`);
+    err.code = "APPFOLIO_HTTP";
+    err.status = res.status;
+    err.details = json;
+    throw err;
+  }
+  return json;
+}
+
+/**
+ * GET a saved AppFolio report by UUID.
+ */
+export async function getAppfolioSavedReport(uuid) {
+  const { subdomain } = requireAppfolioConfig();
+  const url = `https://${subdomain}.appfolio.com/api/v2/reports/saved/${uuid}.json?paginate_results=true&limit=5000`;
+  return getAppfolioReportAbsoluteUrl(url);
+}
+
 export function summarizeOccupancy(unitsArray) {
   const units = Array.isArray(unitsArray) ? unitsArray : [];
   const totalUnitCount = units.length;
