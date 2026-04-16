@@ -191,7 +191,9 @@ export function getNextPageUrl(json) {
  * POST to a full AppFolio Reports API URL (used for pagination via next_page_url).
  */
 export async function postAppfolioReportAbsoluteUrl(url, bodyObj) {
-  const { clientId, clientSecret } = requireAppfolioConfig();
+  const { clientId, clientSecret, subdomain } = requireAppfolioConfig();
+  // AppFolio pagination returns relative URLs — convert to absolute
+  const fullUrl = /^https?:\/\//i.test(url) ? url : `https://${subdomain}.appfolio.com${url.startsWith("/") ? "" : "/"}${url}`;
   const body =
     typeof bodyObj === "string" ? bodyObj : JSON.stringify(bodyObj ?? {});
 
@@ -199,7 +201,7 @@ export async function postAppfolioReportAbsoluteUrl(url, bodyObj) {
 
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetch(fullUrl, {
       method: "POST",
       headers: {
         Authorization: basicAuthHeader(clientId, clientSecret),
@@ -252,11 +254,13 @@ export async function postAppfolioReport(endpointFilename, bodyObj) {
  * GET a saved AppFolio report by absolute URL (for saved reports + pagination).
  */
 export async function getAppfolioReportAbsoluteUrl(url) {
-  const { clientId, clientSecret } = requireAppfolioConfig();
+  const { clientId, clientSecret, subdomain } = requireAppfolioConfig();
+  // AppFolio pagination returns relative URLs — convert to absolute
+  const fullUrl = /^https?:\/\//i.test(url) ? url : `https://${subdomain}.appfolio.com${url.startsWith("/") ? "" : "/"}${url}`;
   await acquireAppfolioRateSlot();
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetch(fullUrl, {
       method: "GET",
       headers: {
         Authorization: basicAuthHeader(clientId, clientSecret),
