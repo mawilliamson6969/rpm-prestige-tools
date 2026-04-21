@@ -306,7 +306,7 @@ export default function IntranetHub() {
                 <ToolCardLive
                   href="/operations/tasks"
                   title="Operations Hub"
-                  description="📋 Task management, process workflows, and team operations"
+                  description="📋 Task management, projects, process workflows, and team operations"
                 />
               </div>
 

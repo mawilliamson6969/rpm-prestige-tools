@@ -328,6 +328,60 @@ export async function postTemplateStep(req, res) {
   }
 }
 
+export async function postTemplateStepTestAutomation(req, res) {
+  const id = Number.parseInt(req.params.stepId, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid step id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT s.*, t.name AS template_name
+       FROM process_template_steps s
+       JOIN process_templates t ON t.id = s.template_id
+       WHERE s.id = $1`,
+      [id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Step not found." });
+      return;
+    }
+    const step = rows[0];
+    if (!step.auto_action) {
+      res.json({ ok: false, error: "no automation configured" });
+      return;
+    }
+    const { replaceTemplateVars } = await import("../lib/process-automation.js");
+    // Use dummy process data for the dry-run preview.
+    const dummyProcess = {
+      id: 0,
+      name: step.template_name,
+      property_name: "123 Example St",
+      contact_name: "Jane Doe",
+      contact_email: "jane@example.com",
+      contact_phone: "555-0100",
+      started_at: new Date().toISOString(),
+      target_completion: null,
+    };
+    const config = step.auto_action_config || {};
+    const resolved = {};
+    for (const [k, v] of Object.entries(config)) {
+      resolved[k] = typeof v === "string" ? replaceTemplateVars(v, dummyProcess) : v;
+    }
+    res.json({
+      ok: true,
+      dryRun: true,
+      action: step.auto_action,
+      resolvedConfig: resolved,
+      sampleVariables: dummyProcess,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not test automation." });
+  }
+}
+
 export async function putTemplateStep(req, res) {
   const id = Number.parseInt(req.params.stepId, 10);
   if (!Number.isFinite(id)) {
@@ -361,6 +415,16 @@ export async function putTemplateStep(req, res) {
       "stepNumber",
       "step_number",
       (v) => (Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined),
+    ],
+    [
+      "autoAction",
+      "auto_action",
+      (v) => (v === null || v === "" ? null : typeof v === "string" ? v.trim() : undefined),
+    ],
+    [
+      "autoActionConfig",
+      "auto_action_config",
+      (v) => (v === null ? null : typeof v === "object" ? v : undefined),
     ],
   ];
   for (const [key, col, parse] of fields) {

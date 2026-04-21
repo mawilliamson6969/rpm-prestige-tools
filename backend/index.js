@@ -297,6 +297,7 @@ import {
   postTemplate,
   postTemplateDuplicate,
   postTemplateStep,
+  postTemplateStepTestAutomation,
   putTemplate,
   putTemplateStep,
   putTemplateStepsReorder,
@@ -305,7 +306,9 @@ import {
   deleteProcess,
   getProcess,
   getProcesses,
+  getProcessStepActivity,
   postProcess,
+  postProcessStepAutomationRetry,
   postProcessStepComment,
   putProcess,
   putProcessStatus,
@@ -313,6 +316,7 @@ import {
   putProcessStepComplete,
   putProcessStepSkip,
 } from "./routes/processes.js";
+import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import {
   deleteTask,
   getMyTasks,
@@ -324,6 +328,29 @@ import {
   putTask,
   putTaskComplete,
 } from "./routes/tasks.js";
+import {
+  deleteProject,
+  deleteProjectMember,
+  deleteProjectMilestone,
+  deleteProjectNote,
+  getProject,
+  getProjectMembers,
+  getProjectMilestones,
+  getProjectNotes,
+  getProjects,
+  getProjectsDashboard,
+  postProject,
+  postProjectMember,
+  postProjectMilestone,
+  postProjectNote,
+  putProject,
+  putProjectMilestone,
+  putProjectMilestoneComplete,
+  putProjectMilestonesReorder,
+  putProjectNote,
+  putProjectNotePin,
+  putProjectStatus,
+} from "./routes/projects.js";
 import {
   deleteAgent,
   deleteAgentTraining,
@@ -747,9 +774,22 @@ app.put("/processes/templates/:id", requireAuth, requireAdminRole, putTemplate);
 app.delete("/processes/templates/:id", requireAuth, requireAdminRole, deleteTemplate);
 app.put("/processes/template-steps/:stepId", requireAuth, requireAdminRole, putTemplateStep);
 app.delete("/processes/template-steps/:stepId", requireAuth, requireAdminRole, deleteTemplateStep);
+app.post(
+  "/processes/template-steps/:stepId/test-automation",
+  requireAuth,
+  requireAdminRole,
+  postTemplateStepTestAutomation
+);
 
 app.put("/processes/steps/:stepId/complete", requireAuth, putProcessStepComplete);
 app.put("/processes/steps/:stepId/skip", requireAuth, putProcessStepSkip);
+app.post(
+  "/processes/steps/:stepId/retry-automation",
+  requireAuth,
+  requireAdminRole,
+  postProcessStepAutomationRetry
+);
+app.get("/processes/steps/:stepId/activity", requireAuth, getProcessStepActivity);
 app.post("/processes/steps/:stepId/comments", requireAuth, postProcessStepComment);
 app.put("/processes/steps/:stepId", requireAuth, putProcessStep);
 
@@ -769,6 +809,48 @@ app.put("/tasks/:id/complete", requireAuth, putTaskComplete);
 app.put("/tasks/:id", requireAuth, putTask);
 app.delete("/tasks/:id", requireAuth, deleteTask);
 app.post("/tasks/:id/comments", requireAuth, postTaskComment);
+
+/** Projects — container for milestones, tasks, notes, members */
+app.get("/projects/dashboard", requireAuth, getProjectsDashboard);
+app.get("/projects", requireAuth, getProjects);
+app.post("/projects", requireAuth, postProject);
+app.get("/projects/:id/milestones", requireAuth, getProjectMilestones);
+app.post("/projects/:id/milestones", requireAuth, postProjectMilestone);
+app.put("/projects/:id/milestones/reorder", requireAuth, putProjectMilestonesReorder);
+app.get("/projects/:id/members", requireAuth, getProjectMembers);
+app.post("/projects/:id/members", requireAuth, postProjectMember);
+app.delete("/projects/:id/members/:userId", requireAuth, deleteProjectMember);
+app.get("/projects/:id/notes", requireAuth, getProjectNotes);
+app.post("/projects/:id/notes", requireAuth, postProjectNote);
+app.get(
+  "/projects/:id/tasks",
+  requireAuth,
+  (req, _res, next) => {
+    req.query.projectId = req.params.id;
+    next();
+  },
+  getTasks
+);
+app.post(
+  "/projects/:id/tasks",
+  requireAuth,
+  (req, _res, next) => {
+    req.body = req.body || {};
+    req.body.projectId = req.params.id;
+    next();
+  },
+  postTask
+);
+app.put("/projects/:id/status", requireAuth, putProjectStatus);
+app.get("/projects/:id", requireAuth, getProject);
+app.put("/projects/:id", requireAuth, putProject);
+app.delete("/projects/:id", requireAuth, deleteProject);
+app.put("/projects/milestones/:milestoneId/complete", requireAuth, putProjectMilestoneComplete);
+app.put("/projects/milestones/:milestoneId", requireAuth, putProjectMilestone);
+app.delete("/projects/milestones/:milestoneId", requireAuth, deleteProjectMilestone);
+app.put("/projects/notes/:noteId/pin", requireAuth, putProjectNotePin);
+app.put("/projects/notes/:noteId", requireAuth, putProjectNote);
+app.delete("/projects/notes/:noteId", requireAuth, deleteProjectNote);
 
 async function start() {
   if (process.env.DATABASE_URL) {
@@ -847,6 +929,13 @@ async function start() {
       takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot cron]", e.message || e));
     });
     console.log("Scheduled portfolio snapshot: 0 6 * * * (daily at 6 AM).");
+
+    cron.schedule("0 * * * *", () => {
+      processDelayedAutoCompletes().catch((e) =>
+        console.error("[automation delay cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled process automation delay check: 0 * * * * (hourly).");
 
     // Take initial snapshot on startup if none exists today
     takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot startup]", e.message || e));

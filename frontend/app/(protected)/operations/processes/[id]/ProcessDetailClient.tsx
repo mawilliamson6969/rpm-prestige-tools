@@ -7,6 +7,7 @@ import OperationsTopBar from "../../OperationsTopBar";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type { ProcessRecord, ProcessStatus, ProcessStep, StepStatus, TeamUser } from "../../types";
+import { AUTO_ACTION_LABELS } from "../../types";
 
 function stepStatusClass(s: StepStatus): string {
   return styles[`status${s.charAt(0).toUpperCase() + s.slice(1).replace("_", "")}` as keyof typeof styles] ?? styles.statusPending;
@@ -24,6 +25,9 @@ export default function ProcessDetailClient({ processId }: { processId: string }
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
+  const [stepActivity, setStepActivity] = useState<
+    Record<number, Array<{ id: number; comment: string; created_at: string; user_name: string | null }>>
+  >({});
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -110,6 +114,37 @@ export default function ProcessDetailClient({ processId }: { processId: string }
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not reassign.");
+    }
+  };
+
+  const loadStepActivity = async (stepId: number) => {
+    try {
+      const res = await fetch(apiUrl(`/processes/steps/${stepId}/activity`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.comments)) {
+        setStepActivity((prev) => ({ ...prev, [stepId]: body.comments }));
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const retryAutomation = async (step: ProcessStep) => {
+    try {
+      const res = await fetch(apiUrl(`/processes/steps/${step.id}/retry-automation`), {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Retry failed.");
+      await load();
+      await loadStepActivity(step.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not retry automation.");
     }
   };
 
@@ -241,7 +276,11 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                           width: "100%",
                           font: "inherit",
                         }}
-                        onClick={() => setExpandedStep(isExpanded ? null : step.id)}
+                        onClick={() => {
+                          const next = isExpanded ? null : step.id;
+                          setExpandedStep(next);
+                          if (next && !stepActivity[step.id]) loadStepActivity(step.id);
+                        }}
                       >
                         <h3
                           className={`${styles.stepName} ${
@@ -249,6 +288,14 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                           }`}
                         >
                           {step.name}
+                          {step.autoAction ? (
+                            <span
+                              className={styles.boltIcon}
+                              title={`Automated: ${AUTO_ACTION_LABELS[step.autoAction]?.label}`}
+                            >
+                              ⚡
+                            </span>
+                          ) : null}
                         </h3>
                       </button>
                       <div className={styles.stepMeta}>
@@ -278,6 +325,33 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                             <p style={{ margin: "0 0 0.5rem", fontSize: "0.88rem" }}>
                               {step.description}
                             </p>
+                          ) : null}
+                          {step.automationStatus === "failed" ? (
+                            <div className={styles.automationFailedNote}>
+                              <span>⚠️ Automation failed: {step.automationError || "unknown error"}</span>
+                              {isAdmin ? (
+                                <button
+                                  type="button"
+                                  className={styles.smallBtn}
+                                  onClick={() => retryAutomation(step)}
+                                >
+                                  Retry
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {stepActivity[step.id] && stepActivity[step.id].length ? (
+                            <div className={styles.commentList}>
+                              {stepActivity[step.id].map((c) => (
+                                <div key={c.id} className={styles.commentItem}>
+                                  <div className={styles.commentMeta}>
+                                    {c.user_name || "System"} ·{" "}
+                                    {new Date(c.created_at).toLocaleString()}
+                                  </div>
+                                  {c.comment}
+                                </div>
+                              ))}
+                            </div>
                           ) : null}
                           {!isCompleted && !isSkipped ? (
                             <div className={styles.stepActions}>

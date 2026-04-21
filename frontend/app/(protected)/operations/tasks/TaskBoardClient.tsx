@@ -233,6 +233,14 @@ export default function TaskBoardClient() {
             {t.processName ? (
               <span className={styles.processBadge}>🔗 {t.processName}</span>
             ) : null}
+            {t.projectName ? (
+              <span
+                className={styles.taskProjectBadge}
+                style={{ borderLeftColor: t.projectColor || "#0098D0" }}
+              >
+                {t.projectIcon || "📁"} {t.projectName}
+              </span>
+            ) : null}
             {t.category ? <span className={styles.categoryTag}>{t.category}</span> : null}
           </div>
           {isExpanded ? (

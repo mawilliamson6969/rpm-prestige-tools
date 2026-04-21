@@ -190,7 +190,95 @@ export async function ensureOperationsSchema() {
     CREATE INDEX IF NOT EXISTS idx_process_steps_process ON process_steps(process_id, step_number);
     CREATE INDEX IF NOT EXISTS idx_processes_status ON processes(status);
     CREATE INDEX IF NOT EXISTS idx_processes_property ON processes(property_id);
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      message TEXT NOT NULL,
+      link TEXT,
+      read_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
   `);
+
+  await pool.query(
+    `ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS auto_action VARCHAR(50)`
+  );
+  await pool.query(
+    `ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS auto_action_config JSONB`
+  );
+  await pool.query(
+    `ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS automation_status VARCHAR(20)`
+  );
+  await pool.query(
+    `ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS automation_error TEXT`
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      status VARCHAR(20) DEFAULT 'active',
+      priority VARCHAR(20) DEFAULT 'normal',
+      category VARCHAR(100),
+      color VARCHAR(7) DEFAULT '#0098D0',
+      icon VARCHAR(10) DEFAULT '📁',
+      owner_user_id INTEGER REFERENCES users(id),
+      property_name VARCHAR(500),
+      property_id INTEGER,
+      start_date DATE,
+      target_date DATE,
+      completed_at TIMESTAMP,
+      budget NUMERIC(12,2),
+      spent NUMERIC(12,2) DEFAULT 0,
+      tags TEXT[] DEFAULT '{}',
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_milestones (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      due_date DATE,
+      status VARCHAR(20) DEFAULT 'pending',
+      completed_at TIMESTAMP,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_notes (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      title VARCHAR(255),
+      content TEXT NOT NULL,
+      is_pinned BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_members (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      role VARCHAR(50) DEFAULT 'member',
+      added_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(project_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+    CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_milestones_project ON project_milestones(project_id);
+  `);
+
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)`);
 
   const { rows: existing } = await pool.query(`SELECT COUNT(*)::int AS c FROM process_templates`);
   if (existing[0].c > 0) return;

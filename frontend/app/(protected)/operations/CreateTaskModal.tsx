@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import styles from "./operations.module.css";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
-import type { Task, TaskPriority, TeamUser } from "./types";
+import type { Project, Task, TaskPriority, TeamUser } from "./types";
 import { CATEGORIES, PRIORITY_OPTIONS } from "./types";
 
 type Props = {
@@ -16,7 +16,7 @@ type Props = {
 };
 
 export default function CreateTaskModal({ open, onClose, onCreated, users, initial }: Props) {
-  const { authHeaders, user } = useAuth();
+  const { authHeaders, user, token } = useAuth();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("normal");
@@ -26,10 +26,31 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
   const [category, setCategory] = useState("");
+  const [projectId, setProjectId] = useState<string>("");
   const [tagsInput, setTagsInput] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  const loadProjects = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/projects?status=active"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.projects)) setProjects(body.projects);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token]);
+
+  useEffect(() => {
+    if (open) loadProjects();
+  }, [open, loadProjects]);
 
   useEffect(() => {
     if (!open) return;
@@ -44,6 +65,7 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
     setDueDate(initial?.dueDate ?? "");
     setDueTime(initial?.dueTime ?? "");
     setCategory(initial?.category ?? "");
+    setProjectId(initial?.projectId != null ? String(initial.projectId) : "");
     setTagsInput((initial?.tags ?? []).join(", "));
     setNotes(initial?.notes ?? "");
     setErr(null);
@@ -73,6 +95,7 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
           dueDate: dueDate || undefined,
           dueTime: dueTime || undefined,
           category: category || undefined,
+          projectId: projectId ? Number(projectId) : undefined,
           tags: tagsInput
             .split(",")
             .map((s) => s.trim())
@@ -176,6 +199,17 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
               <label>Contact (optional)</label>
               <input value={contactName} onChange={(e) => setContactName(e.target.value)} />
             </div>
+          </div>
+          <div className={styles.field}>
+            <label>Project (optional)</label>
+            <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">— None —</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.icon} {p.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className={styles.field}>
             <label>Tags (comma separated)</label>
