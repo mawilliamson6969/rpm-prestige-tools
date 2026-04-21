@@ -25,6 +25,7 @@ import {
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
+import { ensureOperationsSchema } from "./lib/operationsSchema.js";
 import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
 import { getMaintenanceDashboardV2, getTechnicianConfig, putTechnicianConfig } from "./routes/maintenance-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
@@ -287,6 +288,42 @@ import {
   updateMarketingChannel,
   updateMarketingContent,
 } from "./routes/marketing.js";
+import {
+  deleteTemplate,
+  deleteTemplateStep,
+  getTemplate,
+  getTemplateSteps,
+  getTemplates as getProcessTemplates,
+  postTemplate,
+  postTemplateDuplicate,
+  postTemplateStep,
+  putTemplate,
+  putTemplateStep,
+  putTemplateStepsReorder,
+} from "./routes/processTemplates.js";
+import {
+  deleteProcess,
+  getProcess,
+  getProcesses,
+  postProcess,
+  postProcessStepComment,
+  putProcess,
+  putProcessStatus,
+  putProcessStep,
+  putProcessStepComplete,
+  putProcessStepSkip,
+} from "./routes/processes.js";
+import {
+  deleteTask,
+  getMyTasks,
+  getTask,
+  getTasks,
+  getTasksDashboard,
+  postTask,
+  postTaskComment,
+  putTask,
+  putTaskComplete,
+} from "./routes/tasks.js";
 import {
   deleteAgent,
   deleteAgentTraining,
@@ -698,6 +735,41 @@ app.put("/agents/:id", requireAuth, requireAdminRole, putAgent);
 app.delete("/agents/:id", requireAuth, requireAdminRole, deleteAgent);
 app.get("/agents/:id", requireAuth, getAgentDetail);
 
+/** Operations Hub: process templates, active processes, standalone tasks */
+app.get("/processes/templates", requireAuth, getProcessTemplates);
+app.post("/processes/templates", requireAuth, requireAdminRole, postTemplate);
+app.get("/processes/templates/:id/steps", requireAuth, getTemplateSteps);
+app.post("/processes/templates/:id/steps", requireAuth, requireAdminRole, postTemplateStep);
+app.put("/processes/templates/:id/steps/reorder", requireAuth, requireAdminRole, putTemplateStepsReorder);
+app.post("/processes/templates/:id/duplicate", requireAuth, requireAdminRole, postTemplateDuplicate);
+app.get("/processes/templates/:id", requireAuth, getTemplate);
+app.put("/processes/templates/:id", requireAuth, requireAdminRole, putTemplate);
+app.delete("/processes/templates/:id", requireAuth, requireAdminRole, deleteTemplate);
+app.put("/processes/template-steps/:stepId", requireAuth, requireAdminRole, putTemplateStep);
+app.delete("/processes/template-steps/:stepId", requireAuth, requireAdminRole, deleteTemplateStep);
+
+app.put("/processes/steps/:stepId/complete", requireAuth, putProcessStepComplete);
+app.put("/processes/steps/:stepId/skip", requireAuth, putProcessStepSkip);
+app.post("/processes/steps/:stepId/comments", requireAuth, postProcessStepComment);
+app.put("/processes/steps/:stepId", requireAuth, putProcessStep);
+
+app.get("/processes", requireAuth, getProcesses);
+app.post("/processes", requireAuth, postProcess);
+app.get("/processes/:id", requireAuth, getProcess);
+app.put("/processes/:id/status", requireAuth, putProcessStatus);
+app.put("/processes/:id", requireAuth, putProcess);
+app.delete("/processes/:id", requireAuth, requireAdminRole, deleteProcess);
+
+app.get("/tasks/dashboard", requireAuth, getTasksDashboard);
+app.get("/tasks/my", requireAuth, getMyTasks);
+app.get("/tasks", requireAuth, getTasks);
+app.post("/tasks", requireAuth, postTask);
+app.get("/tasks/:id", requireAuth, getTask);
+app.put("/tasks/:id/complete", requireAuth, putTaskComplete);
+app.put("/tasks/:id", requireAuth, putTask);
+app.delete("/tasks/:id", requireAuth, deleteTask);
+app.post("/tasks/:id/comments", requireAuth, postTaskComment);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -738,6 +810,8 @@ async function start() {
       console.log("Database schema OK (marketing).");
       await ensureAgentsSchema();
       console.log("Database schema OK (agents).");
+      await ensureOperationsSchema();
+      console.log("Database schema OK (operations / tasks).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

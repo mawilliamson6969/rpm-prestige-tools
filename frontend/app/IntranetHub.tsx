@@ -301,6 +301,15 @@ export default function IntranetHub() {
                 />
               </div>
 
+              <p className={styles.catLabel}>Operations</p>
+              <div className={styles.toolGrid}>
+                <ToolCardLive
+                  href="/operations/tasks"
+                  title="Operations Hub"
+                  description="📋 Task management, process workflows, and team operations"
+                />
+              </div>
+
               <p className={styles.catLabel}>Knowledge Base</p>
               <div className={styles.toolGrid}>
                 <WikiHubCard />

@@ -12,20 +12,21 @@ import { useNarrowScreen } from "../hooks/useNarrowScreen";
 const LS_COLLAPSED = "rpm-prestige-sidebar-collapsed";
 const LS_SUB = "rpm-prestige-sidebar-submenu";
 
-type SubState = { dashboard: boolean; eos: boolean };
+type SubState = { dashboard: boolean; eos: boolean; operations: boolean };
 
 function readSub(): SubState {
-  if (typeof window === "undefined") return { dashboard: true, eos: false };
+  if (typeof window === "undefined") return { dashboard: true, eos: false, operations: false };
   try {
     const raw = localStorage.getItem(LS_SUB);
-    if (!raw) return { dashboard: true, eos: false };
+    if (!raw) return { dashboard: true, eos: false, operations: false };
     const j = JSON.parse(raw) as Partial<SubState>;
     return {
       dashboard: typeof j.dashboard === "boolean" ? j.dashboard : true,
       eos: typeof j.eos === "boolean" ? j.eos : false,
+      operations: typeof j.operations === "boolean" ? j.operations : false,
     };
   } catch {
-    return { dashboard: true, eos: false };
+    return { dashboard: true, eos: false, operations: false };
   }
 }
 
@@ -64,8 +65,8 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const narrow = useNarrowScreen();
   const isMobile = narrow;
 
-  const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false });
-  const [flyout, setFlyout] = useState<null | "dashboard" | "eos">(null);
+  const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false, operations: false });
+  const [flyout, setFlyout] = useState<null | "dashboard" | "eos" | "operations">(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [unread, setUnread] = useState<number | null>(null);
@@ -127,6 +128,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const inboxActive = pathname === "/inbox" || pathname.startsWith("/inbox/");
   const agentsActive = pathname === "/agents" || pathname.startsWith("/agents/");
   const eosSectionActive = pathname.startsWith("/eos");
+  const operationsSectionActive = pathname.startsWith("/operations");
 
   /** Wide rail: expanded desktop, or mobile drawer (always full width labels). */
   const showLabels = isMobile || !collapsed;
@@ -174,6 +176,14 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     persistSub({ ...subOpen, eos: !subOpen.eos });
   };
 
+  const toggleOperationsSub = () => {
+    if (narrowColumn) {
+      setFlyout((f) => (f === "operations" ? null : "operations"));
+      return;
+    }
+    persistSub({ ...subOpen, operations: !subOpen.operations });
+  };
+
   const closeMobileIfNav = () => {
     if (isMobile) onMobileDrawerOpenChange(false);
     setFlyout(null);
@@ -200,6 +210,21 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         { href: "/eos/l10", label: "L10 Meetings" },
       ] as const,
     []
+  );
+
+  const operationsSubLinks = useMemo(
+    () =>
+      isAdmin
+        ? ([
+            { href: "/operations/tasks", label: "Tasks" },
+            { href: "/operations/processes", label: "Processes" },
+            { href: "/operations/templates", label: "Templates" },
+          ] as const)
+        : ([
+            { href: "/operations/tasks", label: "Tasks" },
+            { href: "/operations/processes", label: "Processes" },
+          ] as const),
+    [isAdmin]
   );
 
   const showCollapsedTooltips = narrowColumn;
@@ -417,6 +442,77 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             }}
           >
             {eosSubLinks.map(({ href, label }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                  style={{ color: "#fff" }}
+                  onClick={closeMobileIfNav}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className={`${styles.row} ${operationsSectionActive ? styles.rowActive : ""}`}
+          onClick={toggleOperationsSub}
+          title={showCollapsedTooltips ? "Operations" : undefined}
+        >
+          <span className={styles.icon} aria-hidden>
+            🗂️
+          </span>
+          {showLabels ? (
+            <>
+              <span className={styles.label}>Operations</span>
+              <span className={`${styles.chevron} ${subOpen.operations ? styles.chevronOpen : ""}`} aria-hidden>
+                ▸
+              </span>
+            </>
+          ) : null}
+        </button>
+        {showLabels && subOpen.operations ? (
+          <div className={styles.subWrap} style={{ maxHeight: 200 }}>
+            <div className={styles.subList}>
+              {operationsSubLinks.map(({ href, label }) => {
+                const active = pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                    onClick={closeMobileIfNav}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {narrowColumn && flyout === "operations" ? (
+          <div
+            className={styles.subList}
+            style={{
+              position: "fixed",
+              left: 60,
+              top: 240,
+              zIndex: 1300,
+              background: "#1b2856",
+              borderRadius: 12,
+              padding: "0.5rem 0",
+              minWidth: 200,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+              border: "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            {operationsSubLinks.map(({ href, label }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`);
               return (
                 <Link
