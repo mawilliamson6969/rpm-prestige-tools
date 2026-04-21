@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./operations.module.css";
+import CustomFieldEditor from "./CustomFieldEditor";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
-import type { Template, TemplateStep } from "./types";
+import type { CustomFieldDefinition, Template, TemplateStep } from "./types";
 
 type Props = {
   open: boolean;
@@ -19,6 +20,8 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateSteps, setTemplateSteps] = useState<TemplateStep[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [launchFields, setLaunchFields] = useState<CustomFieldDefinition[]>([]);
+  const [launchValues, setLaunchValues] = useState<Record<number, unknown>>({});
   const [propertyName, setPropertyName] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -58,17 +61,35 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!selectedTemplate) {
       setTemplateSteps([]);
+      setLaunchFields([]);
+      setLaunchValues({});
       return;
     }
     (async () => {
       try {
-        const res = await fetch(
-          apiUrl(`/processes/templates/${selectedTemplate.id}/steps`),
-          { headers: { ...authHeaders() }, cache: "no-store" }
-        );
-        const body = await res.json().catch(() => ({}));
-        if (res.ok && Array.isArray(body.steps)) {
-          setTemplateSteps(body.steps);
+        const [stepsRes, fieldsRes] = await Promise.all([
+          fetch(apiUrl(`/processes/templates/${selectedTemplate.id}/steps`), {
+            headers: { ...authHeaders() },
+            cache: "no-store",
+          }),
+          fetch(
+            apiUrl(
+              `/custom-fields/definitions?entityType=process_template&entityId=${selectedTemplate.id}`
+            ),
+            { headers: { ...authHeaders() }, cache: "no-store" }
+          ),
+        ]);
+        const stepsBody = await stepsRes.json().catch(() => ({}));
+        if (stepsRes.ok && Array.isArray(stepsBody.steps)) {
+          setTemplateSteps(stepsBody.steps);
+        }
+        const fieldsBody = await fieldsRes.json().catch(() => ({}));
+        if (fieldsRes.ok && Array.isArray(fieldsBody.definitions)) {
+          const forLaunch = (fieldsBody.definitions as CustomFieldDefinition[]).filter(
+            (d) => d.fieldConfig?.fillAtLaunch === true
+          );
+          setLaunchFields(forLaunch);
+          setLaunchValues({});
         }
       } catch {
         /* ignore */
@@ -107,8 +128,23 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Could not launch process.");
+      const newId = body.process.id;
+      const pendingValues = Object.entries(launchValues)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([fid, v]) => ({ fieldDefinitionId: Number(fid), value: v }));
+      if (pendingValues.length) {
+        await fetch(apiUrl("/custom-fields/values/bulk"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({
+            entityType: "process",
+            entityId: newId,
+            values: pendingValues,
+          }),
+        }).catch(() => {});
+      }
       onClose();
-      router.push(`/operations/processes/${body.process.id}`);
+      router.push(`/operations/processes/${newId}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not launch process.");
     } finally {
@@ -249,6 +285,25 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
                   <span className={styles.sidebarValue}>{targetCompletion || "—"}</span>
                 </div>
               </div>
+              {launchFields.length ? (
+                <div className={styles.sidebarCard}>
+                  <h3>Fill in now</h3>
+                  {launchFields.map((d) => (
+                    <div key={d.id} className={styles.cfField} style={{ marginBottom: "0.5rem" }}>
+                      <label className={styles.cfLabel}>
+                        {d.fieldLabel}
+                        {d.isRequired ? <span className={styles.cfRequired}>*</span> : null}
+                      </label>
+                      <CustomFieldEditor
+                        definition={d}
+                        value={launchValues[d.id] ?? null}
+                        onChange={(v) => setLaunchValues((prev) => ({ ...prev, [d.id]: v }))}
+                      />
+                      {d.helpText ? <div className={styles.cfHelp}>{d.helpText}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {templateSteps.length === 0 ? (
                 <p className={styles.hint}>This template has no steps yet. Launching it will create an empty process.</p>
               ) : (

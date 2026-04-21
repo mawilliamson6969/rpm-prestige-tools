@@ -318,6 +318,19 @@ import {
 } from "./routes/processes.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import {
+  customFieldUploadMiddleware,
+  deleteFieldDefinition,
+  deleteFieldValue,
+  getFieldDefinitions,
+  getFieldValues,
+  postFieldDefinition,
+  postFieldUpload,
+  putFieldDefinition,
+  putFieldDefinitionsReorder,
+  putFieldValue,
+  putFieldValuesBulk,
+} from "./routes/customFields.js";
+import {
   deleteTask,
   getMyTasks,
   getTask,
@@ -851,6 +864,18 @@ app.delete("/projects/milestones/:milestoneId", requireAuth, deleteProjectMilest
 app.put("/projects/notes/:noteId/pin", requireAuth, putProjectNotePin);
 app.put("/projects/notes/:noteId", requireAuth, putProjectNote);
 app.delete("/projects/notes/:noteId", requireAuth, deleteProjectNote);
+
+/** Custom fields — definitions live on templates/projects/steps, values live on instances */
+app.get("/custom-fields/definitions", requireAuth, getFieldDefinitions);
+app.post("/custom-fields/definitions", requireAuth, requireAdminRole, postFieldDefinition);
+app.put("/custom-fields/definitions/reorder", requireAuth, requireAdminRole, putFieldDefinitionsReorder);
+app.put("/custom-fields/definitions/:id", requireAuth, requireAdminRole, putFieldDefinition);
+app.delete("/custom-fields/definitions/:id", requireAuth, requireAdminRole, deleteFieldDefinition);
+app.get("/custom-fields/values", requireAuth, getFieldValues);
+app.put("/custom-fields/values/bulk", requireAuth, putFieldValuesBulk);
+app.put("/custom-fields/values", requireAuth, putFieldValue);
+app.delete("/custom-fields/values/:id", requireAuth, deleteFieldValue);
+app.post("/custom-fields/upload", requireAuth, customFieldUploadMiddleware, postFieldUpload);
 
 async function start() {
   if (process.env.DATABASE_URL) {

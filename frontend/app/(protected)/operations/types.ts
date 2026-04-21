@@ -240,6 +240,133 @@ export const PROJECT_COLORS = [
 
 export const PROJECT_ICONS = ["📁", "🚀", "🏠", "📈", "💡", "🎯", "🛠️", "📋", "💰", "🧭", "🌱", "⚡"];
 
+export type CustomFieldEntityType =
+  | "process_template"
+  | "process"
+  | "process_template_step"
+  | "process_step"
+  | "project";
+
+export type CustomFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "currency"
+  | "percentage"
+  | "date"
+  | "datetime"
+  | "boolean"
+  | "select"
+  | "multiselect"
+  | "email"
+  | "phone"
+  | "url"
+  | "file"
+  | "user"
+  | "property"
+  | "address"
+  | "rating"
+  | "color"
+  | "checklist";
+
+export type CustomFieldConfig = {
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  prefix?: string;
+  suffix?: string;
+  rows?: number;
+  maxFiles?: number;
+  acceptTypes?: string;
+  trueLabel?: string;
+  falseLabel?: string;
+  maxLength?: number;
+  allowMultiple?: boolean;
+  items?: string[];
+  checked?: boolean[];
+  fillAtLaunch?: boolean;
+};
+
+export type CustomFieldDefinition = {
+  id: number;
+  entityType: CustomFieldEntityType;
+  entityId: number;
+  fieldName: string;
+  fieldLabel: string;
+  fieldType: CustomFieldType;
+  fieldConfig: CustomFieldConfig;
+  isRequired: boolean;
+  sortOrder: number;
+  sectionName: string;
+  placeholder: string | null;
+  helpText: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomFieldValue = {
+  id: number;
+  fieldDefinitionId: number;
+  entityType: CustomFieldEntityType;
+  entityId: number;
+  fieldType: CustomFieldType;
+  fieldLabel?: string;
+  fieldName?: string;
+  value: unknown;
+  updatedBy: number | null;
+  updatedAt: string;
+};
+
+export const FIELD_TYPE_META: Record<
+  CustomFieldType,
+  { icon: string; label: string; description: string }
+> = {
+  text: { icon: "📝", label: "Text", description: "Single line text" },
+  textarea: { icon: "📄", label: "Long Text", description: "Multi-line text area" },
+  number: { icon: "🔢", label: "Number", description: "Numeric value" },
+  currency: { icon: "💰", label: "Currency", description: "Dollar amount" },
+  percentage: { icon: "📊", label: "Percentage", description: "Percent value" },
+  date: { icon: "📅", label: "Date", description: "Date picker" },
+  datetime: { icon: "🕐", label: "Date & Time", description: "Date + time picker" },
+  boolean: { icon: "✅", label: "Yes / No", description: "Toggle" },
+  select: { icon: "📋", label: "Dropdown", description: "Single select" },
+  multiselect: { icon: "🏷️", label: "Multi-Select", description: "Multiple options" },
+  email: { icon: "📧", label: "Email", description: "Email address" },
+  phone: { icon: "📞", label: "Phone", description: "Phone number" },
+  url: { icon: "🔗", label: "URL", description: "Link / website" },
+  file: { icon: "📎", label: "File Upload", description: "Attach files" },
+  user: { icon: "👤", label: "Team Member", description: "Pick a teammate" },
+  property: { icon: "🏠", label: "Property", description: "Pick a property" },
+  address: { icon: "📍", label: "Address", description: "Street / city / state / zip" },
+  rating: { icon: "⭐", label: "Rating", description: "Star rating" },
+  color: { icon: "🎨", label: "Color", description: "Color picker" },
+  checklist: { icon: "☑️", label: "Checklist", description: "List of check items" },
+};
+
+export const FIELD_TYPE_ORDER: CustomFieldType[] = [
+  "text",
+  "textarea",
+  "number",
+  "currency",
+  "percentage",
+  "date",
+  "datetime",
+  "boolean",
+  "select",
+  "multiselect",
+  "email",
+  "phone",
+  "url",
+  "file",
+  "user",
+  "property",
+  "address",
+  "rating",
+  "color",
+  "checklist",
+];
+
 export const PRIORITY_OPTIONS: TaskPriority[] = ["urgent", "high", "normal", "low"];
 export const CATEGORIES = [
   "Leasing",

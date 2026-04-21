@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import AutomationConfigEditor from "../../AutomationConfigEditor";
+import CustomFieldManager from "../../CustomFieldManager";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
@@ -16,6 +17,26 @@ import type {
   TeamUser,
 } from "../../types";
 import { AUTO_ACTION_LABELS, ROLES } from "../../types";
+
+function StepFieldsToggle({ stepId }: { stepId: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: "0.35rem" }}>
+      <button
+        type="button"
+        className={styles.smallBtn}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? "▾" : "▸"} Per-step fields
+      </button>
+      {open ? (
+        <div style={{ marginTop: "0.5rem" }}>
+          <CustomFieldManager entityType="process_template_step" entityId={stepId} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const CATEGORY_CHOICES = [
   "Owner Relations",
@@ -46,6 +67,7 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"steps" | "custom_fields">("steps");
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -333,6 +355,33 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           </div>
         </div>
 
+        <div className={styles.tabBar} style={{ marginTop: "1rem" }}>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "steps" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("steps")}
+          >
+            Steps ({steps.length})
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "custom_fields" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("custom_fields")}
+          >
+            Custom Fields
+          </button>
+        </div>
+
+        {activeTab === "custom_fields" ? (
+          <CustomFieldManager
+            entityType="process_template"
+            entityId={template.id}
+            allowFillAtLaunch
+          />
+        ) : null}
+
+        {activeTab === "steps" ? (
+        <>
         <h3 style={{ color: "#1b2856", margin: "1rem 0 0.75rem", fontSize: "1rem" }}>
           Steps ({steps.length})
         </h3>
@@ -514,6 +563,7 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                   templates={allTemplates.filter((t) => t.id !== template?.id)}
                   onChange={(patch) => updateStep(step, patch as Partial<TemplateStep>)}
                 />
+                <StepFieldsToggle stepId={step.id} />
               </div>
             </div>
           ))}
@@ -526,6 +576,8 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
         >
           + Add Step
         </button>
+        </>
+        ) : null}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
+import CustomFieldsPanel from "../../CustomFieldsPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type { ProcessRecord, ProcessStatus, ProcessStep, StepStatus, TeamUser } from "../../types";
@@ -240,6 +241,15 @@ export default function ProcessDetailClient({ processId }: { processId: string }
               </div>
             </div>
 
+            <div style={{ marginBottom: "1.25rem" }}>
+              <CustomFieldsPanel
+                entityType="process"
+                entityId={processData.id}
+                users={users}
+                title="Process details"
+              />
+            </div>
+
             <div className={styles.timeline}>
               {steps.map((step) => {
                 const isCompleted = step.status === "completed";
@@ -340,6 +350,12 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                               ) : null}
                             </div>
                           ) : null}
+                          <CustomFieldsPanel
+                            entityType="process_step"
+                            entityId={step.id}
+                            users={users}
+                            hideCompletionBar
+                          />
                           {stepActivity[step.id] && stepActivity[step.id].length ? (
                             <div className={styles.commentList}>
                               {stepActivity[step.id].map((c) => (

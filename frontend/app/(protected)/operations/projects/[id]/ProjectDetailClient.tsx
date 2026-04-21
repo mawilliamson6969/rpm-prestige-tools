@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import CreateTaskModal from "../../CreateTaskModal";
+import CustomFieldsPanel from "../../CustomFieldsPanel";
+import CustomFieldManager from "../../CustomFieldManager";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type {
@@ -68,7 +70,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export default function ProjectDetailClient({ projectId }: { projectId: string }) {
-  const { authHeaders, token } = useAuth();
+  const { authHeaders, token, isAdmin } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<DetailResponse | null>(null);
   const [fullTasks, setFullTasks] = useState<Task[]>([]);
@@ -329,6 +331,8 @@ export default function ProjectDetailClient({ projectId }: { projectId: string }
             notes={notes}
             tasks={tasks}
             stats={stats}
+            users={users}
+            isAdmin={isAdmin}
             onDescription={(v) => {
               setData({ ...data, project: { ...project, description: v } });
               updateDescription(v);
@@ -410,6 +414,8 @@ function OverviewTab({
   notes,
   tasks,
   stats,
+  users,
+  isAdmin,
   onDescription,
 }: {
   project: Project;
@@ -418,8 +424,11 @@ function OverviewTab({
   notes: ProjectNote[];
   tasks: DetailResponse["tasks"];
   stats: DetailResponse["stats"];
+  users: TeamUser[];
+  isAdmin: boolean;
   onDescription: (v: string) => void;
 }) {
+  const [managingFields, setManagingFields] = useState(false);
   const recentTasks = tasks.slice(0, 5);
   const upcomingMilestones = milestones
     .filter((m) => m.status !== "completed")
@@ -595,6 +604,37 @@ function OverviewTab({
             ))}
           </div>
         ) : null}
+        <div className={styles.sidebarCard}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "0.5rem",
+            }}
+          >
+            <h3 style={{ margin: 0, border: "none", padding: 0 }}>Custom fields</h3>
+            {isAdmin ? (
+              <button
+                type="button"
+                className={styles.smallBtn}
+                onClick={() => setManagingFields((v) => !v)}
+              >
+                {managingFields ? "Done" : "⚙ Manage"}
+              </button>
+            ) : null}
+          </div>
+          {managingFields ? (
+            <CustomFieldManager entityType="project" entityId={project.id} />
+          ) : (
+            <CustomFieldsPanel
+              entityType="project"
+              entityId={project.id}
+              users={users}
+              hideCompletionBar
+            />
+          )}
+        </div>
       </aside>
     </div>
   );
