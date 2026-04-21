@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import CustomFieldsPanel from "../../CustomFieldsPanel";
+import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type { ProcessRecord, ProcessStatus, ProcessStep, StepStatus, TeamUser } from "../../types";
@@ -411,6 +412,15 @@ export default function ProcessDetailClient({ processId }: { processId: string }
           </div>
 
           <aside>
+            {processData.propertyId || processData.propertyName ? (
+              <div style={{ marginBottom: "1rem" }}>
+                <PropertyContextPanel
+                  propertyId={processData.propertyId}
+                  propertyName={processData.propertyName}
+                  embedded
+                />
+              </div>
+            ) : null}
             <div className={styles.sidebarCard}>
               <h3>Process details</h3>
               <div className={styles.sidebarRow}>

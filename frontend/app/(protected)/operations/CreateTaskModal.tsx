@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import styles from "./operations.module.css";
+import PropertyPicker, { type SelectedProperty } from "../../../components/PropertyPicker";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import type { Project, Task, TaskPriority, TeamUser } from "./types";
@@ -21,7 +22,7 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [assignedUserId, setAssignedUserId] = useState<string>("");
-  const [propertyName, setPropertyName] = useState("");
+  const [property, setProperty] = useState<SelectedProperty | null>(null);
   const [contactName, setContactName] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
@@ -60,7 +61,11 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
     setAssignedUserId(
       String(initial?.assignedUserId ?? user?.id ?? "")
     );
-    setPropertyName(initial?.propertyName ?? "");
+    setProperty(
+      initial?.propertyName
+        ? { propertyId: initial.propertyId ?? null, propertyName: initial.propertyName }
+        : null
+    );
     setContactName(initial?.contactName ?? "");
     setDueDate(initial?.dueDate ?? "");
     setDueTime(initial?.dueTime ?? "");
@@ -90,7 +95,8 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
           description: description.trim() || undefined,
           priority,
           assignedUserId: assignedUserId ? Number(assignedUserId) : undefined,
-          propertyName: propertyName.trim() || undefined,
+          propertyName: property?.propertyName.trim() || undefined,
+          propertyId: property?.propertyId ?? undefined,
           contactName: contactName.trim() || undefined,
           dueDate: dueDate || undefined,
           dueTime: dueTime || undefined,
@@ -189,11 +195,7 @@ export default function CreateTaskModal({ open, onClose, onCreated, users, initi
           <div className={styles.fieldRow}>
             <div className={styles.field}>
               <label>Property (optional)</label>
-              <input
-                value={propertyName}
-                onChange={(e) => setPropertyName(e.target.value)}
-                placeholder="e.g. 4017 Briar Hollow"
-              />
+              <PropertyPicker value={property} onChange={setProperty} />
             </div>
             <div className={styles.field}>
               <label>Contact (optional)</label>

@@ -318,6 +318,11 @@ import {
 } from "./routes/processes.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import {
+  getPropertyContextById,
+  getPropertyContextByName,
+  getPropertySearch,
+} from "./routes/property-context.js";
+import {
   customFieldUploadMiddleware,
   deleteFieldDefinition,
   deleteFieldValue,
@@ -876,6 +881,11 @@ app.put("/custom-fields/values/bulk", requireAuth, putFieldValuesBulk);
 app.put("/custom-fields/values", requireAuth, putFieldValue);
 app.delete("/custom-fields/values/:id", requireAuth, deleteFieldValue);
 app.post("/custom-fields/upload", requireAuth, customFieldUploadMiddleware, postFieldUpload);
+
+/** Property context — aggregates cached AppFolio/Boom/LeadSimple/RentEngine data */
+app.get("/property-context/search", requireAuth, getPropertySearch);
+app.get("/property-context/by-name/:propertyName", requireAuth, getPropertyContextByName);
+app.get("/property-context/:propertyId", requireAuth, getPropertyContextById);
 
 async function start() {
   if (process.env.DATABASE_URL) {

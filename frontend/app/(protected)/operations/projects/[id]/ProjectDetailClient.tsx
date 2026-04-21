@@ -8,6 +8,7 @@ import OperationsTopBar from "../../OperationsTopBar";
 import CreateTaskModal from "../../CreateTaskModal";
 import CustomFieldsPanel from "../../CustomFieldsPanel";
 import CustomFieldManager from "../../CustomFieldManager";
+import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type {
@@ -522,6 +523,15 @@ function OverviewTab({
         ) : null}
       </div>
       <aside>
+        {project.propertyId || project.propertyName ? (
+          <div style={{ marginBottom: "1rem" }}>
+            <PropertyContextPanel
+              propertyId={project.propertyId}
+              propertyName={project.propertyName}
+              embedded
+            />
+          </div>
+        ) : null}
         <div className={styles.sidebarCard}>
           <h3>Details</h3>
           <div className={styles.sidebarRow}>

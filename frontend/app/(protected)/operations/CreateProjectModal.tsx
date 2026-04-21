@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./operations.module.css";
+import PropertyPicker, { type SelectedProperty } from "../../../components/PropertyPicker";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import type { Project, TeamUser } from "./types";
@@ -27,7 +28,8 @@ export default function CreateProjectModal({ open, onClose, onCreated, users }: 
   const [color, setColor] = useState("#0098D0");
   const [ownerUserId, setOwnerUserId] = useState("");
   const [memberIds, setMemberIds] = useState<Set<number>>(new Set());
-  const [propertyName, setPropertyName] = useState("");
+  const [property, setProperty] = useState<SelectedProperty | null>(null);
+  const [propertyOwnerHint, setPropertyOwnerHint] = useState<string | null>(null);
   const [startDate, setStartDate] = useState(todayIso());
   const [targetDate, setTargetDate] = useState("");
   const [budget, setBudget] = useState("");
@@ -44,7 +46,8 @@ export default function CreateProjectModal({ open, onClose, onCreated, users }: 
     setColor("#0098D0");
     setOwnerUserId(String(user?.id ?? ""));
     setMemberIds(new Set(user?.id ? [user.id] : []));
-    setPropertyName("");
+    setProperty(null);
+    setPropertyOwnerHint(null);
     setStartDate(todayIso());
     setTargetDate("");
     setBudget("");
@@ -83,7 +86,8 @@ export default function CreateProjectModal({ open, onClose, onCreated, users }: 
           color,
           ownerUserId: ownerUserId ? Number(ownerUserId) : undefined,
           memberUserIds: Array.from(memberIds),
-          propertyName: propertyName.trim() || undefined,
+          propertyName: property?.propertyName.trim() || undefined,
+          propertyId: property?.propertyId ?? undefined,
           startDate: startDate || undefined,
           targetDate: targetDate || undefined,
           budget: budget ? Number(budget) : undefined,
@@ -232,7 +236,43 @@ export default function CreateProjectModal({ open, onClose, onCreated, users }: 
             </div>
             <div className={styles.field}>
               <label>Property (optional)</label>
-              <input value={propertyName} onChange={(e) => setPropertyName(e.target.value)} />
+              <PropertyPicker
+                value={property}
+                onChange={(p) => {
+                  setProperty(p);
+                  setPropertyOwnerHint(null);
+                  if (p?.propertyId || p?.propertyName) {
+                    // Fire-and-forget: fetch property context to show who the owner is.
+                    (async () => {
+                      try {
+                        const url = p.propertyId
+                          ? apiUrl(`/property-context/${p.propertyId}`)
+                          : apiUrl(`/property-context/by-name/${encodeURIComponent(p.propertyName)}`);
+                        const res = await fetch(url, {
+                          headers: { ...authHeaders() },
+                          cache: "no-store",
+                        });
+                        if (!res.ok) return;
+                        const body = await res.json();
+                        if (body.owner?.owner_name) {
+                          setPropertyOwnerHint(
+                            `Owner: ${body.owner.owner_name}${
+                              body.owner.owner_email ? ` · ${body.owner.owner_email}` : ""
+                            }`
+                          );
+                        }
+                      } catch {
+                        /* ignore */
+                      }
+                    })();
+                  }
+                }}
+              />
+              {propertyOwnerHint ? (
+                <div style={{ fontSize: "0.75rem", color: "#6a737b", marginTop: "0.25rem" }}>
+                  {propertyOwnerHint}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className={styles.field}>

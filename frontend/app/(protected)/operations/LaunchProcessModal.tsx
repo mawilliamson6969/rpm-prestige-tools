@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./operations.module.css";
 import CustomFieldEditor from "./CustomFieldEditor";
+import PropertyPicker, { type SelectedProperty } from "../../../components/PropertyPicker";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import type { CustomFieldDefinition, Template, TemplateStep } from "./types";
@@ -22,7 +23,14 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [launchFields, setLaunchFields] = useState<CustomFieldDefinition[]>([]);
   const [launchValues, setLaunchValues] = useState<Record<number, unknown>>({});
-  const [propertyName, setPropertyName] = useState("");
+  const [property, setProperty] = useState<SelectedProperty | null>(null);
+  const [propertySummary, setPropertySummary] = useState<{
+    address?: string | null;
+    type?: string | null;
+    tenant?: string | null;
+    status?: string | null;
+    health?: number | null;
+  } | null>(null);
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -35,7 +43,8 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
     if (!open) return;
     setStep(1);
     setSelectedTemplate(null);
-    setPropertyName("");
+    setProperty(null);
+    setPropertySummary(null);
     setContactName("");
     setContactEmail("");
     setContactPhone("");
@@ -118,7 +127,8 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           templateId: selectedTemplate.id,
-          propertyName: propertyName.trim() || undefined,
+          propertyName: property?.propertyName.trim() || undefined,
+          propertyId: property?.propertyId ?? undefined,
           contactName: contactName.trim() || undefined,
           contactEmail: contactEmail.trim() || undefined,
           contactPhone: contactPhone.trim() || undefined,
@@ -211,11 +221,70 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
             <>
               <div className={styles.field}>
                 <label>Property (optional)</label>
-                <input
-                  value={propertyName}
-                  onChange={(e) => setPropertyName(e.target.value)}
-                  placeholder="e.g. 4017 Briar Hollow"
+                <PropertyPicker
+                  value={property}
+                  onChange={(p) => {
+                    setProperty(p);
+                    setPropertySummary(null);
+                    if (!p || (!p.propertyId && !p.propertyName)) return;
+                    (async () => {
+                      try {
+                        const url = p.propertyId
+                          ? apiUrl(`/property-context/${p.propertyId}`)
+                          : apiUrl(`/property-context/by-name/${encodeURIComponent(p.propertyName)}`);
+                        const res = await fetch(url, {
+                          headers: { ...authHeaders() },
+                          cache: "no-store",
+                        });
+                        if (!res.ok) return;
+                        const body = await res.json();
+                        if (body.owner?.owner_name && !contactName.trim()) {
+                          setContactName(body.owner.owner_name);
+                        }
+                        if (body.owner?.owner_email && !contactEmail.trim()) {
+                          setContactEmail(body.owner.owner_email);
+                        }
+                        if (body.owner?.owner_phone && !contactPhone.trim()) {
+                          setContactPhone(body.owner.owner_phone);
+                        }
+                        setPropertySummary({
+                          address: body.property?.property_address,
+                          type: body.property?.property_type,
+                          tenant: body.occupancy?.tenant_name ?? null,
+                          status: body.occupancy?.status ?? null,
+                          health: body.healthScore?.score ?? null,
+                        });
+                      } catch {
+                        /* ignore */
+                      }
+                    })();
+                  }}
                 />
+                {propertySummary ? (
+                  <div
+                    style={{
+                      marginTop: "0.4rem",
+                      padding: "0.5rem 0.65rem",
+                      background: "rgba(0,152,208,0.06)",
+                      borderLeft: "3px solid #0098d0",
+                      borderRadius: 6,
+                      fontSize: "0.8rem",
+                      color: "#1b2856",
+                    }}
+                  >
+                    {propertySummary.address ? (
+                      <div>{propertySummary.address}</div>
+                    ) : null}
+                    <div style={{ color: "#6a737b" }}>
+                      {propertySummary.type || "—"}
+                      {propertySummary.tenant ? ` · Tenant: ${propertySummary.tenant}` : ""}
+                      {propertySummary.status ? ` · ${propertySummary.status}` : ""}
+                      {propertySummary.health !== null
+                        ? ` · Health ${propertySummary.health}`
+                        : ""}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className={styles.fieldRow}>
                 <div className={styles.field}>
@@ -274,7 +343,7 @@ export default function LaunchProcessModal({ open, onClose }: Props) {
                 <h3>{selectedTemplate.icon} {selectedTemplate.name}</h3>
                 <div className={styles.sidebarRow}>
                   <span className={styles.sidebarLabel}>Property</span>
-                  <span className={styles.sidebarValue}>{propertyName || "—"}</span>
+                  <span className={styles.sidebarValue}>{property?.propertyName || "—"}</span>
                 </div>
                 <div className={styles.sidebarRow}>
                   <span className={styles.sidebarLabel}>Contact</span>

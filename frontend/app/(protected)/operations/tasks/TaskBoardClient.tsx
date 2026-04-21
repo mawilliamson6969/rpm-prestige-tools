@@ -5,6 +5,7 @@ import styles from "../operations.module.css";
 import OperationsTopBar from "../OperationsTopBar";
 import CreateTaskModal from "../CreateTaskModal";
 import LaunchProcessModal from "../LaunchProcessModal";
+import PropertyContextPanel, { PropertyContextCompact } from "../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../lib/api";
 import { useAuth } from "../../../../context/AuthContext";
 import type { Task, TaskPriority, TaskStatus, TeamUser } from "../types";
@@ -90,6 +91,10 @@ export default function TaskBoardClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [launchOpen, setLaunchOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [propertyModal, setPropertyModal] = useState<null | {
+    propertyId: number | null;
+    propertyName: string;
+  }>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -245,6 +250,18 @@ export default function TaskBoardClient() {
           </div>
           {isExpanded ? (
             <div className={styles.taskExpand}>
+              {t.propertyName || t.propertyId ? (
+                <PropertyContextCompact
+                  propertyId={t.propertyId ?? null}
+                  propertyName={t.propertyName ?? null}
+                  onExpand={() =>
+                    setPropertyModal({
+                      propertyId: t.propertyId ?? null,
+                      propertyName: t.propertyName ?? "",
+                    })
+                  }
+                />
+              ) : null}
               {t.description ? <div>{t.description}</div> : null}
               {t.notes ? (
                 <div style={{ color: "#6a737b" }}>
@@ -450,6 +467,13 @@ export default function TaskBoardClient() {
         users={users}
       />
       <LaunchProcessModal open={launchOpen} onClose={() => setLaunchOpen(false)} />
+      {propertyModal ? (
+        <PropertyContextPanel
+          propertyId={propertyModal.propertyId}
+          propertyName={propertyModal.propertyName}
+          onClose={() => setPropertyModal(null)}
+        />
+      ) : null}
     </div>
   );
 }
