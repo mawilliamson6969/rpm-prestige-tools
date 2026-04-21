@@ -434,6 +434,27 @@ export async function putFieldValue(req, res) {
     res.json({
       value: mapValueRow({ ...row, field_type: fieldType, field_label: null, field_name: null }),
     });
+    if (entityType === "process") {
+      setImmediate(async () => {
+        try {
+          const { evaluateConditions } = await import("../lib/condition-engine.js");
+          const { recalcDependentDueDates } = await import("../lib/due-dates.js");
+          const triggerCtx = { fieldDefinitionId: defId, value: req.body?.value };
+          await evaluateConditions(entityId, "field_changed", triggerCtx);
+          await evaluateConditions(entityId, "field_equals", triggerCtx);
+          await evaluateConditions(entityId, "field_greater_than", triggerCtx);
+          if (fieldType === "date" || fieldType === "datetime") {
+            await recalcDependentDueDates({
+              processId: entityId,
+              changedFieldDefinitionId: defId,
+              changedFieldValue: req.body?.value,
+            });
+          }
+        } catch (err) {
+          console.warn("[custom-fields] condition hook failed:", err.message);
+        }
+      });
+    }
   } catch (e) {
     const status = e.status || 500;
     console.error(e);

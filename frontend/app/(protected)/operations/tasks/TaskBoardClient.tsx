@@ -218,6 +218,16 @@ export default function TaskBoardClient() {
             <span className={`${styles.priorityBadge} ${priorityClass(t.priority)}`}>
               {t.priority}
             </span>
+            {t.blockedBy ? (
+              <span className={styles.taskBlockedBadge} title={`Blocked by: ${t.blockedBy}`}>
+                🔒 Blocked
+              </span>
+            ) : null}
+            {typeof t.subtaskCount === "number" && t.subtaskCount > 0 ? (
+              <span className={styles.subtaskMeta}>
+                {t.completedSubtaskCount ?? 0}/{t.subtaskCount} subtasks
+              </span>
+            ) : null}
           </div>
           <div className={styles.taskMeta}>
             {t.assignedUserName ? (
@@ -263,10 +273,27 @@ export default function TaskBoardClient() {
                 />
               ) : null}
               {t.description ? <div>{t.description}</div> : null}
+              {t.instructions ? (
+                <div className={styles.infoBlock}>
+                  <div className={styles.infoBlockTitle}>Instructions</div>
+                  {t.instructions}
+                </div>
+              ) : null}
               {t.notes ? (
                 <div style={{ color: "#6a737b" }}>
                   <strong style={{ color: "#1b2856" }}>Notes:</strong> {t.notes}
                 </div>
+              ) : null}
+              {t.blockedBy ? (
+                <div className={styles.infoBlock} style={{ background: "rgba(239,68,68,0.08)", color: "#b91c1c" }}>
+                  <div className={styles.infoBlockTitle} style={{ color: "#b91c1c" }}>
+                    Blocked
+                  </div>
+                  Waiting on: {t.blockedBy}
+                </div>
+              ) : null}
+              {typeof t.subtaskCount === "number" && t.subtaskCount > 0 ? (
+                <SubtaskList parentId={t.id} onChange={loadTasks} />
               ) : null}
               {t.tags.length ? (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
@@ -474,6 +501,75 @@ export default function TaskBoardClient() {
           onClose={() => setPropertyModal(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function SubtaskList({ parentId, onChange }: { parentId: number; onChange: () => void }) {
+  const { authHeaders, token } = useAuth();
+  const [items, setItems] = useState<
+    Array<{ id: number; title: string; status: string; dueDate: string | null; assignedUserName: string | null }>
+  >([]);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/tasks/${parentId}/subtasks`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(body.subtasks)) setItems(body.subtasks);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token, parentId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const toggle = async (id: number, done: boolean) => {
+    try {
+      await fetch(apiUrl(done ? `/tasks/${id}` : `/tasks/${id}/complete`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: done ? JSON.stringify({ status: "pending" }) : undefined,
+      });
+      await load();
+      onChange();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className={styles.subtaskList}>
+      {items.map((s) => {
+        const isDone = s.status === "completed";
+        return (
+          <div
+            key={s.id}
+            className={`${styles.subtaskRow} ${isDone ? styles.subtaskRowDone : ""}`}
+          >
+            <button
+              type="button"
+              className={`${styles.taskCheckbox} ${isDone ? styles.taskCheckboxDone : ""}`}
+              onClick={() => toggle(s.id, isDone)}
+              style={{ width: 16, height: 16 }}
+            >
+              {isDone ? "✓" : ""}
+            </button>
+            <span className={styles.subtaskTitle}>{s.title}</span>
+            {s.assignedUserName ? <span className={styles.subtaskMeta}>{s.assignedUserName}</span> : null}
+            {s.dueDate ? (
+              <span className={styles.subtaskMeta}>
+                {new Date(s.dueDate).toLocaleDateString()}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -31,6 +31,10 @@ function mapTemplateStep(r) {
     isRequired: r.is_required,
     autoAction: r.auto_action,
     autoActionConfig: r.auto_action_config,
+    stageId: r.stage_id ?? null,
+    dueDateType: r.due_date_type ?? "offset_from_start",
+    dueDateConfig: r.due_date_config ?? {},
+    instructions: r.instructions ?? null,
     createdAt: r.created_at,
   };
 }
@@ -425,6 +429,26 @@ export async function putTemplateStep(req, res) {
       "autoActionConfig",
       "auto_action_config",
       (v) => (v === null ? null : typeof v === "object" ? v : undefined),
+    ],
+    [
+      "stageId",
+      "stage_id",
+      (v) => (v === null ? null : Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined),
+    ],
+    [
+      "dueDateType",
+      "due_date_type",
+      (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined),
+    ],
+    [
+      "dueDateConfig",
+      "due_date_config",
+      (v) => (v === null ? null : typeof v === "object" ? v : undefined),
+    ],
+    [
+      "instructions",
+      "instructions",
+      (v) => (typeof v === "string" ? v.trim() || null : undefined),
     ],
   ];
   for (const [key, col, parse] of fields) {

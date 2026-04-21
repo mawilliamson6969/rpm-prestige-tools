@@ -7,12 +7,17 @@ import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import AutomationConfigEditor from "../../AutomationConfigEditor";
 import CustomFieldManager from "../../CustomFieldManager";
+import ConditionBuilder from "../../ConditionBuilder";
+import DueDateEditor from "../../DueDateEditor";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
   AutoActionConfig,
   AutoActionType,
+  CustomFieldDefinition,
+  DueDateType,
   Template,
+  TemplateStage,
   TemplateStep,
   TeamUser,
 } from "../../types";
@@ -67,7 +72,9 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"steps" | "custom_fields">("steps");
+  const [activeTab, setActiveTab] = useState<"steps" | "custom_fields" | "automations">("steps");
+  const [stages, setStages] = useState<TemplateStage[]>([]);
+  const [templateFields, setTemplateFields] = useState<CustomFieldDefinition[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -104,6 +111,36 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
     }
   }, [authHeaders, token]);
 
+  const loadStages = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/processes/templates/${templateId}/stages`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.stages)) setStages(body.stages);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token, templateId]);
+
+  const loadTemplateFields = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(
+        apiUrl(`/custom-fields/definitions?entityType=process_template&entityId=${templateId}`),
+        { headers: { ...authHeaders() }, cache: "no-store" }
+      );
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.definitions)) setTemplateFields(body.definitions);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token, templateId]);
+
   const loadAllTemplates = useCallback(async () => {
     if (!token) return;
     try {
@@ -128,6 +165,71 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   useEffect(() => {
     loadAllTemplates();
   }, [loadAllTemplates]);
+  useEffect(() => {
+    loadStages();
+  }, [loadStages]);
+  useEffect(() => {
+    loadTemplateFields();
+  }, [loadTemplateFields]);
+
+  const addStage = async () => {
+    try {
+      const res = await fetch(apiUrl(`/processes/templates/${templateId}/stages`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ name: "New stage" }),
+      });
+      if (!res.ok) throw new Error("Add failed");
+      await loadStages();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Add stage failed");
+    }
+  };
+
+  const updateStage = async (stage: TemplateStage, patch: Partial<TemplateStage>) => {
+    setStages((prev) => prev.map((s) => (s.id === stage.id ? { ...s, ...patch } : s)));
+    try {
+      await fetch(apiUrl(`/processes/template-stages/${stage.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(patch),
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const deleteStage = async (stage: TemplateStage) => {
+    if (
+      !confirm(
+        `Delete stage "${stage.name}"? Steps in this stage will become ungrouped.`
+      )
+    )
+      return;
+    try {
+      await fetch(apiUrl(`/processes/template-stages/${stage.id}`), {
+        method: "DELETE",
+        headers: { ...authHeaders() },
+      });
+      await loadStages();
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  const moveStepToStage = async (stepId: number, stageId: number | null) => {
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, stageId } : s)));
+    try {
+      await fetch(apiUrl(`/processes/template-steps/${stepId}/move-to-stage`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ stageId }),
+      });
+    } catch {
+      /* ignore */
+    }
+  };
 
   const updateTemplate = async (patch: Partial<Template>) => {
     if (!template) return;
@@ -370,6 +472,13 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           >
             Custom Fields
           </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "automations" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("automations")}
+          >
+            Conditions &amp; Automations
+          </button>
         </div>
 
         {activeTab === "custom_fields" ? (
@@ -380,8 +489,82 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           />
         ) : null}
 
+        {activeTab === "automations" ? (
+          <ConditionBuilder
+            templateId={template.id}
+            steps={steps}
+            stages={stages}
+            fields={templateFields}
+            users={users}
+            allTemplates={allTemplates.filter((t) => t.id !== template.id)}
+          />
+        ) : null}
+
         {activeTab === "steps" ? (
         <>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "1rem 0 0.5rem" }}>
+          <h3 style={{ color: "#1b2856", margin: 0, fontSize: "1rem" }}>
+            Stages ({stages.length})
+          </h3>
+          <button type="button" className={styles.smallBtn} onClick={addStage}>
+            + Add Stage
+          </button>
+        </div>
+        {stages.length ? (
+          <div style={{ marginBottom: "0.75rem" }}>
+            {stages.map((stage) => (
+              <div
+                key={stage.id}
+                className={styles.stageBlock}
+                style={{ borderLeftColor: stage.color || undefined }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <input
+                    className={styles.input}
+                    value={stage.name}
+                    onChange={(e) =>
+                      setStages((prev) =>
+                        prev.map((s) => (s.id === stage.id ? { ...s, name: e.target.value } : s))
+                      )
+                    }
+                    onBlur={(e) => updateStage(stage, { name: e.target.value })}
+                    style={{ flex: 1, minWidth: 200, fontWeight: 700, color: "#1b2856" }}
+                  />
+                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={stage.isGate}
+                      onChange={(e) => updateStage(stage, { isGate: e.target.checked })}
+                    />
+                    🔒 Gate
+                  </label>
+                  <input
+                    type="color"
+                    value={stage.color || "#0098D0"}
+                    onChange={(e) => updateStage(stage, { color: e.target.value.toUpperCase() })}
+                  />
+                  <button
+                    type="button"
+                    className={`${styles.smallBtn} ${styles.smallBtnDanger}`}
+                    onClick={() => deleteStage(stage)}
+                  >
+                    Delete
+                  </button>
+                </div>
+                <div className={styles.stageMeta} style={{ marginTop: "0.25rem" }}>
+                  {steps.filter((s) => s.stageId === stage.id).length} step(s) in this stage
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <h3 style={{ color: "#1b2856", margin: "1rem 0 0.75rem", fontSize: "1rem" }}>
           Steps ({steps.length})
         </h3>
@@ -449,6 +632,27 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     resize: "vertical",
                   }}
                 />
+                <textarea
+                  value={step.instructions ?? ""}
+                  rows={2}
+                  onChange={(e) =>
+                    setSteps((prev) =>
+                      prev.map((s) =>
+                        s.id === step.id ? { ...s, instructions: e.target.value } : s
+                      )
+                    )
+                  }
+                  onBlur={(e) => updateStep(step, { instructions: e.target.value } as Partial<TemplateStep>)}
+                  placeholder="Instructions / how to complete this step (markdown supported)"
+                  style={{
+                    border: "1px solid rgba(27, 40, 86, 0.12)",
+                    borderRadius: 8,
+                    padding: "0.45rem 0.6rem",
+                    fontSize: "0.82rem",
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                  }}
+                />
                 <div className={styles.stepEditFieldRow}>
                   <label style={{ fontSize: "0.78rem", color: "#6a737b", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
                     Role
@@ -485,25 +689,40 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     </select>
                   </label>
                   <label style={{ fontSize: "0.78rem", color: "#6a737b", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                    Due (days after start)
-                    <input
-                      type="number"
-                      min={0}
-                      value={step.dueDaysOffset}
-                      onChange={(e) =>
-                        setSteps((prev) =>
-                          prev.map((s) =>
-                            s.id === step.id
-                              ? { ...s, dueDaysOffset: Number(e.target.value) || 0 }
-                              : s
-                          )
-                        )
-                      }
-                      onBlur={(e) =>
-                        updateStep(step, { dueDaysOffset: Number(e.target.value) || 0 })
-                      }
-                      className={styles.input}
+                    Due date
+                    <DueDateEditor
+                      type={(step.dueDateType as DueDateType) || "offset_from_start"}
+                      config={step.dueDateConfig || { days: step.dueDaysOffset || 0 }}
+                      onChange={({ type, config }) => {
+                        updateStep(step, {
+                          dueDateType: type,
+                          dueDateConfig: config,
+                          dueDaysOffset:
+                            type === "offset_from_start" && typeof config.days === "number"
+                              ? config.days
+                              : step.dueDaysOffset,
+                        } as Partial<TemplateStep>);
+                      }}
+                      steps={steps.filter((s) => s.id !== step.id)}
+                      stages={stages}
+                      dateFields={templateFields}
+                      compact
                     />
+                  </label>
+                  <label style={{ fontSize: "0.78rem", color: "#6a737b", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    Stage
+                    <select
+                      value={step.stageId ?? ""}
+                      onChange={(e) => moveStepToStage(step.id, e.target.value ? Number(e.target.value) : null)}
+                      className={styles.select}
+                    >
+                      <option value="">— Ungrouped —</option>
+                      {stages.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label style={{ fontSize: "0.78rem", color: "#6a737b", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
                     Depends on step

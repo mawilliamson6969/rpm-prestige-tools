@@ -8,7 +8,15 @@ import CustomFieldsPanel from "../../CustomFieldsPanel";
 import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
-import type { ProcessRecord, ProcessStatus, ProcessStep, StepStatus, TeamUser } from "../../types";
+import type {
+  ConditionLogEntry,
+  ProcessRecord,
+  ProcessStageRecord,
+  ProcessStatus,
+  ProcessStep,
+  StepStatus,
+  TeamUser,
+} from "../../types";
 import { AUTO_ACTION_LABELS } from "../../types";
 
 function stepStatusClass(s: StepStatus): string {
@@ -23,6 +31,8 @@ export default function ProcessDetailClient({ processId }: { processId: string }
   const { authHeaders, token, isAdmin } = useAuth();
   const [processData, setProcessData] = useState<ProcessRecord | null>(null);
   const [steps, setSteps] = useState<ProcessStep[]>([]);
+  const [stages, setStages] = useState<ProcessStageRecord[]>([]);
+  const [conditionLog, setConditionLog] = useState<ConditionLogEntry[]>([]);
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -45,6 +55,19 @@ export default function ProcessDetailClient({ processId }: { processId: string }
         throw new Error(typeof body.error === "string" ? body.error : "Could not load process.");
       setProcessData(body.process);
       setSteps(body.steps || []);
+      setStages(body.stages || []);
+      try {
+        const logRes = await fetch(apiUrl(`/processes/${processId}/condition-log`), {
+          headers: { ...authHeaders() },
+          cache: "no-store",
+        });
+        if (logRes.ok) {
+          const logBody = await logRes.json();
+          if (Array.isArray(logBody.entries)) setConditionLog(logBody.entries);
+        }
+      } catch {
+        /* ignore */
+      }
       const firstPending = (body.steps || []).find(
         (s: ProcessStep) => s.status === "pending" || s.status === "in_progress"
       );
@@ -251,6 +274,78 @@ export default function ProcessDetailClient({ processId }: { processId: string }
               />
             </div>
 
+            {stages.length ? (
+              <div style={{ marginBottom: "1.25rem" }}>
+                {stages.map((st) => {
+                  const stageSteps = steps.filter((s) => s.stageId === st.id);
+                  const done = stageSteps.filter(
+                    (s) => s.status === "completed" || s.status === "skipped"
+                  ).length;
+                  const total = stageSteps.length;
+                  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                  const locked = st.status === "pending";
+                  const completed = st.status === "completed";
+                  const active = st.status === "active";
+                  return (
+                    <div
+                      key={st.id}
+                      className={`${styles.stageBlock} ${
+                        completed ? styles.stageCompleted : active ? styles.stageActive : ""
+                      } ${locked ? styles.stageLocked : ""}`}
+                      style={{ borderLeftColor: st.color || undefined }}
+                    >
+                      <div className={styles.stageHeader}>
+                        <div className={styles.stageHeaderLeft}>
+                          {st.icon ? <span className={styles.stageIcon}>{st.icon}</span> : null}
+                          <h4 className={styles.stageName}>
+                            {completed ? "✓ " : locked ? "🔒 " : ""}
+                            {st.name}
+                          </h4>
+                          {st.isGate ? <span className={styles.stageGateBadge}>Gate</span> : null}
+                        </div>
+                        <span className={styles.stageMeta}>
+                          {done} / {total} · {pct}%
+                        </span>
+                      </div>
+                      <div className={styles.progressBar} style={{ marginTop: "0.2rem" }}>
+                        <div
+                          className={styles.progressFill}
+                          style={{ width: `${pct}%`, background: st.color || undefined }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {conditionLog.length ? (
+              <div className={styles.sidebarCard} style={{ marginBottom: "1.25rem" }}>
+                <h3>⚡ Automation activity</h3>
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: 0,
+                    margin: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.35rem",
+                  }}
+                >
+                  {conditionLog.slice(0, 5).map((l) => (
+                    <li
+                      key={l.id}
+                      style={{ fontSize: "0.82rem", color: "#1b2856" }}
+                    >
+                      <strong>{l.conditionName || "Condition"}</strong> —{" "}
+                      {l.details?.summary || l.details?.error || l.actionType}
+                      <div style={{ fontSize: "0.7rem", color: "#6a737b" }}>
+                        {new Date(l.executedAt).toLocaleString()} · {l.result}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className={styles.timeline}>
               {steps.map((step) => {
                 const isCompleted = step.status === "completed";
@@ -336,6 +431,12 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                             <p style={{ margin: "0 0 0.5rem", fontSize: "0.88rem" }}>
                               {step.description}
                             </p>
+                          ) : null}
+                          {step.instructions ? (
+                            <div className={styles.infoBlock}>
+                              <div className={styles.infoBlockTitle}>Instructions</div>
+                              {step.instructions}
+                            </div>
                           ) : null}
                           {step.automationStatus === "failed" ? (
                             <div className={styles.automationFailedNote}>

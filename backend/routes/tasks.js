@@ -28,6 +28,14 @@ function mapTask(r) {
     category: r.category,
     tags: r.tags ?? [],
     notes: r.notes,
+    instructions: r.instructions ?? null,
+    dueDateType: r.due_date_type ?? null,
+    dueDateConfig: r.due_date_config ?? null,
+    parentTaskId: r.parent_task_id ?? null,
+    subtaskCount: r.subtask_count != null ? Number(r.subtask_count) : undefined,
+    completedSubtaskCount:
+      r.completed_subtask_count != null ? Number(r.completed_subtask_count) : undefined,
+    blockedBy: r.blocked_by ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -52,7 +60,16 @@ const TASK_SELECT = `
          p.name AS process_name,
          proj.name AS project_name,
          proj.color AS project_color,
-         proj.icon AS project_icon
+         proj.icon AS project_icon,
+         (SELECT COUNT(*)::int FROM tasks s WHERE s.parent_task_id = t.id) AS subtask_count,
+         (SELECT COUNT(*)::int FROM tasks s WHERE s.parent_task_id = t.id AND s.status = 'completed') AS completed_subtask_count,
+         (
+           SELECT dt.title FROM task_dependencies td
+           JOIN tasks dt ON dt.id = td.depends_on_task_id
+           WHERE td.task_id = t.id AND td.dependency_type = 'blocks'
+             AND dt.status NOT IN ('completed','canceled')
+           LIMIT 1
+         ) AS blocked_by
   FROM tasks t
   LEFT JOIN users u ON u.id = t.assigned_user_id
   LEFT JOIN process_steps ps ON ps.id = t.process_step_id
@@ -188,12 +205,14 @@ export async function postTask(req, res) {
       req.body?.projectId ?? req.params?.projectId,
       10
     );
+    const parentTaskIdParam = Number.parseInt(req.body?.parentTaskId, 10);
     const { rows } = await pool.query(
       `INSERT INTO tasks
          (title, description, priority, assigned_user_id, created_by,
           property_name, property_id, contact_name, due_date, due_time,
-          category, tags, notes, project_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          category, tags, notes, project_id, instructions,
+          due_date_type, due_date_config, parent_task_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18)
        RETURNING *`,
       [
         title,
@@ -214,6 +233,10 @@ export async function postTask(req, res) {
         tags,
         typeof req.body?.notes === "string" ? req.body.notes.trim() || null : null,
         Number.isFinite(projectIdParam) ? projectIdParam : null,
+        typeof req.body?.instructions === "string" ? req.body.instructions.trim() || null : null,
+        typeof req.body?.dueDateType === "string" ? req.body.dueDateType : "fixed_date",
+        JSON.stringify(req.body?.dueDateConfig ?? {}),
+        Number.isFinite(parentTaskIdParam) ? parentTaskIdParam : null,
       ]
     );
     const pool2 = pool;
@@ -301,6 +324,23 @@ export async function putTask(req, res) {
     sets.push(`project_id = $${n++}`);
     vals.push(Number.isFinite(v) ? v : null);
   }
+  if (typeof req.body?.instructions === "string") {
+    sets.push(`instructions = $${n++}`);
+    vals.push(req.body.instructions.trim() || null);
+  }
+  if (typeof req.body?.dueDateType === "string") {
+    sets.push(`due_date_type = $${n++}`);
+    vals.push(req.body.dueDateType);
+  }
+  if (req.body?.dueDateConfig !== undefined) {
+    sets.push(`due_date_config = $${n++}::jsonb`);
+    vals.push(JSON.stringify(req.body.dueDateConfig));
+  }
+  if (req.body?.parentTaskId !== undefined) {
+    const v = Number.parseInt(req.body.parentTaskId, 10);
+    sets.push(`parent_task_id = $${n++}`);
+    vals.push(Number.isFinite(v) ? v : null);
+  }
   if (!sets.length) {
     res.status(400).json({ error: "No valid fields to update." });
     return;
@@ -330,6 +370,19 @@ export async function putTaskComplete(req, res) {
   }
   try {
     const pool = getPool();
+    // Block completion if a hard dependency isn't done.
+    const { rows: blocked } = await pool.query(
+      `SELECT dt.title FROM task_dependencies td
+       JOIN tasks dt ON dt.id = td.depends_on_task_id
+       WHERE td.task_id = $1 AND td.dependency_type = 'blocks'
+         AND dt.status NOT IN ('completed','canceled')
+       LIMIT 1`,
+      [id]
+    );
+    if (blocked.length) {
+      res.status(409).json({ error: `Blocked by: ${blocked[0].title}` });
+      return;
+    }
     await pool.query(
       `UPDATE tasks
        SET status = 'completed', completed_at = NOW(), completed_by = $1, updated_at = NOW()

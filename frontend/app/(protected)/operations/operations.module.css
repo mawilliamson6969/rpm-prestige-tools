@@ -2145,3 +2145,219 @@
   font-weight: 700;
   margin-bottom: 0.4rem;
 }
+
+/* Stages */
+.stageBlock {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-left: 4px solid var(--blue);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin-bottom: 0.65rem;
+}
+.stageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  cursor: pointer;
+  user-select: none;
+}
+.stageHeaderLeft {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.stageIcon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.stageName {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+.stageMeta {
+  font-size: 0.78rem;
+  color: var(--grey);
+  font-weight: 500;
+}
+.stageGateBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #92400e;
+  text-transform: uppercase;
+}
+.stageLocked {
+  opacity: 0.55;
+}
+.stageCompleted {
+  border-left-color: var(--green);
+  background: rgba(16, 185, 129, 0.04);
+}
+.stageActive {
+  border-left-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(0, 152, 208, 0.1);
+}
+.stageBody {
+  padding-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Condition builder */
+.conditionCard {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.conditionCardInactive {
+  opacity: 0.55;
+}
+.conditionRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}
+.conditionTag {
+  display: inline-flex;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tagWhen {
+  background: rgba(0, 152, 208, 0.15);
+  color: #007aa8;
+}
+.tagThen {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+
+/* Subtasks */
+.subtaskList {
+  margin-left: 1rem;
+  border-left: 2px solid rgba(27, 40, 86, 0.12);
+  padding-left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+.subtaskRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.4rem;
+  background: rgba(27, 40, 86, 0.03);
+  border-radius: 6px;
+}
+.subtaskRowDone .subtaskTitle {
+  text-decoration: line-through;
+  color: var(--grey);
+}
+.subtaskTitle {
+  flex: 1;
+  min-width: 0;
+  color: var(--navy);
+  font-weight: 500;
+}
+.subtaskMeta {
+  font-size: 0.72rem;
+  color: var(--grey);
+}
+
+/* Blocked + deps */
+.taskBlockedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(106, 115, 123, 0.14);
+  color: var(--grey);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.infoBlock {
+  padding: 0.5rem 0.65rem;
+  background: rgba(27, 40, 86, 0.04);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--navy);
+  white-space: pre-wrap;
+}
+.infoBlockTitle {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--grey);
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+/* Process dashboard */
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.dashboardCard {
+  background: var(--white);
+  border-radius: 10px;
+  padding: 1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-top: 4px solid var(--blue);
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.05);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dashboardCard:hover {
+  box-shadow: 0 6px 18px rgba(27, 40, 86, 0.12);
+  transform: translateY(-1px);
+}
+.dashboardCardLabel {
+  font-size: 0.78rem;
+  color: var(--grey);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dashboardCardStats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: var(--navy);
+}
+.dashboardStatDanger {
+  color: var(--red);
+  font-weight: 700;
+}

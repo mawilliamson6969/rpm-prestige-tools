@@ -7,7 +7,19 @@ import OperationsTopBar from "../OperationsTopBar";
 import LaunchProcessModal from "../LaunchProcessModal";
 import { apiUrl } from "../../../../lib/api";
 import { useAuth } from "../../../../context/AuthContext";
-import type { ProcessRecord, ProcessStatus } from "../types";
+import type { ProcessRecord, ProcessStatus, Template } from "../types";
+
+type DashboardTemplate = {
+  templateId: number;
+  name: string;
+  icon: string;
+  color: string;
+  category: string | null;
+  activeCount: number;
+  completedCount: number;
+  overdueCount: number;
+  avgDays: number | null;
+};
 
 const STATUS_FILTERS: Array<{ value: string; label: string }> = [
   { value: "all", label: "All" },
@@ -33,10 +45,14 @@ export default function ProcessesListClient() {
   const { authHeaders, token } = useAuth();
   const [processes, setProcesses] = useState<ProcessRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [templateFilter, setTemplateFilter] = useState<string>("");
   const [search, setSearch] = useState("");
   const [launchOpen, setLaunchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [view, setView] = useState<"grid" | "dashboard">("grid");
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardTemplate[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -46,6 +62,7 @@ export default function ProcessesListClient() {
       const params = new URLSearchParams();
       params.set("status", statusFilter);
       if (search) params.set("search", search);
+      if (templateFilter) params.set("template", templateFilter);
       const res = await fetch(apiUrl(`/processes?${params.toString()}`), {
         headers: { ...authHeaders() },
         cache: "no-store",
@@ -59,11 +76,47 @@ export default function ProcessesListClient() {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, token, statusFilter, search]);
+  }, [authHeaders, token, statusFilter, search, templateFilter]);
+
+  const loadTemplates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/processes/templates"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.templates)) setTemplates(body.templates);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token]);
+
+  const loadDashboard = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/processes/dashboard"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.byTemplate)) setDashboard(body.byTemplate);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token]);
 
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+  useEffect(() => {
+    if (view === "dashboard") loadDashboard();
+  }, [view, loadDashboard]);
 
   return (
     <div className={styles.page}>
@@ -100,11 +153,92 @@ export default function ProcessesListClient() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <select
+            className={styles.select}
+            value={templateFilter}
+            onChange={(e) => setTemplateFilter(e.target.value)}
+          >
+            <option value="">All templates</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.icon} {t.name}
+              </option>
+            ))}
+          </select>
+          <div className={styles.viewToggle}>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${view === "grid" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("grid")}
+            >
+              Grid
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${view === "dashboard" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("dashboard")}
+            >
+              Dashboard
+            </button>
+          </div>
         </div>
 
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
 
-        {loading ? (
+        {view === "dashboard" ? (
+          dashboard.length === 0 ? (
+            <div className={styles.emptyState}>
+              <h3>No templates yet</h3>
+            </div>
+          ) : (
+            <div className={styles.dashboardGrid}>
+              {dashboard.map((d) => (
+                <button
+                  key={d.templateId}
+                  type="button"
+                  className={styles.dashboardCard}
+                  style={{ borderTopColor: d.color || "#0098D0" }}
+                  onClick={() => {
+                    setView("grid");
+                    setTemplateFilter(String(d.templateId));
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                      <span style={{ fontSize: "1.35rem" }}>{d.icon}</span>
+                      <strong style={{ color: "#1b2856" }}>{d.name}</strong>
+                    </div>
+                    {d.overdueCount > 0 ? (
+                      <span className={styles.dashboardStatDanger}>⚠ {d.overdueCount}</span>
+                    ) : null}
+                  </div>
+                  <div className={styles.dashboardCardStats}>
+                    <div>
+                      <div className={styles.dashboardCardLabel}>Active</div>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#1b2856" }}>
+                        {d.activeCount}
+                      </div>
+                    </div>
+                    <div>
+                      <div className={styles.dashboardCardLabel}>Completed</div>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#1b2856" }}>
+                        {d.completedCount}
+                      </div>
+                    </div>
+                    {d.avgDays != null ? (
+                      <div>
+                        <div className={styles.dashboardCardLabel}>Avg days</div>
+                        <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#1b2856" }}>
+                          {d.avgDays}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )
+        ) : loading ? (
           <div className={styles.loading}>Loading processes…</div>
         ) : processes.length === 0 ? (
           <div className={styles.emptyState}>

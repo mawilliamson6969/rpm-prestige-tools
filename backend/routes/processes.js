@@ -3,6 +3,8 @@ import {
   runAutomationForProcessLaunch,
   runAutomationForUnblockedSteps,
 } from "../lib/process-automation.js";
+import { evaluateConditions } from "../lib/condition-engine.js";
+import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
 
 function mapProcess(r) {
   return {
@@ -53,8 +55,28 @@ function mapStep(r) {
     autoActionConfig: r.auto_action_config,
     automationStatus: r.automation_status,
     automationError: r.automation_error,
+    stageId: r.stage_id ?? null,
+    dueDateType: r.due_date_type ?? null,
+    dueDateConfig: r.due_date_config ?? null,
+    instructions: r.instructions ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+  };
+}
+
+function mapProcessStage(r) {
+  return {
+    id: r.id,
+    processId: r.process_id,
+    templateStageId: r.template_stage_id,
+    name: r.name,
+    stageOrder: r.stage_order,
+    status: r.status,
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    color: r.color ?? null,
+    icon: r.icon ?? null,
+    isGate: r.is_gate ?? false,
   };
 }
 
@@ -140,7 +162,19 @@ export async function getProcess(req, res) {
        ORDER BY s.step_number ASC`,
       [id]
     );
-    res.json({ process: mapProcess(rows[0]), steps: steps.map(mapStep) });
+    const { rows: stages } = await pool.query(
+      `SELECT ps.*, ts.color, ts.icon, ts.is_gate
+       FROM process_stages ps
+       LEFT JOIN process_template_stages ts ON ts.id = ps.template_stage_id
+       WHERE ps.process_id = $1
+       ORDER BY ps.stage_order ASC, ps.id ASC`,
+      [id]
+    );
+    res.json({
+      process: mapProcess(rows[0]),
+      steps: steps.map(mapStep),
+      stages: stages.map(mapProcessStage),
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load process." });
@@ -167,6 +201,10 @@ export async function postProcess(req, res) {
       return;
     }
     const template = tmpl[0];
+    const { rows: tmplStages } = await client.query(
+      `SELECT * FROM process_template_stages WHERE template_id = $1 ORDER BY stage_order ASC, id ASC`,
+      [templateId]
+    );
     const { rows: tmplSteps } = await client.query(
       `SELECT * FROM process_template_steps WHERE template_id = $1 ORDER BY step_number ASC`,
       [templateId]
@@ -213,16 +251,46 @@ export async function postProcess(req, res) {
     const processRow = procRows[0];
     const startedAt = new Date(processRow.started_at);
 
+    // Create process_stages from template stages
+    const stageIdByTemplateStageId = new Map();
+    for (const [idx, ts] of tmplStages.entries()) {
+      const { rows: stageIns } = await client.query(
+        `INSERT INTO process_stages
+           (process_id, template_stage_id, name, stage_order, status, started_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [
+          processRow.id,
+          ts.id,
+          ts.name,
+          ts.stage_order ?? idx,
+          idx === 0 ? "active" : "pending",
+          idx === 0 ? new Date() : null,
+        ]
+      );
+      stageIdByTemplateStageId.set(ts.id, stageIns[0].id);
+    }
+
     const idByTemplateStepId = new Map();
     for (const ts of tmplSteps) {
-      const dueDate = new Date(startedAt);
-      dueDate.setDate(dueDate.getDate() + (ts.due_days_offset || 0));
+      const computedDue =
+        calculateDueDateAtLaunch(ts.due_date_type, ts.due_date_config, { startedAt }) ??
+        // Fallback to legacy offset behavior
+        (() => {
+          const d = new Date(startedAt);
+          d.setDate(d.getDate() + (ts.due_days_offset || 0));
+          return d.toISOString().slice(0, 10);
+        })();
       const initialStatus = ts.depends_on_step ? "blocked" : "pending";
+      const processStageId = ts.stage_id
+        ? stageIdByTemplateStageId.get(ts.stage_id) || null
+        : null;
       const { rows: stepIns } = await client.query(
         `INSERT INTO process_steps
            (process_id, template_step_id, step_number, name, description, status,
-            assigned_user_id, assigned_role, due_date, notes, auto_action, auto_action_config)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12)
+            assigned_user_id, assigned_role, due_date, notes, auto_action, auto_action_config,
+            stage_id, due_date_type, due_date_config, instructions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15::jsonb, $16)
          RETURNING id`,
         [
           processRow.id,
@@ -233,10 +301,14 @@ export async function postProcess(req, res) {
           initialStatus,
           ts.assigned_user_id,
           ts.assigned_role,
-          dueDate.toISOString().slice(0, 10),
+          computedDue,
           null,
           ts.auto_action,
           ts.auto_action_config,
+          processStageId,
+          ts.due_date_type || "offset_from_start",
+          JSON.stringify(ts.due_date_config ?? {}),
+          ts.instructions || null,
         ]
       );
       idByTemplateStepId.set(ts.step_number, stepIns[0].id);
@@ -272,6 +344,7 @@ export async function postProcess(req, res) {
       runAutomationForProcessLaunch(processRow.id).catch((err) =>
         console.warn("[automation] launch failed:", err.message)
       );
+      evaluateConditions(processRow.id, "process_launched", {}).catch(() => {});
     });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
@@ -350,7 +423,8 @@ export async function putProcessStatus(req, res) {
   }
   try {
     const pool = getPool();
-    const completedAt = status === "completed" ? new Date() : null;
+    const { rows: before } = await pool.query(`SELECT status FROM processes WHERE id = $1`, [id]);
+    const fromStatus = before[0]?.status ?? null;
     const { rows } = await pool.query(
       `UPDATE processes
        SET status = $1,
@@ -364,6 +438,12 @@ export async function putProcessStatus(req, res) {
       return;
     }
     res.json({ process: mapProcess(rows[0]) });
+    setImmediate(() =>
+      evaluateConditions(id, "process_status_changed", {
+        fromStatus,
+        toStatus: status,
+      }).catch(() => {})
+    );
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not update process status." });
@@ -502,6 +582,23 @@ async function completeOrSkipStep(req, res, kind) {
         );
       });
     }
+    // Fire step_completed conditions + recalc dependent due dates + maybe complete a stage.
+    setImmediate(async () => {
+      try {
+        await evaluateConditions(step.process_id, "step_completed", {
+          templateStepId: step.template_step_id,
+          stepName: step.name,
+        });
+        await recalcDependentDueDates({
+          processId: step.process_id,
+          completedStepId: step.id,
+          completedStepTemplateId: step.template_step_id,
+        });
+        await checkAndCompleteStage(step.process_id, step.stage_id);
+      } catch (err) {
+        console.warn("[process] post-complete tasks failed:", err.message);
+      }
+    });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     console.error(e);
@@ -511,12 +608,90 @@ async function completeOrSkipStep(req, res, kind) {
   }
 }
 
+async function checkAndCompleteStage(processId, stageId) {
+  if (!stageId) return;
+  const pool = getPool();
+  const { rows: remaining } = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM process_steps
+     WHERE stage_id = $1 AND status NOT IN ('completed','skipped')`,
+    [stageId]
+  );
+  if (remaining[0].c > 0) return;
+  const { rows: stage } = await pool.query(
+    `UPDATE process_stages
+     SET status = 'completed', completed_at = NOW()
+     WHERE id = $1 AND status <> 'completed'
+     RETURNING *`,
+    [stageId]
+  );
+  if (!stage.length) return;
+  // Activate next stage.
+  await pool.query(
+    `UPDATE process_stages
+     SET status = 'active', started_at = COALESCE(started_at, NOW())
+     WHERE process_id = $1 AND status = 'pending'
+       AND stage_order = (
+         SELECT MIN(stage_order) FROM process_stages
+         WHERE process_id = $1 AND status = 'pending'
+       )`,
+    [processId]
+  );
+  // Fire stage_completed conditions.
+  setImmediate(() => {
+    evaluateConditions(processId, "stage_completed", {
+      templateStageId: stage[0].template_stage_id,
+      stageName: stage[0].name,
+    }).catch(() => {});
+    recalcDependentDueDates({
+      processId,
+      completedStageId: stage[0].id,
+      completedStageTemplateId: stage[0].template_stage_id,
+    }).catch(() => {});
+  });
+}
+
 export async function putProcessStepComplete(req, res) {
   await completeOrSkipStep(req, res, "complete");
 }
 
 export async function putProcessStepSkip(req, res) {
   await completeOrSkipStep(req, res, "skip");
+}
+
+export async function getProcessesDashboard(_req, res) {
+  try {
+    const pool = getPool();
+    const { rows: byTemplate } = await pool.query(
+      `SELECT t.id, t.name, t.icon, t.color, t.category,
+         COUNT(p.id) FILTER (WHERE p.status = 'active')::int AS active_count,
+         COUNT(p.id) FILTER (WHERE p.status = 'completed')::int AS completed_count,
+         COUNT(p.id) FILTER (WHERE p.status = 'active' AND p.target_completion < CURRENT_DATE)::int AS overdue_count,
+         AVG(
+           EXTRACT(EPOCH FROM (p.completed_at - p.started_at)) / 86400
+         ) FILTER (WHERE p.status = 'completed') AS avg_days
+       FROM process_templates t
+       LEFT JOIN processes p ON p.template_id = t.id
+       WHERE t.is_active = true
+       GROUP BY t.id, t.name, t.icon, t.color, t.category
+       ORDER BY active_count DESC, t.name ASC`
+    );
+    res.json({
+      byTemplate: byTemplate.map((r) => ({
+        templateId: r.id,
+        name: r.name,
+        icon: r.icon,
+        color: r.color,
+        category: r.category,
+        activeCount: Number(r.active_count) || 0,
+        completedCount: Number(r.completed_count) || 0,
+        overdueCount: Number(r.overdue_count) || 0,
+        avgDays: r.avg_days !== null ? Math.round(Number(r.avg_days)) : null,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load dashboard." });
+  }
 }
 
 export async function postProcessStepAutomationRetry(req, res) {

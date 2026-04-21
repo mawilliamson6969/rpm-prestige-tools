@@ -30,6 +30,13 @@ export type Task = {
   category: string | null;
   tags: string[];
   notes: string | null;
+  instructions?: string | null;
+  dueDateType?: string | null;
+  dueDateConfig?: Record<string, unknown> | null;
+  parentTaskId?: number | null;
+  subtaskCount?: number;
+  completedSubtaskCount?: number;
+  blockedBy?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -73,7 +80,136 @@ export type TemplateStep = {
   isRequired: boolean;
   autoAction: AutoActionType | null;
   autoActionConfig: AutoActionConfig;
+  stageId?: number | null;
+  dueDateType?: DueDateType;
+  dueDateConfig?: Record<string, unknown>;
+  instructions?: string | null;
   createdAt: string;
+};
+
+export type DueDateType =
+  | "offset_from_start"
+  | "offset_from_step"
+  | "offset_from_stage"
+  | "offset_from_field"
+  | "fixed_date"
+  | "same_day_as_step"
+  | "no_due_date";
+
+export type TemplateStage = {
+  id: number;
+  templateId: number;
+  name: string;
+  description: string | null;
+  stageOrder: number;
+  color: string | null;
+  icon: string | null;
+  isGate: boolean;
+  gateCondition: unknown;
+  createdAt: string;
+};
+
+export type ProcessStageRecord = {
+  id: number;
+  processId: number;
+  templateStageId: number | null;
+  name: string;
+  stageOrder: number;
+  status: "pending" | "active" | "completed" | "skipped";
+  startedAt: string | null;
+  completedAt: string | null;
+  color?: string | null;
+  icon?: string | null;
+  isGate?: boolean;
+};
+
+export type TriggerType =
+  | "step_completed"
+  | "stage_completed"
+  | "all_steps_completed"
+  | "field_equals"
+  | "field_greater_than"
+  | "field_changed"
+  | "due_date_approaching"
+  | "overdue"
+  | "process_launched"
+  | "process_status_changed";
+
+export type ActionType =
+  | "create_task"
+  | "skip_step"
+  | "complete_step"
+  | "reassign_step"
+  | "reassign_process"
+  | "send_notification"
+  | "send_email"
+  | "move_to_stage"
+  | "launch_process"
+  | "update_field"
+  | "change_process_status"
+  | "webhook";
+
+export type ProcessCondition = {
+  id: number;
+  templateId: number;
+  name: string;
+  description: string | null;
+  triggerType: TriggerType;
+  triggerConfig: Record<string, unknown>;
+  actionType: ActionType;
+  actionConfig: Record<string, unknown>;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+};
+
+export type ConditionLogEntry = {
+  id: number;
+  conditionId: number | null;
+  conditionName: string | null;
+  triggerType: string;
+  actionType: string;
+  result: "success" | "failed";
+  details: { summary?: string; error?: string } | null;
+  executedAt: string;
+};
+
+export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
+  step_completed: "Step is completed",
+  stage_completed: "Stage is completed",
+  all_steps_completed: "All steps are completed",
+  field_equals: "Field equals value",
+  field_greater_than: "Field exceeds value",
+  field_changed: "Field is changed",
+  due_date_approaching: "Due date approaching",
+  overdue: "Item becomes overdue",
+  process_launched: "Process is launched",
+  process_status_changed: "Process status changes",
+};
+
+export const ACTION_TYPE_LABELS: Record<ActionType, string> = {
+  create_task: "Create Task",
+  skip_step: "Skip Step",
+  complete_step: "Complete Step",
+  reassign_step: "Reassign Step",
+  reassign_process: "Reassign Process",
+  send_notification: "Send Notification",
+  send_email: "Send Email",
+  move_to_stage: "Move to Stage",
+  launch_process: "Launch Process",
+  update_field: "Update Field",
+  change_process_status: "Change Status",
+  webhook: "Call Webhook",
+};
+
+export const DUE_DATE_TYPE_LABELS: Record<DueDateType, string> = {
+  offset_from_start: "X days after process starts",
+  offset_from_step: "X days after step is completed",
+  offset_from_stage: "X days after stage is completed",
+  offset_from_field: "Relative to date field",
+  fixed_date: "Fixed date",
+  same_day_as_step: "Same day as step",
+  no_due_date: "No due date",
 };
 
 export const AUTO_ACTION_LABELS: Record<AutoActionType, { label: string; icon: string }> = {
@@ -132,6 +268,10 @@ export type ProcessStep = {
   autoActionConfig: AutoActionConfig;
   automationStatus: "running" | "completed" | "failed" | null;
   automationError: string | null;
+  stageId?: number | null;
+  dueDateType?: string | null;
+  dueDateConfig?: Record<string, unknown> | null;
+  instructions?: string | null;
   createdAt: string;
   updatedAt: string;
 };

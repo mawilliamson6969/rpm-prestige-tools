@@ -306,6 +306,7 @@ import {
   deleteProcess,
   getProcess,
   getProcesses,
+  getProcessesDashboard,
   getProcessStepActivity,
   postProcess,
   postProcessStepAutomationRetry,
@@ -322,6 +323,26 @@ import {
   getPropertyContextByName,
   getPropertySearch,
 } from "./routes/property-context.js";
+import {
+  deleteTemplateCondition,
+  deleteTemplateStage,
+  getProcessConditionLog,
+  getTemplateConditions,
+  getTemplateStages,
+  postTemplateCondition,
+  postTemplateStage,
+  putTemplateCondition,
+  putTemplateStage,
+  putTemplateStagesReorder,
+  putTemplateStepMoveToStage,
+} from "./routes/processStages.js";
+import {
+  deleteTaskDependency,
+  getSubtasks,
+  getTaskDependencies,
+  postTaskDependency,
+} from "./routes/taskDependencies.js";
+import { runTimeBasedConditions } from "./lib/condition-engine.js";
 import {
   customFieldUploadMiddleware,
   deleteFieldDefinition,
@@ -811,8 +832,30 @@ app.get("/processes/steps/:stepId/activity", requireAuth, getProcessStepActivity
 app.post("/processes/steps/:stepId/comments", requireAuth, postProcessStepComment);
 app.put("/processes/steps/:stepId", requireAuth, putProcessStep);
 
+app.get("/processes/dashboard", requireAuth, getProcessesDashboard);
 app.get("/processes", requireAuth, getProcesses);
 app.post("/processes", requireAuth, postProcess);
+
+/** Template stages */
+app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
+app.post("/processes/templates/:id/stages", requireAuth, requireAdminRole, postTemplateStage);
+app.put("/processes/templates/:id/stages/reorder", requireAuth, requireAdminRole, putTemplateStagesReorder);
+app.put("/processes/template-stages/:stageId", requireAuth, requireAdminRole, putTemplateStage);
+app.delete("/processes/template-stages/:stageId", requireAuth, requireAdminRole, deleteTemplateStage);
+app.put(
+  "/processes/template-steps/:stepId/move-to-stage",
+  requireAuth,
+  requireAdminRole,
+  putTemplateStepMoveToStage
+);
+
+/** Template conditions */
+app.get("/processes/templates/:id/conditions", requireAuth, getTemplateConditions);
+app.post("/processes/templates/:id/conditions", requireAuth, requireAdminRole, postTemplateCondition);
+app.put("/processes/conditions/:conditionId", requireAuth, requireAdminRole, putTemplateCondition);
+app.delete("/processes/conditions/:conditionId", requireAuth, requireAdminRole, deleteTemplateCondition);
+app.get("/processes/:id/condition-log", requireAuth, getProcessConditionLog);
+
 app.get("/processes/:id", requireAuth, getProcess);
 app.put("/processes/:id/status", requireAuth, putProcessStatus);
 app.put("/processes/:id", requireAuth, putProcess);
@@ -827,6 +870,10 @@ app.put("/tasks/:id/complete", requireAuth, putTaskComplete);
 app.put("/tasks/:id", requireAuth, putTask);
 app.delete("/tasks/:id", requireAuth, deleteTask);
 app.post("/tasks/:id/comments", requireAuth, postTaskComment);
+app.get("/tasks/:id/dependencies", requireAuth, getTaskDependencies);
+app.post("/tasks/:id/dependencies", requireAuth, postTaskDependency);
+app.delete("/tasks/:id/dependencies/:dependencyId", requireAuth, deleteTaskDependency);
+app.get("/tasks/:id/subtasks", requireAuth, getSubtasks);
 
 /** Projects — container for milestones, tasks, notes, members */
 app.get("/projects/dashboard", requireAuth, getProjectsDashboard);
@@ -971,6 +1018,13 @@ async function start() {
       );
     });
     console.log("Scheduled process automation delay check: 0 * * * * (hourly).");
+
+    cron.schedule("15 * * * *", () => {
+      runTimeBasedConditions().catch((e) =>
+        console.error("[condition time cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled time-based condition check: 15 * * * * (hourly, offset).");
 
     // Take initial snapshot on startup if none exists today
     takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot startup]", e.message || e));
