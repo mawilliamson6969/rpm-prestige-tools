@@ -538,6 +538,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             { href: "/wiki", label: "Wiki", icon: "📚" },
             { href: "/playbooks", label: "Playbooks", icon: "📋" },
             { href: "/files", label: "Files", icon: "📁" },
+            { href: "/forms", label: "Forms", icon: "📋" },
             { href: "/marketing/calendar", label: "Marketing", icon: "📅" },
           ] as const
         ).map((item) => {

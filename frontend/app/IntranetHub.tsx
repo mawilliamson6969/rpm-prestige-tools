@@ -366,6 +366,11 @@ export default function IntranetHub() {
               <p className={styles.catLabel}>Forms</p>
               <div className={styles.toolGrid}>
                 <ToolCardLive
+                  href="/forms"
+                  title="Form Builder"
+                  description="📋 Create, share, and manage custom forms"
+                />
+                <ToolCardLive
                   href="/owner-termination"
                   title="Owner Termination Request"
                   description="Process owner requests to terminate management"

@@ -26,6 +26,43 @@ import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
+import { ensureFormsSchema } from "./lib/formsSchema.js";
+import {
+  deleteForm,
+  deleteFormAutomation,
+  deleteFormField,
+  deleteFormPage,
+  deleteFormSubmission,
+  formsUploadMiddleware,
+  getForm,
+  getFormAnalytics,
+  getFormAutomations,
+  getFormFields,
+  getFormPages,
+  getForms,
+  getFormSubmission,
+  getFormSubmissions,
+  getFormSubmissionsExport,
+  getPublicForm,
+  getPublicFormPrefill,
+  postForm,
+  postFormAutomation,
+  postFormDuplicate,
+  postFormField,
+  postFormPage,
+  postPublicFormSubmit,
+  postPublicFormUpload,
+  putForm,
+  putFormAutomation,
+  putFormField,
+  putFormFieldMove,
+  putFormFieldsReorder,
+  putFormPage,
+  putFormPagesReorder,
+  putFormPublish,
+  putFormSubmission,
+  putFormUnpublish,
+} from "./routes/forms.js";
 import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
 import { getMaintenanceDashboardV2, getTechnicianConfig, putTechnicianConfig } from "./routes/maintenance-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
@@ -934,6 +971,53 @@ app.get("/property-context/search", requireAuth, getPropertySearch);
 app.get("/property-context/by-name/:propertyName", requireAuth, getPropertyContextByName);
 app.get("/property-context/:propertyId", requireAuth, getPropertyContextById);
 
+/** Form Builder — public form render + submit (no auth), admin CRUD (JWT). Public routes first. */
+app.get("/forms/public/:slug", getPublicForm);
+app.get("/forms/public/:slug/prefill", getPublicFormPrefill);
+app.post("/forms/public/:slug/submit", postPublicFormSubmit);
+app.post("/forms/public/:slug/upload", formsUploadMiddleware, postPublicFormUpload);
+
+app.get("/forms", requireAuth, getForms);
+app.post("/forms", requireAuth, postForm);
+
+app.get("/forms/submissions/:submissionId", requireAuth, getFormSubmission);
+app.put("/forms/submissions/:submissionId", requireAuth, putFormSubmission);
+app.delete("/forms/submissions/:submissionId", requireAuth, deleteFormSubmission);
+
+app.put("/forms/fields/:fieldId/move", requireAuth, putFormFieldMove);
+app.put("/forms/fields/:fieldId", requireAuth, putFormField);
+app.delete("/forms/fields/:fieldId", requireAuth, deleteFormField);
+
+app.put("/forms/pages/:pageId", requireAuth, putFormPage);
+app.delete("/forms/pages/:pageId", requireAuth, deleteFormPage);
+
+app.put("/forms/automations/:automationId", requireAuth, putFormAutomation);
+app.delete("/forms/automations/:automationId", requireAuth, deleteFormAutomation);
+
+app.get("/forms/:id/fields", requireAuth, getFormFields);
+app.post("/forms/:id/fields", requireAuth, postFormField);
+app.put("/forms/:id/fields/reorder", requireAuth, putFormFieldsReorder);
+
+app.get("/forms/:id/pages", requireAuth, getFormPages);
+app.post("/forms/:id/pages", requireAuth, postFormPage);
+app.put("/forms/:id/pages/reorder", requireAuth, putFormPagesReorder);
+
+app.get("/forms/:id/automations", requireAuth, getFormAutomations);
+app.post("/forms/:id/automations", requireAuth, postFormAutomation);
+
+app.get("/forms/:id/submissions", requireAuth, getFormSubmissions);
+app.get("/forms/:id/submissions/export", requireAuth, getFormSubmissionsExport);
+
+app.get("/forms/:id/analytics", requireAuth, getFormAnalytics);
+
+app.put("/forms/:id/publish", requireAuth, putFormPublish);
+app.put("/forms/:id/unpublish", requireAuth, putFormUnpublish);
+app.post("/forms/:id/duplicate", requireAuth, postFormDuplicate);
+
+app.get("/forms/:id", requireAuth, getForm);
+app.put("/forms/:id", requireAuth, putForm);
+app.delete("/forms/:id", requireAuth, deleteForm);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -976,6 +1060,8 @@ async function start() {
       console.log("Database schema OK (agents).");
       await ensureOperationsSchema();
       console.log("Database schema OK (operations / tasks).");
+      await ensureFormsSchema();
+      console.log("Database schema OK (forms).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
