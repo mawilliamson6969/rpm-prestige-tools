@@ -5,10 +5,17 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
+import AutomationConfigEditor from "../../AutomationConfigEditor";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
-import type { Template, TemplateStep, TeamUser } from "../../types";
-import { ROLES } from "../../types";
+import type {
+  AutoActionConfig,
+  AutoActionType,
+  Template,
+  TemplateStep,
+  TeamUser,
+} from "../../types";
+import { AUTO_ACTION_LABELS, ROLES } from "../../types";
 
 const CATEGORY_CHOICES = [
   "Owner Relations",
@@ -35,6 +42,7 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [template, setTemplate] = useState<Template | null>(null);
   const [steps, setSteps] = useState<TemplateStep[]>([]);
   const [users, setUsers] = useState<TeamUser[]>([]);
+  const [allTemplates, setAllTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -74,12 +82,30 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
     }
   }, [authHeaders, token]);
 
+  const loadAllTemplates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/processes/templates"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (Array.isArray(body.templates)) setAllTemplates(body.templates);
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token]);
+
   useEffect(() => {
     load();
   }, [load]);
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+  useEffect(() => {
+    loadAllTemplates();
+  }, [loadAllTemplates]);
 
   const updateTemplate = async (patch: Partial<Template>) => {
     if (!template) return;
@@ -469,6 +495,11 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     />
                     Required
                   </label>
+                  {step.autoAction ? (
+                    <span className={styles.boltIcon} title={`Automated: ${AUTO_ACTION_LABELS[step.autoAction]?.label}`}>
+                      ⚡
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     className={`${styles.smallBtn} ${styles.smallBtnDanger}`}
@@ -477,6 +508,12 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     Delete
                   </button>
                 </div>
+                <AutomationConfigEditor
+                  step={step}
+                  users={users}
+                  templates={allTemplates.filter((t) => t.id !== template?.id)}
+                  onChange={(patch) => updateStep(step, patch as Partial<TemplateStep>)}
+                />
               </div>
             </div>
           ))}

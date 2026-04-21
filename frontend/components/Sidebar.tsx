@@ -217,11 +217,13 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
       isAdmin
         ? ([
             { href: "/operations/tasks", label: "Tasks" },
+            { href: "/operations/projects", label: "Projects" },
             { href: "/operations/processes", label: "Processes" },
             { href: "/operations/templates", label: "Templates" },
           ] as const)
         : ([
             { href: "/operations/tasks", label: "Tasks" },
+            { href: "/operations/projects", label: "Projects" },
             { href: "/operations/processes", label: "Processes" },
           ] as const),
     [isAdmin]

@@ -1,4 +1,8 @@
 import { getPool } from "../lib/db.js";
+import {
+  runAutomationForProcessLaunch,
+  runAutomationForUnblockedSteps,
+} from "../lib/process-automation.js";
 
 function mapProcess(r) {
   return {
@@ -45,6 +49,10 @@ function mapStep(r) {
     completedByName: r.completed_by_name ?? undefined,
     dependsOnStepId: r.depends_on_step_id,
     notes: r.notes,
+    autoAction: r.auto_action,
+    autoActionConfig: r.auto_action_config,
+    automationStatus: r.automation_status,
+    automationError: r.automation_error,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -213,8 +221,8 @@ export async function postProcess(req, res) {
       const { rows: stepIns } = await client.query(
         `INSERT INTO process_steps
            (process_id, template_step_id, step_number, name, description, status,
-            assigned_user_id, assigned_role, due_date, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10)
+            assigned_user_id, assigned_role, due_date, notes, auto_action, auto_action_config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12)
          RETURNING id`,
         [
           processRow.id,
@@ -227,6 +235,8 @@ export async function postProcess(req, res) {
           ts.assigned_role,
           dueDate.toISOString().slice(0, 10),
           null,
+          ts.auto_action,
+          ts.auto_action_config,
         ]
       );
       idByTemplateStepId.set(ts.step_number, stepIns[0].id);
@@ -258,6 +268,11 @@ export async function postProcess(req, res) {
       [processRow.id]
     );
     res.status(201).json({ process: mapProcess(finalRows[0]), steps: steps.map(mapStep) });
+    setImmediate(() => {
+      runAutomationForProcessLaunch(processRow.id).catch((err) =>
+        console.warn("[automation] launch failed:", err.message)
+      );
+    });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     console.error(e);
@@ -459,9 +474,10 @@ async function completeOrSkipStep(req, res, kind) {
     }
     const step = rows[0];
     // Unblock any step that depends on this one.
-    await client.query(
+    const { rows: unblocked } = await client.query(
       `UPDATE process_steps SET status = 'pending', updated_at = NOW()
-       WHERE depends_on_step_id = $1 AND status = 'blocked'`,
+       WHERE depends_on_step_id = $1 AND status = 'blocked'
+       RETURNING id`,
       [id]
     );
     // Check if process is now complete.
@@ -478,6 +494,14 @@ async function completeOrSkipStep(req, res, kind) {
     }
     await client.query("COMMIT");
     res.json({ step: mapStep(step) });
+    const unblockedIds = unblocked.map((r) => r.id);
+    if (unblockedIds.length) {
+      setImmediate(() => {
+        runAutomationForUnblockedSteps(unblockedIds).catch((err) =>
+          console.warn("[automation] unblock failed:", err.message)
+        );
+      });
+    }
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     console.error(e);
@@ -493,6 +517,51 @@ export async function putProcessStepComplete(req, res) {
 
 export async function putProcessStepSkip(req, res) {
   await completeOrSkipStep(req, res, "skip");
+}
+
+export async function postProcessStepAutomationRetry(req, res) {
+  const stepId = Number.parseInt(req.params.stepId, 10);
+  if (!Number.isFinite(stepId)) {
+    res.status(400).json({ error: "Invalid step id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    // Clear the automation_status so executeStepAutomation will run it again.
+    await pool.query(
+      `UPDATE process_steps SET automation_status = NULL, automation_error = NULL WHERE id = $1`,
+      [stepId]
+    );
+    const { executeStepAutomation } = await import("../lib/process-automation.js");
+    const result = await executeStepAutomation(stepId);
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Could not retry automation." });
+  }
+}
+
+export async function getProcessStepActivity(req, res) {
+  const stepId = Number.parseInt(req.params.stepId, 10);
+  if (!Number.isFinite(stepId)) {
+    res.status(400).json({ error: "Invalid step id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT c.id, c.user_id, c.comment, c.created_at, u.display_name AS user_name
+       FROM task_comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.process_step_id = $1
+       ORDER BY c.created_at ASC`,
+      [stepId]
+    );
+    res.json({ comments: rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load activity." });
+  }
 }
 
 export async function postProcessStepComment(req, res) {

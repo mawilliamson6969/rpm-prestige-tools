@@ -1149,3 +1149,638 @@
   background: var(--blue);
   color: var(--white);
 }
+
+/* Automation config block inside step editor */
+.automationBlock {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.06), rgba(0, 152, 208, 0.04));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-left: 3px solid #f59e0b;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.automationHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.automationLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.automationToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #1b2856;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.automationFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.automationFields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: #6a737b;
+  font-weight: 600;
+}
+
+.automationFields input,
+.automationFields textarea,
+.automationFields select {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--navy);
+  background: var(--white);
+}
+
+.automationFullWidth {
+  grid-column: 1 / -1;
+}
+
+.automationTestResult {
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  font-size: 0.8rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: #1b2856;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.automationTestOk {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.automationTestErr {
+  border-color: rgba(179, 35, 23, 0.4);
+  background: rgba(179, 35, 23, 0.06);
+  color: #b32317;
+}
+
+.boltIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.22);
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 0.35rem;
+}
+
+.automationFailedNote {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(179, 35, 23, 0.08);
+  border: 1px solid rgba(179, 35, 23, 0.25);
+  color: #b32317;
+  font-size: 0.78rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.templateVarHint {
+  font-size: 0.7rem;
+  color: #6a737b;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Project list/detail */
+.projectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.projectCard {
+  background: var(--white);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-left: 4px solid var(--blue);
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+
+.projectCard:hover {
+  box-shadow: 0 6px 18px rgba(27, 40, 86, 0.12);
+  transform: translateY(-1px);
+}
+
+.projectCardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.projectIcon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.projectName {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.25;
+}
+
+.projectDesc {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--grey);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.projectStatHint {
+  font-size: 0.78rem;
+  color: var(--grey);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.projectMemberStack {
+  display: inline-flex;
+  margin-left: -0.25rem;
+}
+
+.projectMemberAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--white);
+  font-size: 0.62rem;
+  font-weight: 800;
+  border: 2px solid var(--white);
+  margin-left: -8px;
+}
+
+.projectMemberAvatar:first-child {
+  margin-left: 0;
+}
+
+.projectMemberOverflow {
+  background: var(--grey);
+}
+
+.projectCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(27, 40, 86, 0.06);
+  font-size: 0.78rem;
+}
+
+.statusOnHold {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+}
+
+.projectListTable {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--white);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.88rem;
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.05);
+}
+
+.projectListTable th,
+.projectListTable td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.06);
+}
+
+.projectListTable th {
+  background: rgba(27, 40, 86, 0.06);
+  color: var(--navy);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.projectListTable th:hover {
+  background: rgba(27, 40, 86, 0.1);
+}
+
+.projectListTable tbody tr {
+  cursor: pointer;
+}
+
+.projectListTable tbody tr:hover {
+  background: rgba(0, 152, 208, 0.04);
+}
+
+/* Project detail */
+.projectDetailHeader {
+  background: var(--white);
+  border-radius: 10px;
+  padding: 1.25rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-left: 5px solid var(--blue);
+  margin-bottom: 1.25rem;
+}
+
+.projectDetailTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.projectDetailTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.projectDetailIcon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.projectDetailName {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.projectDetailMeta {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  font-size: 0.85rem;
+  color: var(--grey);
+}
+
+.tabBar {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid rgba(27, 40, 86, 0.08);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+
+.tabBtn {
+  padding: 0.6rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--grey);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.tabBtnActive {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+
+.projectLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .projectLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Milestone timeline (simpler than process steps) */
+.milestoneList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.milestoneCard {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: var(--white);
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  position: relative;
+}
+
+.milestoneCard::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: -6px;
+  width: 2px;
+  height: 6px;
+  background: rgba(27, 40, 86, 0.12);
+}
+
+.milestoneCard:first-child::before {
+  display: none;
+}
+
+.milestoneCardOverdue {
+  border-left: 3px solid var(--red);
+}
+
+.milestoneCardCompleted {
+  opacity: 0.65;
+}
+
+.milestoneDot {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(27, 40, 86, 0.08);
+  color: var(--navy);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.milestoneDotCompleted {
+  background: var(--green);
+  color: var(--white);
+}
+
+.milestoneBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.milestoneName {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.milestoneNameCompleted {
+  text-decoration: line-through;
+  color: var(--grey);
+}
+
+.milestoneMeta {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--grey);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Notes */
+.noteCard {
+  background: var(--white);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.noteCardPinned {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.noteTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.noteMeta {
+  font-size: 0.72rem;
+  color: var(--grey);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.notePreview {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #333;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.noteFull {
+  white-space: pre-wrap;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #333;
+}
+
+.pinBtn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  color: var(--grey);
+}
+
+.pinBtn:hover {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.pinBtnActive {
+  color: #f59e0b;
+}
+
+/* Activity */
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.activityItem {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.65rem;
+  background: var(--white);
+  border-radius: 8px;
+  border: 1px solid rgba(27, 40, 86, 0.06);
+}
+
+.activitySmallAvatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--white);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.activityText {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: #1b2856;
+}
+
+.activityTime {
+  font-size: 0.72rem;
+  color: var(--grey);
+  margin-top: 0.15rem;
+}
+
+/* Tag chip used for project tags */
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(0, 152, 208, 0.1);
+  color: #007aa8;
+}
+
+.iconPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.iconPickerBtn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 8px;
+  background: var(--white);
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconPickerBtnActive {
+  border-color: var(--blue);
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.colorPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.colorPickerBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.colorPickerBtnActive {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 2px var(--white);
+}
+
+.taskProjectBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-left: 3px solid var(--blue);
+  background: rgba(0, 152, 208, 0.08);
+  color: var(--navy);
+}

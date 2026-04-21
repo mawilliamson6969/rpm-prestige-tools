@@ -21,6 +21,10 @@ function mapTask(r) {
     processStepId: r.process_step_id,
     processId: r.process_id ?? undefined,
     processName: r.process_name ?? undefined,
+    projectId: r.project_id ?? undefined,
+    projectName: r.project_name ?? undefined,
+    projectColor: r.project_color ?? undefined,
+    projectIcon: r.project_icon ?? undefined,
     category: r.category,
     tags: r.tags ?? [],
     notes: r.notes,
@@ -45,11 +49,15 @@ const TASK_SELECT = `
   SELECT t.*,
          u.display_name AS assigned_user_name,
          ps.process_id AS process_id,
-         p.name AS process_name
+         p.name AS process_name,
+         proj.name AS project_name,
+         proj.color AS project_color,
+         proj.icon AS project_icon
   FROM tasks t
   LEFT JOIN users u ON u.id = t.assigned_user_id
   LEFT JOIN process_steps ps ON ps.id = t.process_step_id
   LEFT JOIN processes p ON p.id = ps.process_id
+  LEFT JOIN projects proj ON proj.id = t.project_id
 `;
 
 export async function getTasks(req, res) {
@@ -79,6 +87,11 @@ export async function getTasks(req, res) {
     if (category) {
       whereParts.push(`t.category = $${n++}`);
       params.push(category);
+    }
+    const projectId = Number.parseInt(req.query.projectId, 10);
+    if (Number.isFinite(projectId)) {
+      whereParts.push(`t.project_id = $${n++}`);
+      params.push(projectId);
     }
     const dueFilter = typeof req.query.dueDate === "string" ? req.query.dueDate.trim() : "";
     if (dueFilter === "today") {
@@ -171,12 +184,16 @@ export async function postTask(req, res) {
     : [];
   try {
     const pool = getPool();
+    const projectIdParam = Number.parseInt(
+      req.body?.projectId ?? req.params?.projectId,
+      10
+    );
     const { rows } = await pool.query(
       `INSERT INTO tasks
          (title, description, priority, assigned_user_id, created_by,
           property_name, property_id, contact_name, due_date, due_time,
-          category, tags, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          category, tags, notes, project_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         title,
@@ -196,6 +213,7 @@ export async function postTask(req, res) {
         typeof req.body?.category === "string" ? req.body.category.trim() || null : null,
         tags,
         typeof req.body?.notes === "string" ? req.body.notes.trim() || null : null,
+        Number.isFinite(projectIdParam) ? projectIdParam : null,
       ]
     );
     const pool2 = pool;
@@ -277,6 +295,11 @@ export async function putTask(req, res) {
   if (typeof req.body?.notes === "string") {
     sets.push(`notes = $${n++}`);
     vals.push(req.body.notes.trim() || null);
+  }
+  if (req.body?.projectId !== undefined) {
+    const v = Number.parseInt(req.body.projectId, 10);
+    sets.push(`project_id = $${n++}`);
+    vals.push(Number.isFinite(v) ? v : null);
   }
   if (!sets.length) {
     res.status(400).json({ error: "No valid fields to update." });
