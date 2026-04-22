@@ -103,8 +103,11 @@ export type TemplateStage = {
   description: string | null;
   stageOrder: number;
   color: string | null;
+  textColor?: string | null;
   icon: string | null;
   isGate: boolean;
+  isFinal?: boolean;
+  autoAdvance?: boolean;
   gateCondition: unknown;
   createdAt: string;
 };

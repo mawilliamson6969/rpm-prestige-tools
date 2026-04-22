@@ -8,8 +8,11 @@ function mapStage(r) {
     description: r.description,
     stageOrder: r.stage_order,
     color: r.color,
+    textColor: r.text_color ?? "#042C53",
     icon: r.icon,
     isGate: r.is_gate,
+    isFinal: r.is_final ?? false,
+    autoAdvance: r.auto_advance ?? true,
     gateCondition: r.gate_condition,
     createdAt: r.created_at,
   };
@@ -50,8 +53,8 @@ export async function postTemplateStage(req, res) {
     );
     const { rows } = await pool.query(
       `INSERT INTO process_template_stages
-         (template_id, name, description, stage_order, color, icon, is_gate)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+         (template_id, name, description, stage_order, color, text_color, icon, is_gate, is_final, auto_advance)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         templateId,
         name,
@@ -61,9 +64,14 @@ export async function postTemplateStage(req, res) {
           : next[0].n,
         typeof req.body?.color === "string" && /^#[0-9a-fA-F]{6}$/.test(req.body.color.trim())
           ? req.body.color.trim()
-          : null,
+          : "#B5D4F4",
+        typeof req.body?.textColor === "string" && /^#[0-9a-fA-F]{6}$/.test(req.body.textColor.trim())
+          ? req.body.textColor.trim()
+          : "#042C53",
         typeof req.body?.icon === "string" ? req.body.icon.trim() || null : null,
         req.body?.isGate === true,
+        req.body?.isFinal === true,
+        req.body?.autoAdvance !== false,
       ]
     );
     res.status(201).json({ stage: mapStage(rows[0]) });
@@ -100,6 +108,18 @@ export async function putTemplateStage(req, res) {
   if (typeof req.body?.isGate === "boolean") {
     sets.push(`is_gate = $${n++}`);
     vals.push(req.body.isGate);
+  }
+  if (typeof req.body?.isFinal === "boolean") {
+    sets.push(`is_final = $${n++}`);
+    vals.push(req.body.isFinal);
+  }
+  if (typeof req.body?.autoAdvance === "boolean") {
+    sets.push(`auto_advance = $${n++}`);
+    vals.push(req.body.autoAdvance);
+  }
+  if (typeof req.body?.textColor === "string" && /^#[0-9a-fA-F]{6}$/.test(req.body.textColor.trim())) {
+    sets.push(`text_color = $${n++}`);
+    vals.push(req.body.textColor.trim());
   }
   if (Number.isFinite(Number.parseInt(req.body?.stageOrder, 10))) {
     sets.push(`stage_order = $${n++}`);

@@ -5,6 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "../operations.module.css";
 import OperationsTopBar from "../OperationsTopBar";
 import LaunchProcessModal from "../LaunchProcessModal";
+import ProcessCardDetailPanel from "../ProcessCardDetailPanel";
+import BoardView from "./BoardView";
+import TableView from "./TableView";
+import TimelineView from "./TimelineView";
 import { apiUrl } from "../../../../lib/api";
 import { useAuth } from "../../../../context/AuthContext";
 import type { ProcessRecord, ProcessStatus, Template } from "../types";
@@ -50,7 +54,9 @@ export default function ProcessesListClient() {
   const [launchOpen, setLaunchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [view, setView] = useState<"grid" | "dashboard">("grid");
+  const [view, setView] = useState<"board" | "table" | "timeline" | "grid" | "dashboard">("board");
+  const [detailOpen, setDetailOpen] = useState<number | null>(null);
+  const [boardRefresh, setBoardRefresh] = useState(0);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [dashboard, setDashboard] = useState<DashboardTemplate[]>([]);
 
@@ -168,10 +174,24 @@ export default function ProcessesListClient() {
           <div className={styles.viewToggle}>
             <button
               type="button"
-              className={`${styles.viewToggleBtn} ${view === "grid" ? styles.viewToggleActive : ""}`}
-              onClick={() => setView("grid")}
+              className={`${styles.viewToggleBtn} ${view === "board" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("board")}
             >
-              Grid
+              Board
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${view === "table" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("table")}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${view === "timeline" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("timeline")}
+            >
+              Timeline
             </button>
             <button
               type="button"
@@ -185,7 +205,34 @@ export default function ProcessesListClient() {
 
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
 
-        {view === "dashboard" ? (
+        {view === "board" ? (
+          <BoardView
+            templateId={templateFilter ? Number(templateFilter) : null}
+            assigneeId={null}
+            search={search}
+            priorityFilter=""
+            onOpenCard={(id) => setDetailOpen(id)}
+            refreshKey={boardRefresh}
+          />
+        ) : view === "table" ? (
+          loading ? (
+            <div className={styles.loading}>Loading…</div>
+          ) : (
+            <TableView
+              processes={processes}
+              onOpenRow={(id) => setDetailOpen(id)}
+            />
+          )
+        ) : view === "timeline" ? (
+          loading ? (
+            <div className={styles.loading}>Loading…</div>
+          ) : (
+            <TimelineView
+              processes={processes}
+              onOpenBar={(id) => setDetailOpen(id)}
+            />
+          )
+        ) : view === "dashboard" ? (
           dashboard.length === 0 ? (
             <div className={styles.emptyState}>
               <h3>No templates yet</h3>
@@ -199,7 +246,7 @@ export default function ProcessesListClient() {
                   className={styles.dashboardCard}
                   style={{ borderTopColor: d.color || "#0098D0" }}
                   onClick={() => {
-                    setView("grid");
+                    setView("board");
                     setTemplateFilter(String(d.templateId));
                   }}
                 >
@@ -298,6 +345,16 @@ export default function ProcessesListClient() {
       </div>
 
       <LaunchProcessModal open={launchOpen} onClose={() => setLaunchOpen(false)} />
+      {detailOpen ? (
+        <ProcessCardDetailPanel
+          processId={detailOpen}
+          onClose={() => setDetailOpen(null)}
+          onChanged={() => {
+            setBoardRefresh((r) => r + 1);
+            load();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

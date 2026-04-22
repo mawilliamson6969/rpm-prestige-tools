@@ -229,11 +229,12 @@ export async function postProcess(req, res) {
 
     const processName = propertyName ? `${template.name}: ${propertyName}` : template.name;
 
+    const firstTemplateStageId = tmplStages.length ? tmplStages[0].id : null;
     const { rows: procRows } = await client.query(
       `INSERT INTO processes
          (template_id, name, status, property_name, property_id, contact_name, contact_email,
-          contact_phone, target_completion, notes, created_by)
-       VALUES ($1, $2, 'active', $3, $4, $5, $6, $7, $8, $9, $10)
+          contact_phone, target_completion, notes, created_by, current_stage_id)
+       VALUES ($1, $2, 'active', $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         templateId,
@@ -246,6 +247,7 @@ export async function postProcess(req, res) {
         target,
         notes || null,
         req.user.id,
+        firstTemplateStageId,
       ]
     );
     const processRow = procRows[0];
@@ -582,7 +584,7 @@ async function completeOrSkipStep(req, res, kind) {
         );
       });
     }
-    // Fire step_completed conditions + recalc dependent due dates + maybe complete a stage.
+    // Fire step_completed conditions + recalc dependent due dates + stage advancement.
     setImmediate(async () => {
       try {
         await evaluateConditions(step.process_id, "step_completed", {
@@ -595,6 +597,9 @@ async function completeOrSkipStep(req, res, kind) {
           completedStepTemplateId: step.template_step_id,
         });
         await checkAndCompleteStage(step.process_id, step.stage_id);
+        // Board-level auto-advance: move processes.current_stage_id forward if the
+        // current template stage is fully complete and has auto_advance=true.
+        await recalcCurrentStage(step.process_id);
       } catch (err) {
         console.warn("[process] post-complete tasks failed:", err.message);
       }
@@ -606,6 +611,79 @@ async function completeOrSkipStep(req, res, kind) {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Recompute the process's current_stage_id based on the lowest-order template stage
+ * that still has incomplete steps. Returns { oldStageId, newStageId, advanced: bool, autoAdvance }.
+ * Respects the auto_advance flag on the *current* stage — if false, doesn't advance past it.
+ */
+async function recalcCurrentStage(processId) {
+  const pool = getPool();
+  const { rows: proc } = await pool.query(
+    `SELECT p.current_stage_id, p.template_id,
+            cs.auto_advance AS current_auto_advance,
+            cs.stage_order AS current_stage_order,
+            cs.is_final AS current_is_final
+     FROM processes p
+     LEFT JOIN process_template_stages cs ON cs.id = p.current_stage_id
+     WHERE p.id = $1`,
+    [processId]
+  );
+  if (!proc.length) return { advanced: false };
+  const { template_id, current_stage_id, current_auto_advance, current_stage_order, current_is_final } =
+    proc[0];
+  if (!template_id) return { advanced: false };
+
+  // Are all steps of the current template stage done?
+  if (current_stage_id) {
+    const { rows: remaining } = await pool.query(
+      `SELECT COUNT(*)::int AS c
+       FROM process_steps s
+       JOIN process_template_steps ts ON ts.id = s.template_step_id
+       WHERE s.process_id = $1
+         AND ts.stage_id = $2
+         AND s.status NOT IN ('completed','skipped')`,
+      [processId, current_stage_id]
+    );
+    if (remaining[0].c > 0) return { advanced: false, oldStageId: current_stage_id };
+    // All steps in current stage done. Respect auto_advance.
+    if (current_auto_advance === false) {
+      return { advanced: false, oldStageId: current_stage_id, autoAdvance: false };
+    }
+  }
+
+  // Find the lowest-order template stage with incomplete steps (or the first stage if none set yet).
+  const { rows: nextStages } = await pool.query(
+    `SELECT s.id, s.stage_order, s.is_final,
+       (SELECT COUNT(*)::int FROM process_steps ps
+          JOIN process_template_steps ts ON ts.id = ps.template_step_id
+          WHERE ps.process_id = $1 AND ts.stage_id = s.id
+            AND ps.status NOT IN ('completed','skipped')) AS open_steps
+     FROM process_template_stages s
+     WHERE s.template_id = $2
+     ORDER BY s.stage_order ASC, s.id ASC`,
+    [processId, template_id]
+  );
+  const nextStage = nextStages.find((s) => s.open_steps > 0) ?? nextStages[nextStages.length - 1];
+  if (!nextStage) return { advanced: false };
+  if (nextStage.id === current_stage_id) return { advanced: false, oldStageId: current_stage_id };
+
+  await pool.query(
+    `UPDATE processes SET
+       current_stage_id = $1,
+       status = CASE WHEN $2 THEN 'completed' ELSE status END,
+       completed_at = CASE WHEN $2 THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
+       updated_at = NOW()
+     WHERE id = $3`,
+    [nextStage.id, nextStage.is_final && nextStage.open_steps === 0, processId]
+  );
+  return {
+    advanced: true,
+    oldStageId: current_stage_id,
+    newStageId: nextStage.id,
+    isFinal: nextStage.is_final && nextStage.open_steps === 0,
+  };
 }
 
 async function checkAndCompleteStage(processId, stageId) {
@@ -656,6 +734,222 @@ export async function putProcessStepComplete(req, res) {
 
 export async function putProcessStepSkip(req, res) {
   await completeOrSkipStep(req, res, "skip");
+}
+
+/**
+ * Board view: stages + processes grouped by current_stage_id.
+ * For any process missing current_stage_id, infer from the first incomplete stage
+ * (via process_stages) or fall back to the template's first stage.
+ */
+export async function getProcessesBoard(req, res) {
+  try {
+    const pool = getPool();
+    const templateId = Number.parseInt(req.query.templateId, 10);
+    const assignee = Number.parseInt(req.query.assignee, 10);
+    const priority = typeof req.query.priority === "string" ? req.query.priority.trim() : "";
+    const statusFilter =
+      typeof req.query.status === "string" ? req.query.status.trim() : "active";
+
+    let stages = [];
+    if (Number.isFinite(templateId)) {
+      const { rows } = await pool.query(
+        `SELECT * FROM process_template_stages
+         WHERE template_id = $1 ORDER BY stage_order ASC, id ASC`,
+        [templateId]
+      );
+      stages = rows.map((r) => ({
+        id: r.id,
+        templateId: r.template_id,
+        name: r.name,
+        color: r.color,
+        textColor: r.text_color,
+        stageOrder: r.stage_order,
+        isFinal: r.is_final,
+        autoAdvance: r.auto_advance,
+      }));
+    } else {
+      // Unified generic-stage board
+      stages = [
+        { id: -1, name: "New", color: "#B5D4F4", textColor: "#042C53", stageOrder: 0, isFinal: false, autoAdvance: false, virtual: true },
+        { id: -2, name: "In Progress", color: "#FAC775", textColor: "#412402", stageOrder: 1, isFinal: false, autoAdvance: false, virtual: true },
+        { id: -3, name: "Waiting", color: "#CECBF6", textColor: "#26215C", stageOrder: 2, isFinal: false, autoAdvance: false, virtual: true },
+        { id: -4, name: "Complete", color: "#C0DD97", textColor: "#173404", stageOrder: 3, isFinal: true, autoAdvance: false, virtual: true },
+      ];
+    }
+
+    const whereParts = [];
+    const params = [];
+    let n = 1;
+    if (statusFilter && statusFilter !== "all") {
+      whereParts.push(`p.status = $${n++}`);
+      params.push(statusFilter);
+    }
+    if (Number.isFinite(templateId)) {
+      whereParts.push(`p.template_id = $${n++}`);
+      params.push(templateId);
+    }
+    if (priority) {
+      // Processes don't have priority; look at property step-priority proxies — skip for now.
+    }
+    if (Number.isFinite(assignee)) {
+      whereParts.push(
+        `EXISTS (SELECT 1 FROM process_steps s WHERE s.process_id = p.id AND s.assigned_user_id = $${n++})`
+      );
+      params.push(assignee);
+    }
+    const where = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+    const { rows: procs } = await pool.query(
+      `SELECT p.*,
+         t.name AS template_name, t.icon AS template_icon, t.color AS template_color,
+         (SELECT COUNT(*)::int FROM process_steps s WHERE s.process_id = p.id) AS total_steps,
+         (SELECT COUNT(*)::int FROM process_steps s WHERE s.process_id = p.id AND s.status IN ('completed','skipped')) AS completed_steps,
+         (SELECT s.name FROM process_steps s WHERE s.process_id = p.id
+            AND s.status NOT IN ('completed','skipped')
+            ORDER BY s.step_number ASC LIMIT 1) AS current_step_name,
+         cs.name AS current_stage_name,
+         cs.color AS current_stage_color,
+         cs.text_color AS current_stage_text_color,
+         cs.is_final AS current_stage_is_final,
+         cs.stage_order AS current_stage_order
+       FROM processes p
+       LEFT JOIN process_templates t ON t.id = p.template_id
+       LEFT JOIN process_template_stages cs ON cs.id = p.current_stage_id
+       ${where}
+       ORDER BY p.board_position ASC, p.started_at DESC
+       LIMIT 1000`,
+      params
+    );
+
+    const bucketByStage = {};
+    for (const st of stages) bucketByStage[st.id] = [];
+
+    for (const p of procs) {
+      const total = Number(p.total_steps) || 0;
+      const done = Number(p.completed_steps) || 0;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const overdue =
+        p.target_completion &&
+        new Date(p.target_completion) < today &&
+        p.status === "active";
+      const card = {
+        id: p.id,
+        title: p.name,
+        propertyName: p.property_name,
+        propertyId: p.property_id,
+        contactName: p.contact_name,
+        contactEmail: p.contact_email,
+        contactPhone: p.contact_phone,
+        templateId: p.template_id,
+        templateName: p.template_name,
+        templateIcon: p.template_icon,
+        templateColor: p.template_color,
+        status: p.status,
+        currentStageId: p.current_stage_id,
+        currentStageName: p.current_stage_name,
+        currentStageColor: p.current_stage_color,
+        currentStageTextColor: p.current_stage_text_color,
+        currentStageIsFinal: p.current_stage_is_final,
+        boardPosition: p.board_position,
+        startedAt: p.started_at,
+        targetCompletion: p.target_completion,
+        completedAt: p.completed_at,
+        totalSteps: total,
+        completedSteps: done,
+        progress: pct,
+        currentStepName: p.current_step_name,
+        overdue,
+      };
+
+      let stageKey;
+      if (Number.isFinite(templateId)) {
+        stageKey = p.current_stage_id ?? stages[0]?.id ?? null;
+      } else {
+        // Generic bucket
+        if (p.status === "completed") stageKey = -4;
+        else if (!p.current_stage_id) stageKey = -1;
+        else if (p.current_stage_is_final) stageKey = -4;
+        else if (
+          p.current_stage_name &&
+          /wait|pending|approval|response/i.test(p.current_stage_name)
+        )
+          stageKey = -3;
+        else stageKey = -2;
+      }
+      if (bucketByStage[stageKey]) bucketByStage[stageKey].push(card);
+      else if (stages[0]) bucketByStage[stages[0].id].push(card);
+    }
+
+    res.json({ stages, processes: bucketByStage });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load board." });
+  }
+}
+
+/**
+ * Move a process to a new stage. Auto-completes the process when moved to a final stage,
+ * reopens it when moved off a final stage.
+ */
+export async function putProcessStage(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  const stageId = req.body?.stageId === null ? null : Number.parseInt(req.body?.stageId, 10);
+  const boardPos = Number.parseInt(req.body?.boardPosition, 10);
+  if (!Number.isFinite(id) || (req.body?.stageId !== null && !Number.isFinite(stageId))) {
+    res.status(400).json({ error: "Invalid id or stageId." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    let isFinal = false;
+    if (Number.isFinite(stageId)) {
+      const { rows } = await pool.query(
+        `SELECT is_final FROM process_template_stages WHERE id = $1`,
+        [stageId]
+      );
+      isFinal = rows[0]?.is_final ?? false;
+    }
+    const { rows } = await pool.query(
+      `UPDATE processes SET
+         current_stage_id = $1,
+         board_position = COALESCE($2, board_position),
+         status = CASE WHEN $3 THEN 'completed' ELSE CASE WHEN status = 'completed' THEN 'active' ELSE status END END,
+         completed_at = CASE WHEN $3 THEN COALESCE(completed_at, NOW()) ELSE CASE WHEN status = 'completed' THEN NULL ELSE completed_at END END,
+         updated_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [Number.isFinite(stageId) ? stageId : null, Number.isFinite(boardPos) ? boardPos : null, isFinal, id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Process not found." });
+      return;
+    }
+    res.json({ process: mapProcess(rows[0]) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not move process." });
+  }
+}
+
+export async function putProcessBoardPosition(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  const pos = Number.parseInt(req.body?.boardPosition, 10);
+  if (!Number.isFinite(id) || !Number.isFinite(pos)) {
+    res.status(400).json({ error: "Invalid id or position." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    await pool.query(`UPDATE processes SET board_position = $1, updated_at = NOW() WHERE id = $2`, [
+      pos,
+      id,
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not update position." });
+  }
 }
 
 export async function getProcessesDashboard(_req, res) {

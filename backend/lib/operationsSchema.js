@@ -441,6 +441,104 @@ export async function ensureOperationsSchema() {
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_dep ON task_dependencies(depends_on_task_id);
   `);
 
+  // Board-view stage enhancements
+  await pool.query(
+    `ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS text_color VARCHAR(7) DEFAULT '#042C53'`
+  );
+  await pool.query(
+    `ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS is_final BOOLEAN DEFAULT false`
+  );
+  await pool.query(
+    `ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS auto_advance BOOLEAN DEFAULT true`
+  );
+  await pool.query(
+    `ALTER TABLE processes ADD COLUMN IF NOT EXISTS current_stage_id INTEGER REFERENCES process_template_stages(id)`
+  );
+  await pool.query(
+    `ALTER TABLE processes ADD COLUMN IF NOT EXISTS board_position INTEGER DEFAULT 0`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_processes_current_stage ON processes(current_stage_id)`
+  );
+
+  // Seed default stages per template if that template has none yet.
+  const STAGE_SEEDS = {
+    "New Owner Onboarding": [
+      ["Lead", "#B5D4F4", "#042C53", false],
+      ["PMA Signed", "#CECBF6", "#26215C", false],
+      ["Setup", "#FAC775", "#412402", false],
+      ["Inspection", "#9FE1CB", "#04342C", false],
+      ["Go Live", "#C0DD97", "#173404", true],
+    ],
+    "Move-In Process": [
+      ["Lease Signed", "#B5D4F4", "#042C53", false],
+      ["Pre-Move-In Prep", "#FAC775", "#412402", false],
+      ["Move-In Day", "#9FE1CB", "#04342C", false],
+      ["Follow-Up", "#C0DD97", "#173404", true],
+    ],
+    "Move-Out / Turnover": [
+      ["Notice Received", "#B5D4F4", "#042C53", false],
+      ["Pre-Inspection", "#CECBF6", "#26215C", false],
+      ["Move-Out Day", "#FAC775", "#412402", false],
+      ["Make-Ready", "#F5C4B3", "#4A1B0C", false],
+      ["Deposit Settled", "#9FE1CB", "#04342C", false],
+      ["Relisted", "#C0DD97", "#173404", true],
+    ],
+    "Lease Renewal": [
+      ["Notice Sent", "#B5D4F4", "#042C53", false],
+      ["Analysis", "#FAC775", "#412402", false],
+      ["Tenant Response", "#9FE1CB", "#04342C", false],
+      ["Lease Signing", "#C0DD97", "#173404", false],
+      ["Complete", "#C0DD97", "#173404", true],
+    ],
+    "Maintenance Escalation": [
+      ["Reported", "#F5C4B3", "#4A1B0C", false],
+      ["Diagnosed", "#FAC775", "#412402", false],
+      ["Vendor Dispatched", "#9FE1CB", "#04342C", false],
+      ["Repair Complete", "#C0DD97", "#173404", false],
+      ["Closed", "#C0DD97", "#173404", true],
+    ],
+    "Eviction Process": [
+      ["Notice Period", "#F7C1C1", "#501313", false],
+      ["Legal Filing", "#F09595", "#791F1F", false],
+      ["Court Date", "#FAC775", "#412402", false],
+      ["Judgment", "#9FE1CB", "#04342C", false],
+      ["Possession", "#C0DD97", "#173404", true],
+    ],
+    "Owner Termination": [
+      ["Request Received", "#F7C1C1", "#501313", false],
+      ["Retention Attempt", "#FAC775", "#412402", false],
+      ["Offboarding", "#9FE1CB", "#04342C", false],
+      ["Complete", "#C0DD97", "#173404", true],
+    ],
+    "Annual Property Inspection": [
+      ["Scheduled", "#B5D4F4", "#042C53", false],
+      ["Inspection Day", "#FAC775", "#412402", false],
+      ["Report & Follow-Up", "#9FE1CB", "#04342C", false],
+      ["Complete", "#C0DD97", "#173404", true],
+    ],
+  };
+  const { rows: existingTemplates } = await pool.query(
+    `SELECT id, name FROM process_templates WHERE is_active = true`
+  );
+  for (const t of existingTemplates) {
+    const seeds = STAGE_SEEDS[t.name];
+    if (!seeds) continue;
+    const { rows: existingStages } = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM process_template_stages WHERE template_id = $1`,
+      [t.id]
+    );
+    if (existingStages[0].c > 0) continue;
+    for (const [i, [name, color, textColor, isFinal]] of seeds.entries()) {
+      await pool.query(
+        `INSERT INTO process_template_stages
+           (template_id, name, stage_order, color, text_color, is_final, auto_advance)
+         VALUES ($1, $2, $3, $4, $5, $6, true)`,
+        [t.id, name, i, color, textColor, isFinal]
+      );
+    }
+  }
+
   const { rows: existing } = await pool.query(`SELECT COUNT(*)::int AS c FROM process_templates`);
   if (existing[0].c > 0) return;
 

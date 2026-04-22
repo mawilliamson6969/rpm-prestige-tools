@@ -545,10 +545,37 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     />
                     🔒 Gate
                   </label>
+                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={(stage as unknown as { isFinal?: boolean }).isFinal ?? false}
+                      onChange={(e) => updateStage(stage, { isFinal: e.target.checked } as Partial<typeof stage>)}
+                    />
+                    ✓ Final
+                  </label>
+                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={(stage as unknown as { autoAdvance?: boolean }).autoAdvance ?? true}
+                      onChange={(e) => updateStage(stage, { autoAdvance: e.target.checked } as Partial<typeof stage>)}
+                    />
+                    Auto-advance
+                  </label>
                   <input
                     type="color"
                     value={stage.color || "#0098D0"}
                     onChange={(e) => updateStage(stage, { color: e.target.value.toUpperCase() })}
+                    title="Background color"
+                  />
+                  <input
+                    type="color"
+                    value={(stage as unknown as { textColor?: string }).textColor || "#042C53"}
+                    onChange={(e) =>
+                      updateStage(stage, {
+                        textColor: e.target.value.toUpperCase(),
+                      } as Partial<typeof stage>)
+                    }
+                    title="Text color"
                   />
                   <button
                     type="button"

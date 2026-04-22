@@ -404,12 +404,15 @@ import {
   deleteProcess,
   getProcess,
   getProcesses,
+  getProcessesBoard,
   getProcessesDashboard,
   getProcessStepActivity,
   postProcess,
   postProcessStepAutomationRetry,
   postProcessStepComment,
   putProcess,
+  putProcessBoardPosition,
+  putProcessStage,
   putProcessStatus,
   putProcessStep,
   putProcessStepComplete,
@@ -990,6 +993,7 @@ app.post("/processes/steps/:stepId/comments", requireAuth, postProcessStepCommen
 app.put("/processes/steps/:stepId", requireAuth, putProcessStep);
 
 app.get("/processes/dashboard", requireAuth, getProcessesDashboard);
+app.get("/processes/board", requireAuth, getProcessesBoard);
 app.get("/processes", requireAuth, getProcesses);
 app.post("/processes", requireAuth, postProcess);
 
@@ -1015,6 +1019,8 @@ app.get("/processes/:id/condition-log", requireAuth, getProcessConditionLog);
 
 app.get("/processes/:id", requireAuth, getProcess);
 app.put("/processes/:id/status", requireAuth, putProcessStatus);
+app.put("/processes/:id/stage", requireAuth, putProcessStage);
+app.put("/processes/:id/board-position", requireAuth, putProcessBoardPosition);
 app.put("/processes/:id", requireAuth, putProcess);
 app.delete("/processes/:id", requireAuth, requireAdminRole, deleteProcess);
 
