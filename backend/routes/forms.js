@@ -1128,17 +1128,12 @@ export async function postPublicFormSubmit(req, res) {
       [form.id, { submissionId: submission.id }]
     ).catch(() => {});
 
-    // Run automations (basic: notification via notifications table, launch_process)
-    const { rows: automations } = await pool.query(
-      `SELECT * FROM form_automations WHERE form_id = $1 AND is_active = true ORDER BY sort_order ASC`,
-      [form.id]
-    );
-    for (const a of automations) {
-      try {
-        await runAutomation(pool, a, form, submission, cleanedData);
-      } catch (err) {
-        console.error("[form automation]", err?.message || err);
-      }
+    // Run automations — delegate to the Phase 3 engine (which handles all action types).
+    try {
+      const { executeFormAutomations } = await import("../lib/form-automations.js");
+      await executeFormAutomations(form.id, submission.id, cleanedData);
+    } catch (err) {
+      console.error("[form automation]", err?.message || err);
     }
 
     res.status(201).json({

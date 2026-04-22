@@ -27,6 +27,22 @@ import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
 import { ensureFormsSchema } from "./lib/formsSchema.js";
+import { ensureFormsPhase3Schema } from "./lib/forms-phase3-schema.js";
+import { ensureFormTemplates } from "./lib/form-templates-seed.js";
+import {
+  getAutomationLog,
+  getAutomationMeta,
+  getFormAnalyticsV2,
+  getFormCategories,
+  getFormTemplates,
+  getSubmissionPdf,
+  getSubmissionsExport,
+  postAutomationTest,
+  postFormFromTemplate,
+  postPublicAnalytics,
+  postReRunAutomations,
+  postSubmissionsExportPdf,
+} from "./routes/forms-phase3.js";
 import {
   deleteForm,
   deleteFormAutomation,
@@ -976,6 +992,16 @@ app.get("/forms/public/:slug", getPublicForm);
 app.get("/forms/public/:slug/prefill", getPublicFormPrefill);
 app.post("/forms/public/:slug/submit", postPublicFormSubmit);
 app.post("/forms/public/:slug/upload", formsUploadMiddleware, postPublicFormUpload);
+app.post("/forms/public/:slug/analytics", postPublicAnalytics);
+
+/** Phase 3: templates, categories, metadata — registered before /forms/:id catch-all. */
+app.get("/forms/templates", requireAuth, getFormTemplates);
+app.post("/forms/from-template", requireAuth, postFormFromTemplate);
+app.get("/forms/categories", requireAuth, getFormCategories);
+app.get("/forms/automation-meta", requireAuth, getAutomationMeta);
+app.post("/forms/automations/:automationId/test", requireAuth, postAutomationTest);
+app.post("/forms/submissions/:submissionId/rerun-automations", requireAuth, postReRunAutomations);
+app.get("/forms/submissions/:submissionId/pdf", requireAuth, getSubmissionPdf);
 
 app.get("/forms", requireAuth, getForms);
 app.post("/forms", requireAuth, postForm);
@@ -1006,9 +1032,13 @@ app.get("/forms/:id/automations", requireAuth, getFormAutomations);
 app.post("/forms/:id/automations", requireAuth, postFormAutomation);
 
 app.get("/forms/:id/submissions", requireAuth, getFormSubmissions);
-app.get("/forms/:id/submissions/export", requireAuth, getFormSubmissionsExport);
+// Phase 3 exports: CSV + Excel via ?format=
+app.get("/forms/:id/submissions/export", requireAuth, getSubmissionsExport);
+app.post("/forms/:id/submissions/export-pdf", requireAuth, postSubmissionsExportPdf);
 
-app.get("/forms/:id/analytics", requireAuth, getFormAnalytics);
+// Phase 3 analytics (supersedes basic Phase 2 summary at the same path)
+app.get("/forms/:id/analytics", requireAuth, getFormAnalyticsV2);
+app.get("/forms/:id/automation-log", requireAuth, getAutomationLog);
 
 app.put("/forms/:id/publish", requireAuth, putFormPublish);
 app.put("/forms/:id/unpublish", requireAuth, putFormUnpublish);
@@ -1062,6 +1092,10 @@ async function start() {
       console.log("Database schema OK (operations / tasks).");
       await ensureFormsSchema();
       console.log("Database schema OK (forms).");
+      await ensureFormsPhase3Schema();
+      console.log("Database schema OK (forms phase 3).");
+      await ensureFormTemplates();
+      console.log("Form starter templates seeded.");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

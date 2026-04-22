@@ -11,9 +11,11 @@ import {
   type FieldTypeDef, type FieldWidth, type FormAutomation,
   type FormField, type FormPage, type FormSummary,
 } from "../../types";
+import AutomationsTab from "./AutomationsTab";
+import AnalyticsTab from "./AnalyticsTab";
 
 type PanelTab = "properties" | "validation" | "logic" | "prefill";
-type TopTab = "build" | "share" | "settings";
+type TopTab = "build" | "share" | "settings" | "automations" | "analytics";
 
 export default function FormBuilderClient({ formId }: { formId: string }) {
   const { authHeaders, token } = useAuth();
@@ -267,6 +269,12 @@ export default function FormBuilderClient({ formId }: { formId: string }) {
           <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("build")} disabled={topTab === "build"}>
             Build
           </button>
+          <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("automations")} disabled={topTab === "automations"}>
+            Automations
+          </button>
+          <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("analytics")} disabled={topTab === "analytics"}>
+            Analytics
+          </button>
           <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("share")} disabled={topTab === "share"}>
             Share
           </button>
@@ -326,6 +334,15 @@ export default function FormBuilderClient({ formId }: { formId: string }) {
             updateField={updateField}
           />
         </div>
+      ) : topTab === "automations" ? (
+        <AutomationsTab
+          formId={form.id}
+          fields={fields}
+          automations={automations}
+          reload={load}
+        />
+      ) : topTab === "analytics" ? (
+        <AnalyticsTab formId={form.id} />
       ) : topTab === "share" ? (
         <ShareTab form={form} publicUrl={publicUrl} />
       ) : (

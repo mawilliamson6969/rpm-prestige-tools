@@ -20,6 +20,47 @@ export default function FormsListClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", category: "Operations" });
   const [saving, setSaving] = useState(false);
+  const [createStep, setCreateStep] = useState<"choose" | "blank" | "templates">("choose");
+  const [templates, setTemplates] = useState<Array<{
+    id: number; name: string; description: string | null;
+    category: string | null; icon: string; fieldCount: number; pageCount: number;
+  }>>([]);
+  const [tmplCategory, setTmplCategory] = useState<string>("");
+
+  const openCreate = () => {
+    setCreateStep("choose");
+    setForm({ name: "", description: "", category: "Operations" });
+    setCreateOpen(true);
+  };
+
+  const loadTemplates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/forms/templates"), {
+        headers: { ...authHeaders() }, cache: "no-store",
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setTemplates(body.templates || []);
+      }
+    } catch {/* ignore */}
+  }, [authHeaders, token]);
+
+  const pickTemplate = async (templateId: number) => {
+    try {
+      const res = await fetch(apiUrl("/forms/from-template"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ templateId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Create from template failed.");
+      setCreateOpen(false);
+      router.push(`/forms/builder/${body.formId}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Create from template failed.");
+    }
+  };
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -109,7 +150,7 @@ export default function FormsListClient() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
         >
           + Create Form
         </button>
@@ -187,47 +228,124 @@ export default function FormsListClient() {
 
       {createOpen ? (
         <div className={styles.overlay} onClick={() => setCreateOpen(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modal} style={{ maxWidth: createStep === "templates" ? 720 : 540 }} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2>Create Form</h2>
+              <h2>
+                {createStep === "choose"
+                  ? "Create Form"
+                  : createStep === "blank"
+                  ? "New Blank Form"
+                  : "Choose a Template"}
+              </h2>
               <button type="button" className={styles.closeBtn} onClick={() => setCreateOpen(false)}>×</button>
             </div>
-            <form className={styles.form} onSubmit={createForm}>
-              <div className={styles.field}>
-                <label>Form Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  autoFocus
-                />
+
+            {createStep === "choose" ? (
+              <div className={styles.form}>
+                <div className={styles.tmplChoice}>
+                  <button
+                    type="button"
+                    className={styles.tmplChoiceBtn}
+                    onClick={() => setCreateStep("blank")}
+                  >
+                    <h3 className={styles.tmplChoiceTitle}>📄 Start from Blank</h3>
+                    <p className={styles.tmplChoiceDesc}>Build a form from scratch.</p>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.tmplChoiceBtn}
+                    onClick={() => { setCreateStep("templates"); loadTemplates(); }}
+                  >
+                    <h3 className={styles.tmplChoiceTitle}>📋 Use a Template</h3>
+                    <p className={styles.tmplChoiceDesc}>Pick from pre-built templates.</p>
+                  </button>
+                </div>
               </div>
-              <div className={styles.field}>
-                <label>Description</label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                />
+            ) : null}
+
+            {createStep === "blank" ? (
+              <form className={styles.form} onSubmit={createForm}>
+                <div className={styles.field}>
+                  <label>Form Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    autoFocus
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Description</label>
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Category</label>
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  >
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className={styles.formActionsRow}>
+                  <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setCreateStep("choose")}>
+                    ← Back
+                  </button>
+                  <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving}>
+                    {saving ? "Creating…" : "Create"}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
+            {createStep === "templates" ? (
+              <div className={styles.form}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <select
+                    className={styles.select}
+                    value={tmplCategory}
+                    onChange={(e) => setTmplCategory(e.target.value)}
+                  >
+                    <option value="">All categories</option>
+                    {Array.from(new Set(templates.map((t) => t.category).filter(Boolean))).map((c) => (
+                      <option key={c!} value={c!}>{c}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnGhost}`}
+                    onClick={() => setCreateStep("choose")}
+                    style={{ marginLeft: "auto" }}
+                  >
+                    ← Back
+                  </button>
+                </div>
+                <div className={styles.tmplGrid}>
+                  {templates
+                    .filter((t) => !tmplCategory || t.category === tmplCategory)
+                    .map((t) => (
+                      <div key={t.id} className={styles.tmplCard} onClick={() => pickTemplate(t.id)}>
+                        <div className={styles.tmplCardHead}>
+                          <span className={styles.tmplIcon}>{t.icon}</span>
+                          <h3 className={styles.tmplName}>{t.name}</h3>
+                        </div>
+                        {t.description ? <p className={styles.tmplDesc}>{t.description}</p> : null}
+                        <div className={styles.tmplFoot}>
+                          <span>{t.category || "—"}</span>
+                          <span>{t.fieldCount} fields · {t.pageCount} page{t.pageCount === 1 ? "" : "s"}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                {templates.length === 0 ? (
+                  <p style={{ color: "#6a737b", textAlign: "center", padding: "1rem" }}>Loading templates…</p>
+                ) : null}
               </div>
-              <div className={styles.field}>
-                <label>Category</label>
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                >
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className={styles.formActionsRow}>
-                <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setCreateOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving}>
-                  {saving ? "Creating…" : "Create"}
-                </button>
-              </div>
-            </form>
+            ) : null}
           </div>
         </div>
       ) : null}

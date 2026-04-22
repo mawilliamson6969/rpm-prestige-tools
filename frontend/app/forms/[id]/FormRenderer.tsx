@@ -53,6 +53,38 @@ function evaluateLogic(
   return { visible: true, requiredOverride: null };
 }
 
+function getSessionId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    let sid = sessionStorage.getItem("form_session");
+    if (!sid) {
+      sid = (typeof crypto !== "undefined" && "randomUUID" in crypto)
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now();
+      sessionStorage.setItem("form_session", sid);
+    }
+    return sid;
+  } catch {
+    return "";
+  }
+}
+
+function trackEvent(slug: string, eventType: string, eventData: Record<string, unknown> = {}) {
+  if (typeof window === "undefined") return;
+  const sessionId = getSessionId();
+  const body = JSON.stringify({ eventType, eventData, sessionId });
+  const url = publicApiUrl(`/forms/public/${slug}/analytics`);
+  try {
+    if ("sendBeacon" in navigator) {
+      const blob = new Blob([body], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+  } catch {/* fall through */}
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true })
+    .catch(() => {/* ignore */});
+}
+
 export default function FormRenderer({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
   const token = searchParams?.get("token") || "";
@@ -70,6 +102,9 @@ export default function FormRenderer({ slug }: { slug: string }) {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
+  const hasStartedRef = useRef(false);
+  const submittedRef = useRef(false);
+  const currentPageIdRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,6 +141,30 @@ export default function FormRenderer({ slug }: { slug: string }) {
   }, [slug, token, searchParams]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Analytics: form_view (once after load)
+  useEffect(() => {
+    if (!form) return;
+    trackEvent(slug, "form_view", { referrer: typeof document !== "undefined" ? document.referrer : "" });
+  }, [form, slug]);
+
+  // Analytics: form_abandon on unload if started but not submitted
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onUnload = () => {
+      if (hasStartedRef.current && !submittedRef.current) {
+        trackEvent(slug, "form_abandon", { lastPageId: currentPageIdRef.current });
+      }
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [slug]);
+
+  const trackStartOnce = () => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    trackEvent(slug, "form_start");
+  };
 
   const setValue = (key: string, v: unknown) => {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -156,12 +215,24 @@ export default function FormRenderer({ slug }: { slug: string }) {
       }
     }
     setErrors((prev) => ({ ...prev, ...newErrors }));
+    // Track field errors
+    for (const fieldKey of Object.keys(newErrors)) {
+      trackEvent(slug, "field_error", { fieldKey });
+    }
     return Object.keys(newErrors).length === 0;
   };
 
   const nextPage = () => {
     if (!validatePage(currentPageFields)) return;
-    setCurrentPageIdx((i) => Math.min(i + 1, visiblePages.length - 1));
+    const currentPageId = currentPage?.id ?? null;
+    setCurrentPageIdx((i) => {
+      const next = Math.min(i + 1, visiblePages.length - 1);
+      const nextPageObj = visiblePages[next];
+      trackEvent(slug, "page_view", { pageId: nextPageObj?.id ?? null, pageIndex: next });
+      // Mark the outgoing page as completed (not dropped) — no event needed
+      return next;
+    });
+    currentPageIdRef.current = currentPageId;
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -169,6 +240,17 @@ export default function FormRenderer({ slug }: { slug: string }) {
     setCurrentPageIdx((i) => Math.max(i - 1, 0));
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  useEffect(() => {
+    currentPageIdRef.current = currentPage?.id ?? null;
+  }, [currentPage]);
+
+  // Fire page_view for the initial page once loaded
+  useEffect(() => {
+    if (!form || !currentPage) return;
+    trackEvent(slug, "page_view", { pageId: currentPage.id, pageIndex: currentPageIdx });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form?.id]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +283,8 @@ export default function FormRenderer({ slug }: { slug: string }) {
         window.location.href = body.successRedirectUrl;
         return;
       }
+      submittedRef.current = true;
+      trackEvent(slug, "form_submit", { submissionId: body.submissionId });
       setSuccessMsg(body.successMessage || "Thank you!");
       setSubmitted(true);
     } catch (ex) {
@@ -257,7 +341,7 @@ export default function FormRenderer({ slug }: { slug: string }) {
         </div>
       ) : null}
       <div className={styles.container}>
-        <form className={styles.formCard} onSubmit={submit} noValidate>
+        <form className={styles.formCard} onSubmit={submit} onFocusCapture={trackStartOnce} noValidate>
           <h1 className={styles.title}>{form.name}</h1>
           {form.description ? <p className={styles.description}>{form.description}</p> : null}
 
