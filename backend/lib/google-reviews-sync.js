@@ -204,57 +204,118 @@ function stripPrefix(name, prefix) {
   return s.startsWith(prefix) ? s.slice(prefix.length) : s;
 }
 
-function rateLimitError(status, bodyMsg) {
-  const err = new Error(
-    status === 429
-      ? "Google rate limit hit — wait 60 seconds and try again."
-      : bodyMsg || `Google API error ${status}`
-  );
+function apiError(status, bodyMsg) {
+  let code = "GOOGLE_API";
+  let message = bodyMsg || `Google API error ${status}`;
+  if (status === 429) {
+    code = "GOOGLE_RATE_LIMIT";
+    message = "Google rate limit hit — wait 60 seconds and try again.";
+  } else if (status === 404) {
+    code = "GOOGLE_NOT_FOUND";
+  } else if (status === 403) {
+    code = "GOOGLE_FORBIDDEN";
+  }
+  const err = new Error(message);
   err.status = status;
-  err.code = status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
+  err.code = code;
   return err;
 }
 
-export async function listGoogleAccounts() {
-  const accessToken = await getValidGoogleAccessToken();
+async function fetchAccountsV4(accessToken) {
   const res = await fetch(`${GMB_BASE}/accounts`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw rateLimitError(res.status, json?.error?.message);
-  const accounts = Array.isArray(json.accounts) ? json.accounts : [];
-  return accounts.map((a) => ({
-    id: stripPrefix(a.name, "accounts/"),
-    name: a.accountName || a.name || "",
-    type: a.type || null,
-    role: a.role || null,
-  }));
+  return { ok: res.ok, status: res.status, body: json };
 }
 
-export async function listGoogleLocations(accountId) {
-  const accessToken = await getValidGoogleAccessToken();
+async function fetchAccountsV1(accessToken) {
+  const res = await fetch(
+    "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body: json };
+}
+
+async function fetchLocationsV4(accessToken, accountId) {
   const clean = stripPrefix(accountId, "accounts/");
   const res = await fetch(
     `${GMB_BASE}/accounts/${encodeURIComponent(clean)}/locations`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw rateLimitError(res.status, json?.error?.message);
-  const locations = Array.isArray(json.locations) ? json.locations : [];
-  return locations.map((l) => {
-    const rawName = String(l.name || "");
-    const id = rawName.includes("/locations/")
-      ? rawName.split("/locations/")[1]
-      : stripPrefix(rawName, "locations/");
-    const addr = l.address || l.storefrontAddress || {};
-    const lines = Array.isArray(addr.addressLines) ? addr.addressLines.join(" ") : "";
-    const address = [lines, addr.locality, addr.administrativeArea].filter(Boolean).join(", ");
-    return {
-      id,
-      title: l.locationName || l.title || rawName,
-      address,
-    };
-  });
+  return { ok: res.ok, status: res.status, body: json };
+}
+
+async function fetchLocationsV1(accessToken, accountId) {
+  const clean = stripPrefix(accountId, "accounts/");
+  const readMask = encodeURIComponent(
+    "name,title,storefrontAddress,websiteUri,phoneNumbers"
+  );
+  const res = await fetch(
+    `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${encodeURIComponent(
+      clean
+    )}/locations?readMask=${readMask}&pageSize=100`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body: json };
+}
+
+function mapAccount(a) {
+  return {
+    id: stripPrefix(a.name, "accounts/"),
+    name: a.accountName || a.name || "",
+    type: a.type || null,
+    role: a.role || null,
+  };
+}
+
+function mapLocation(l) {
+  const rawName = String(l.name || "");
+  const id = rawName.includes("/locations/")
+    ? rawName.split("/locations/")[1]
+    : stripPrefix(rawName, "locations/");
+  const addr = l.address || l.storefrontAddress || {};
+  const lines = Array.isArray(addr.addressLines) ? addr.addressLines.join(" ") : "";
+  const address = [lines, addr.locality, addr.administrativeArea]
+    .filter(Boolean)
+    .join(", ");
+  return {
+    id,
+    title: l.locationName || l.title || rawName,
+    address,
+  };
+}
+
+/**
+ * Try v4 first (shared quota with review sync). On 404, fall back to v1
+ * (newer APIs that don't require the legacy v4 access grant). Reviews
+ * themselves still require v4, so surface the status so callers can warn.
+ */
+export async function listGoogleAccounts() {
+  const accessToken = await getValidGoogleAccessToken();
+  let resp = await fetchAccountsV4(accessToken);
+  let apiUsed = "v4";
+  if (!resp.ok && resp.status === 404) {
+    resp = await fetchAccountsV1(accessToken);
+    apiUsed = "v1";
+  }
+  if (!resp.ok) throw apiError(resp.status, resp.body?.error?.message);
+  const accounts = Array.isArray(resp.body.accounts) ? resp.body.accounts : [];
+  return accounts.map(mapAccount).map((a) => ({ ...a, apiUsed }));
+}
+
+export async function listGoogleLocations(accountId) {
+  const accessToken = await getValidGoogleAccessToken();
+  let resp = await fetchLocationsV4(accessToken, accountId);
+  if (!resp.ok && resp.status === 404) {
+    resp = await fetchLocationsV1(accessToken, accountId);
+  }
+  if (!resp.ok) throw apiError(resp.status, resp.body?.error?.message);
+  const locations = Array.isArray(resp.body.locations) ? resp.body.locations : [];
+  return locations.map(mapLocation);
 }
 
 function sleep(ms) {
@@ -268,21 +329,23 @@ function sleep(ms) {
 export async function autoDiscoverAndSave() {
   const accessToken = await getValidGoogleAccessToken();
 
-  const accountsRes = await fetch(`${GMB_BASE}/accounts`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const accountsBody = await accountsRes.json().catch(() => ({}));
-  if (!accountsRes.ok) {
-    const err = new Error(
-      accountsBody?.error?.message || `Google /accounts ${accountsRes.status}`
-    );
-    err.status = accountsRes.status;
-    err.code = accountsRes.status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
-    throw err;
+  let accountsResp = await fetchAccountsV4(accessToken);
+  let apiUsed = "v4";
+  if (!accountsResp.ok && accountsResp.status === 404) {
+    console.log("[reviews] v4 /accounts returned 404 — falling back to v1");
+    accountsResp = await fetchAccountsV1(accessToken);
+    apiUsed = "v1";
   }
-  const accounts = Array.isArray(accountsBody.accounts) ? accountsBody.accounts : [];
+  if (!accountsResp.ok) {
+    throw apiError(accountsResp.status, accountsResp.body?.error?.message);
+  }
+  const accounts = Array.isArray(accountsResp.body.accounts)
+    ? accountsResp.body.accounts
+    : [];
   if (!accounts.length) {
-    const err = new Error("No Google Business accounts are accessible with this connection.");
+    const err = new Error(
+      "No Google Business accounts are accessible with this connection."
+    );
     err.code = "GOOGLE_NO_ACCOUNTS";
     throw err;
   }
@@ -290,26 +353,24 @@ export async function autoDiscoverAndSave() {
 
   await sleep(2000);
 
-  const locRes = await fetch(
-    `${GMB_BASE}/accounts/${encodeURIComponent(accountId)}/locations`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  const locBody = await locRes.json().catch(() => ({}));
-  if (!locRes.ok) {
-    const err = new Error(
-      locBody?.error?.message || `Google /locations ${locRes.status}`
-    );
-    err.status = locRes.status;
-    err.code = locRes.status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
-    throw err;
+  let locResp = await fetchLocationsV4(accessToken, accountId);
+  if (!locResp.ok && locResp.status === 404) {
+    console.log("[reviews] v4 /locations returned 404 — falling back to v1");
+    locResp = await fetchLocationsV1(accessToken, accountId);
   }
-  const locations = Array.isArray(locBody.locations) ? locBody.locations : [];
+  if (!locResp.ok) {
+    throw apiError(locResp.status, locResp.body?.error?.message);
+  }
+  const locations = Array.isArray(locResp.body.locations)
+    ? locResp.body.locations
+    : [];
   if (!locations.length) {
-    const err = new Error("No locations found under the first Google Business account.");
+    const err = new Error(
+      "No locations found under the first Google Business account."
+    );
     err.code = "GOOGLE_NO_LOCATIONS";
     throw err;
   }
-  // v4 location name format: "accounts/{accId}/locations/{locId}"
   const rawName = String(locations[0].name || "");
   const locationId = rawName.includes("/locations/")
     ? rawName.split("/locations/")[1]
@@ -321,6 +382,8 @@ export async function autoDiscoverAndSave() {
     locationId,
     accountName: accounts[0].accountName || accounts[0].name,
     locationTitle: locations[0].locationName || locations[0].title || rawName,
+    apiUsed,
+    v4AccessGranted: apiUsed === "v4",
   };
 }
 

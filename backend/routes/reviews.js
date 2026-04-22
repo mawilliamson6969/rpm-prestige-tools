@@ -287,6 +287,10 @@ export async function getGoogleAccounts(_req, res) {
       res.status(429).json({ error: e.message, code: e.code });
       return;
     }
+    if (e.code === "GOOGLE_NOT_FOUND" || e.code === "GOOGLE_FORBIDDEN") {
+      res.status(e.status || 404).json({ error: e.message, code: e.code });
+      return;
+    }
     console.error("[reviews] list accounts", e);
     res.status(502).json({ error: e.message || "Could not list Google accounts." });
   }
@@ -310,6 +314,10 @@ export async function getGoogleLocationsForAccount(req, res) {
       res.status(429).json({ error: e.message, code: e.code });
       return;
     }
+    if (e.code === "GOOGLE_NOT_FOUND" || e.code === "GOOGLE_FORBIDDEN") {
+      res.status(e.status || 404).json({ error: e.message, code: e.code });
+      return;
+    }
     console.error("[reviews] list locations", e);
     res.status(502).json({ error: e.message || "Could not list Google locations." });
   }
@@ -328,8 +336,22 @@ export async function postGoogleAutoDiscover(_req, res) {
       return;
     }
     if (e.code === "GOOGLE_RATE_LIMIT") {
-      res.status(429).json({
-        error: "Google rate limit hit — wait a minute and try again.",
+      res.status(429).json({ error: e.message, code: e.code });
+      return;
+    }
+    if (e.code === "GOOGLE_NOT_FOUND") {
+      res.status(404).json({
+        error:
+          "Google returned 404. Your Google Cloud project likely needs access to the legacy My Business API v4. Request it at https://support.google.com/business/contact/api_default — v1 APIs are used as a fallback for discovery but the review sync itself requires v4.",
+        code: e.code,
+        actionUrl: "https://support.google.com/business/contact/api_default",
+      });
+      return;
+    }
+    if (e.code === "GOOGLE_FORBIDDEN") {
+      res.status(403).json({
+        error:
+          "Google returned 403. The API may not be enabled on your Google Cloud project, or this Google account doesn't manage any Business Profiles.",
         code: e.code,
       });
       return;
