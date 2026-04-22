@@ -38,6 +38,9 @@ export default function SetupClient() {
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const [savingSelection, setSavingSelection] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [manualAccountId, setManualAccountId] = useState("");
+  const [manualLocationId, setManualLocationId] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(apiUrl("/reviews/setup"), { headers: { ...authHeaders() } });
@@ -114,6 +117,32 @@ export default function SetupClient() {
     } finally {
       setDiscovering(false);
       setTimeout(() => setMsg(null), 5000);
+    }
+  };
+
+  const saveManual = async () => {
+    const acc = manualAccountId.trim().replace(/^accounts\//, "");
+    const loc = manualLocationId.trim().replace(/^locations\//, "").split("/").pop() || "";
+    if (!acc || !loc) return;
+    setManualSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/reviews/google/selection"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ accountId: acc, locationId: loc }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Save failed.");
+      setMsg("Saved. Sync will run on the next 30-minute tick (or press Sync Now on the Inbox).");
+      setManualAccountId("");
+      setManualLocationId("");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setManualSaving(false);
+      setTimeout(() => setMsg(null), 6000);
     }
   };
 
@@ -287,6 +316,110 @@ export default function SetupClient() {
                   <strong>Google APIs are rate-limited to ~1 call/minute</strong> — avoid
                   clicking buttons repeatedly.
                 </p>
+
+                {isAdmin ? (
+                  <div
+                    style={{
+                      marginTop: "1rem",
+                      padding: "0.85rem 1rem",
+                      background: "#fafbfd",
+                      border: "1px dashed rgba(27,40,86,0.18)",
+                      borderRadius: 10,
+                    }}
+                  >
+                    <h3
+                      style={{
+                        margin: "0 0 0.35rem",
+                        fontSize: "0.88rem",
+                        fontWeight: 700,
+                        color: "#1b2856",
+                      }}
+                    >
+                      Or enter IDs manually (no Google API call)
+                    </h3>
+                    <p style={{ margin: "0 0 0.65rem", fontSize: "0.78rem", color: "#6a737b" }}>
+                      Rate-limited by Google? Find your IDs at{" "}
+                      <a
+                        href="https://business.google.com/locations"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "#0098D0" }}
+                      >
+                        business.google.com/locations
+                      </a>{" "}
+                      — the URL after clicking a location shows them:{" "}
+                      <code>.../l/{"{locationId}"}?...accountId={"{accountId}"}</code>. Paste
+                      them below and save — no Google API quota used.
+                    </p>
+                    <div style={{ display: "grid", gap: "0.5rem", maxWidth: "28rem" }}>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            color: "#1b2856",
+                            marginBottom: "0.2rem",
+                          }}
+                        >
+                          Account ID
+                        </label>
+                        <input
+                          value={manualAccountId}
+                          onChange={(e) => setManualAccountId(e.target.value)}
+                          placeholder="e.g. 123456789012345678901"
+                          style={{
+                            width: "100%",
+                            borderRadius: 8,
+                            border: "1px solid rgba(27,40,86,0.15)",
+                            padding: "0.5rem 0.65rem",
+                            fontSize: "0.88rem",
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            color: "#1b2856",
+                            marginBottom: "0.2rem",
+                          }}
+                        >
+                          Location ID
+                        </label>
+                        <input
+                          value={manualLocationId}
+                          onChange={(e) => setManualLocationId(e.target.value)}
+                          placeholder="e.g. 9876543210987654321"
+                          style={{
+                            width: "100%",
+                            borderRadius: 8,
+                            border: "1px solid rgba(27,40,86,0.15)",
+                            padding: "0.5rem 0.65rem",
+                            fontSize: "0.88rem",
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.btnPrimary}
+                        onClick={saveManual}
+                        disabled={
+                          manualSaving ||
+                          !manualAccountId.trim() ||
+                          !manualLocationId.trim()
+                        }
+                        style={{ alignSelf: "flex-start" }}
+                      >
+                        {manualSaving ? "Saving…" : "Save IDs"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {accountsErr ? (
                   <div
                     className={styles.insightCallout}
