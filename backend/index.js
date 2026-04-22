@@ -486,6 +486,53 @@ import {
   putProjectNotePin,
   putProjectStatus,
 } from "./routes/projects.js";
+import { ensureReviewsSchema } from "./lib/reviews-schema.js";
+import {
+  deleteAutomation,
+  deleteGoogleBusinessConnection,
+  deleteReviewReply,
+  deleteTemplate as deleteReviewTemplate,
+  getAnalytics as getReviewsAnalytics,
+  getAutomationById,
+  getAutomations,
+  getGoogleBusinessCallback,
+  getGoogleBusinessConnect,
+  getLeaderboard,
+  getPublicOptOut,
+  getPublicPixel,
+  getPublicTrack,
+  getRequestById,
+  getRequests,
+  getReviewById,
+  getReviewStats,
+  getReviews,
+  getReviewsSetup,
+  getTemplate as getReviewTemplate,
+  getTemplates as getReviewTemplates,
+  postAutomation,
+  postAutomationTest as postReviewAutomationTest,
+  postGoogleBusinessAuthorizeUrl,
+  postReviewAiSuggest,
+  postReviewReply,
+  postReviewSync,
+  postSendBulk,
+  postSendFromAppfolio,
+  postSendRequest,
+  postTemplate as postReviewTemplate,
+  postTemplateDuplicate as postReviewTemplateDuplicate,
+  processPendingRequests,
+  processScheduledAutomations,
+  putAutomation,
+  putAutomationToggle,
+  putReviewFlag,
+  putReviewNotes,
+  putReviewRead,
+  putReviewTags,
+  putReviewUrl,
+  putTemplate as putReviewTemplate,
+  recalculateAllLeaderboards,
+} from "./routes/reviews.js";
+import { syncGoogleReviews } from "./lib/google-reviews-sync.js";
 import {
   deleteAgent,
   deleteAgentTraining,
@@ -1141,6 +1188,63 @@ app.get("/forms/:id", requireAuth, getForm);
 app.put("/forms/:id", requireAuth, putForm);
 app.delete("/forms/:id", requireAuth, deleteForm);
 
+/** Google Review Manager — public tracking + opt-out + pixel (no auth) */
+app.get("/reviews/track/:token", getPublicTrack);
+app.get("/reviews/optout/:token", getPublicOptOut);
+app.get("/reviews/pixel/:token.png", getPublicPixel);
+app.get("/reviews/pixel/:token", getPublicPixel);
+
+/** Google Business OAuth (callback is public with signed state) */
+app.get("/auth/google-business", requireAuth, getGoogleBusinessConnect);
+app.get("/auth/google-business/callback", getGoogleBusinessCallback);
+app.post("/reviews/google/authorize-url", requireAuth, postGoogleBusinessAuthorizeUrl);
+app.delete("/reviews/google/connection", requireAuth, requireAdminRole, deleteGoogleBusinessConnection);
+
+/** Reviews setup + stats + sync */
+app.get("/reviews/setup", requireAuth, getReviewsSetup);
+app.put("/reviews/setup/url", requireAuth, requireAdminRole, putReviewUrl);
+app.get("/reviews/stats", requireAuth, getReviewStats);
+app.post("/reviews/sync", requireAuth, postReviewSync);
+
+/** Reviews CRUD (inbox) */
+app.get("/reviews", requireAuth, getReviews);
+app.get("/reviews/analytics", requireAuth, getReviewsAnalytics);
+app.get("/reviews/leaderboard", requireAuth, getLeaderboard);
+
+/** Templates */
+app.get("/reviews/templates", requireAuth, getReviewTemplates);
+app.post("/reviews/templates", requireAuth, postReviewTemplate);
+app.get("/reviews/templates/:id", requireAuth, getReviewTemplate);
+app.put("/reviews/templates/:id", requireAuth, putReviewTemplate);
+app.delete("/reviews/templates/:id", requireAuth, deleteReviewTemplate);
+app.post("/reviews/templates/:id/duplicate", requireAuth, postReviewTemplateDuplicate);
+
+/** Requests */
+app.get("/reviews/requests", requireAuth, getRequests);
+app.post("/reviews/requests/send", requireAuth, postSendRequest);
+app.post("/reviews/requests/send-bulk", requireAuth, postSendBulk);
+app.post("/reviews/requests/send-from-appfolio", requireAuth, postSendFromAppfolio);
+app.get("/reviews/requests/:id", requireAuth, getRequestById);
+
+/** Automations */
+app.get("/reviews/automations", requireAuth, getAutomations);
+app.post("/reviews/automations", requireAuth, requireAdminRole, postAutomation);
+app.get("/reviews/automations/:id", requireAuth, getAutomationById);
+app.put("/reviews/automations/:id", requireAuth, requireAdminRole, putAutomation);
+app.delete("/reviews/automations/:id", requireAuth, requireAdminRole, deleteAutomation);
+app.put("/reviews/automations/:id/toggle", requireAuth, requireAdminRole, putAutomationToggle);
+app.post("/reviews/automations/:id/test", requireAuth, postReviewAutomationTest);
+
+/** Individual review actions (registered after static routes above) */
+app.get("/reviews/:id", requireAuth, getReviewById);
+app.put("/reviews/:id/read", requireAuth, putReviewRead);
+app.put("/reviews/:id/flag", requireAuth, putReviewFlag);
+app.put("/reviews/:id/tags", requireAuth, putReviewTags);
+app.put("/reviews/:id/notes", requireAuth, putReviewNotes);
+app.post("/reviews/:id/reply", requireAuth, postReviewReply);
+app.delete("/reviews/:id/reply", requireAuth, deleteReviewReply);
+app.post("/reviews/:id/ai-suggest", requireAuth, postReviewAiSuggest);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -1193,6 +1297,8 @@ async function start() {
       console.log("Form starter templates seeded.");
       await ensureLayoutPreferencesSchema();
       console.log("Database schema OK (user_layout_preferences).");
+      await ensureReviewsSchema();
+      console.log("Database schema OK (reviews + templates + automations + leaderboard).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -1242,6 +1348,34 @@ async function start() {
       );
     });
     console.log("Scheduled time-based condition check: 15 * * * * (hourly, offset).");
+
+    cron.schedule("*/30 * * * *", () => {
+      syncGoogleReviews({ trigger: "cron" }).catch((e) =>
+        console.error("[reviews sync cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled Google reviews sync: */30 * * * * (every 30 min).");
+
+    cron.schedule("30 * * * *", () => {
+      processPendingRequests().catch((e) =>
+        console.error("[reviews pending cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled pending review request dispatch: 30 * * * * (hourly).");
+
+    cron.schedule("0 9 * * *", () => {
+      processScheduledAutomations().catch((e) =>
+        console.error("[reviews scheduled automations]", e.message || e)
+      );
+    });
+    console.log("Scheduled recurring review automations: 0 9 * * * (daily 9am).");
+
+    cron.schedule("5 0 * * *", () => {
+      recalculateAllLeaderboards().catch((e) =>
+        console.error("[reviews leaderboard cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled review leaderboard recalc: 5 0 * * * (daily midnight).");
 
     // Take initial snapshot on startup if none exists today
     takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot startup]", e.message || e));
