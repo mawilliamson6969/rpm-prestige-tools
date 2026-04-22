@@ -6,6 +6,7 @@ import styles from "../../forms.module.css";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type { FormField, FormSummary } from "../../types";
+import SubmissionSidebar from "./SubmissionSidebar";
 
 type SubmissionSummary = {
   id: number;
@@ -289,40 +290,50 @@ export default function SubmissionsClient({ formId }: { formId: string }) {
             <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setSelected(null)} style={{ marginBottom: "1rem" }}>
               ← Back to list
             </button>
-            <div className={styles.subDetail}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem", gap: "1rem", flexWrap: "wrap" }}>
-                <div>
-                  <h2 style={{ margin: 0, color: "#1b2856" }}>Submission #{selected.id}</h2>
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#6a737b" }}>
-                    Submitted {new Date(selected.submittedAt).toLocaleString()}
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
-                  <select
-                    className={styles.select}
-                    value={selected.status}
-                    onChange={(e) => updateStatus(e.target.value as "submitted" | "reviewed" | "archived")}
-                  >
-                    <option value="submitted">Submitted</option>
-                    <option value="reviewed">Reviewed</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                  <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => downloadSinglePdf(selected.id)}>
-                    Download PDF
-                  </button>
-                  <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => deleteSubmission(selected.id)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-              {selectedFields
-                .filter((f) => !["heading", "paragraph", "divider", "spacer"].includes(f.fieldType))
-                .map((f) => (
-                  <div key={f.id} className={styles.subDetailField}>
-                    <div className={styles.subDetailLabel}>{f.label}</div>
-                    <div className={styles.subDetailValue}>{renderValue(selected.submissionData[f.fieldKey], f)}</div>
+            <div className={styles.subLayout}>
+              <div className={styles.subDetail}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <h2 style={{ margin: 0, color: "#1b2856" }}>Submission #{selected.id}</h2>
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#6a737b" }}>
+                      Submitted {new Date(selected.submittedAt).toLocaleString()}
+                    </p>
                   </div>
-                ))}
+                  <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <select
+                      className={styles.select}
+                      value={selected.status}
+                      onChange={(e) => updateStatus(e.target.value as "submitted" | "reviewed" | "archived")}
+                    >
+                      <option value="submitted">Submitted</option>
+                      <option value="pending_approval">Pending Approval</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="reviewed">Reviewed</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => downloadSinglePdf(selected.id)}>
+                      Download PDF
+                    </button>
+                    <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => deleteSubmission(selected.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                {selectedFields
+                  .filter((f) => !["heading", "paragraph", "divider", "spacer"].includes(f.fieldType))
+                  .map((f) => (
+                    <div key={f.id} className={styles.subDetailField}>
+                      <div className={styles.subDetailLabel}>{f.label}</div>
+                      <div className={styles.subDetailValue}>{renderValue(selected.submissionData[f.fieldKey], f)}</div>
+                    </div>
+                  ))}
+              </div>
+              <SubmissionSidebar
+                submissionId={selected.id}
+                initialStatus={selected.status}
+                onChanged={async () => { await openSubmission(selected.id); await loadSubmissions(); }}
+              />
             </div>
           </div>
         ) : (

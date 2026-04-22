@@ -147,13 +147,48 @@ export default function FormsListClient() {
           <h1>Forms</h1>
           <p>Create, share, and manage custom forms</p>
         </div>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          onClick={openCreate}
-        >
-          + Create Form
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <Link href="/forms/approvals" className={`${styles.btn} ${styles.btnGhost}`}>
+            My Approvals
+          </Link>
+          <label className={`${styles.btn} ${styles.btnGhost}`} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+            Import
+            <input
+              type="file"
+              accept=".json,application/json"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async () => {
+                  try {
+                    const parsed = JSON.parse(reader.result as string);
+                    const res = await fetch(apiUrl("/forms/import"), {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...authHeaders() },
+                      body: JSON.stringify(parsed),
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(body.error || "Import failed.");
+                    router.push(`/forms/builder/${body.formId}`);
+                  } catch (ex) {
+                    setErr(ex instanceof Error ? ex.message : "Import failed.");
+                  }
+                };
+                reader.readAsText(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            onClick={openCreate}
+          >
+            + Create Form
+          </button>
+        </div>
       </div>
       <div className={styles.main}>
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
@@ -213,6 +248,31 @@ export default function FormsListClient() {
                       </Link>
                       <button type="button" className={styles.smallBtn} onClick={(e) => duplicate(f.id, e)}>
                         Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.smallBtn}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            const res = await fetch(apiUrl(`/forms/${f.id}/export`), {
+                              headers: { ...authHeaders() },
+                            });
+                            if (!res.ok) throw new Error("Export failed.");
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `${f.name.replace(/[^\w]+/g, "_")}_export.json`;
+                            document.body.appendChild(a); a.click(); a.remove();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          } catch (ex) {
+                            setErr(ex instanceof Error ? ex.message : "Export failed.");
+                          }
+                        }}
+                      >
+                        Export
                       </button>
                       <button type="button" className={styles.smallBtn} onClick={(e) => archive(f.id, e)}>
                         Archive

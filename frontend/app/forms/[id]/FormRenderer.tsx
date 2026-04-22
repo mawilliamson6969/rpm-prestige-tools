@@ -105,19 +105,48 @@ export default function FormRenderer({ slug }: { slug: string }) {
   const hasStartedRef = useRef(false);
   const submittedRef = useRef(false);
   const currentPageIdRef = useRef<number | null>(null);
+  const [gateState, setGateState] = useState<
+    | { kind: "none" }
+    | { kind: "not_open"; opensAt?: string }
+    | { kind: "closed"; message?: string }
+    | { kind: "capacity" }
+    | { kind: "password_required" }
+    | { kind: "duplicate_email" }
+  >({ kind: "none" });
+  const [password, setPassword] = useState("");
+  const [passwordErr, setPasswordErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setPasswordErr(null);
     try {
       const params = new URLSearchParams();
       if (token) params.set("token", token);
+      if (password) params.set("password", password);
       searchParams?.forEach((v, k) => { if (k !== "embed") params.set(k, v); });
+      const distToken = searchParams?.get("t") || "";
+      if (distToken) {
+        fetch(publicApiUrl(`/forms/distribution/${distToken}/open`), { method: "GET" }).catch(() => {});
+      }
       const res = await fetch(publicApiUrl(`/forms/public/${slug}?${params.toString()}`));
+      if (res.status === 423 || res.status === 401 || res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        const reason = body.reason;
+        if (reason === "not_open") setGateState({ kind: "not_open", opensAt: body.opensAt });
+        else if (reason === "closed") setGateState({ kind: "closed", message: body.error });
+        else if (reason === "capacity") setGateState({ kind: "capacity" });
+        else if (reason === "password_required") {
+          setGateState({ kind: "password_required" });
+          if (password) setPasswordErr("Incorrect password.");
+        } else if (reason === "duplicate_email") setGateState({ kind: "duplicate_email" });
+        return;
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Could not load form.");
       }
       const body = await res.json();
+      setGateState({ kind: "none" });
       setForm(body.form);
       setPages(body.pages || []);
       setFields(body.fields || []);
@@ -138,7 +167,7 @@ export default function FormRenderer({ slug }: { slug: string }) {
     } finally {
       setLoading(false);
     }
-  }, [slug, token, searchParams]);
+  }, [slug, token, searchParams, password]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -165,6 +194,29 @@ export default function FormRenderer({ slug }: { slug: string }) {
     hasStartedRef.current = true;
     trackEvent(slug, "form_start");
   };
+
+  // Embed mode: post height to parent for auto-resize
+  useEffect(() => {
+    if (!isEmbed || typeof window === "undefined") return;
+    const postHeight = () => {
+      try {
+        const height = document.body.scrollHeight;
+        window.parent?.postMessage({ event: "rpm-form-resize", height }, "*");
+      } catch {/* ignore */}
+    };
+    postHeight();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(postHeight) : null;
+    if (ro) ro.observe(document.body);
+    return () => { if (ro) ro.disconnect(); };
+  }, [isEmbed, form, fields.length, submitted]);
+
+  // Notify parent on submission
+  useEffect(() => {
+    if (!isEmbed || !submitted || typeof window === "undefined") return;
+    try {
+      window.parent?.postMessage({ event: "rpm-form-submitted", slug }, "*");
+    } catch {/* ignore */}
+  }, [isEmbed, submitted, slug]);
 
   const setValue = (key: string, v: unknown) => {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -267,6 +319,9 @@ export default function FormRenderer({ slug }: { slug: string }) {
       }
       const params = new URLSearchParams();
       if (token) params.set("token", token);
+      if (password) params.set("password", password);
+      const distToken = searchParams?.get("t") || "";
+      if (distToken) params.set("t", distToken);
       const res = await fetch(publicApiUrl(`/forms/public/${slug}/submit?${params.toString()}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -296,6 +351,66 @@ export default function FormRenderer({ slug }: { slug: string }) {
 
   if (loading) {
     return <div className={styles.page}><div className={styles.loading}>Loading form…</div></div>;
+  }
+  if (gateState.kind !== "none") {
+    const header = !isEmbed ? (
+      <div className={styles.header}>
+        <div className={styles.headerInner}>
+          <div className={styles.brand}>Real Property Management Prestige</div>
+        </div>
+      </div>
+    ) : null;
+    if (gateState.kind === "password_required") {
+      return (
+        <div className={styles.page}>
+          {header}
+          <div className={styles.container}>
+            <div className={styles.formCard}>
+              <h1 className={styles.title}>Password Required</h1>
+              <p className={styles.description}>Enter the password to access this form.</p>
+              <form
+                onSubmit={(e) => { e.preventDefault(); if (password.trim()) load(); }}
+                style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+              >
+                <input
+                  type="password"
+                  className={styles.input}
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                />
+                {passwordErr ? <div className={styles.errorMsg}>{passwordErr}</div> : null}
+                <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`}>Continue</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    const heading =
+      gateState.kind === "not_open" ? "Not yet open" :
+      gateState.kind === "closed" ? "Form closed" :
+      gateState.kind === "capacity" ? "Maximum responses reached" :
+      gateState.kind === "duplicate_email" ? "Already submitted" : "Unavailable";
+    const msg =
+      gateState.kind === "not_open"
+        ? `This form opens on ${gateState.opensAt ? new Date(gateState.opensAt).toLocaleString() : "a later date"}.`
+      : gateState.kind === "closed" ? (gateState.message || "This form is no longer accepting responses.")
+      : gateState.kind === "capacity" ? "This form has reached its maximum number of responses."
+      : gateState.kind === "duplicate_email" ? "You've already submitted this form."
+      : "";
+    return (
+      <div className={styles.page}>
+        {header}
+        <div className={styles.container}>
+          <div className={styles.formCard}>
+            <h1 className={styles.title}>{heading}</h1>
+            <p className={styles.description}>{msg}</p>
+          </div>
+        </div>
+      </div>
+    );
   }
   if (loadErr) {
     return (

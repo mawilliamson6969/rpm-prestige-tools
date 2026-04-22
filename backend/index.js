@@ -28,7 +28,43 @@ import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapsh
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
 import { ensureFormsSchema } from "./lib/formsSchema.js";
 import { ensureFormsPhase3Schema } from "./lib/forms-phase3-schema.js";
+import { ensureFormsPhase4Schema } from "./lib/forms-phase4-schema.js";
 import { ensureFormTemplates } from "./lib/form-templates-seed.js";
+import {
+  checkFormAccess,
+  deleteDocTemplate,
+  deleteSubmissionNote,
+  deleteSubmissionTag,
+  getDistributionHistory,
+  getDistributionOpen,
+  getDocTemplates,
+  getDocumentDownload,
+  getEmbedJs,
+  getFormExport,
+  getFormsBadge,
+  getGeneratedDocuments,
+  getMyApprovals,
+  getSubmissionApprovals,
+  getSubmissionNotes,
+  getSubmissionTags,
+  getVersionById,
+  getVersions,
+  postDistribute,
+  postDistributeBulk,
+  postDocTemplate,
+  postFormImport,
+  postGenerateDocument,
+  postRestoreVersion,
+  postSubmissionNote,
+  postSubmissionTag,
+  putApproveSubmission,
+  putAssignSubmission,
+  putDocTemplate,
+  putFormPublishWithVersion,
+  putRejectSubmission,
+  putSubmissionPriority,
+  putSubmissionStar,
+} from "./routes/forms-phase4.js";
 import {
   getAutomationLog,
   getAutomationMeta,
@@ -988,9 +1024,13 @@ app.get("/property-context/by-name/:propertyName", requireAuth, getPropertyConte
 app.get("/property-context/:propertyId", requireAuth, getPropertyContextById);
 
 /** Form Builder — public form render + submit (no auth), admin CRUD (JWT). Public routes first. */
-app.get("/forms/public/:slug", getPublicForm);
+// Phase 4: embed bundle + open-tracking pixel (public, no auth)
+app.get("/forms/embed.js", getEmbedJs);
+app.get("/forms/distribution/:token/open", getDistributionOpen);
+
+app.get("/forms/public/:slug", checkFormAccess, getPublicForm);
 app.get("/forms/public/:slug/prefill", getPublicFormPrefill);
-app.post("/forms/public/:slug/submit", postPublicFormSubmit);
+app.post("/forms/public/:slug/submit", checkFormAccess, postPublicFormSubmit);
 app.post("/forms/public/:slug/upload", formsUploadMiddleware, postPublicFormUpload);
 app.post("/forms/public/:slug/analytics", postPublicAnalytics);
 
@@ -1002,6 +1042,32 @@ app.get("/forms/automation-meta", requireAuth, getAutomationMeta);
 app.post("/forms/automations/:automationId/test", requireAuth, postAutomationTest);
 app.post("/forms/submissions/:submissionId/rerun-automations", requireAuth, postReRunAutomations);
 app.get("/forms/submissions/:submissionId/pdf", requireAuth, getSubmissionPdf);
+
+/** Phase 4: must register before /forms/:id catch-all. */
+app.get("/forms/badge", requireAuth, getFormsBadge);
+app.get("/forms/approvals/my", requireAuth, getMyApprovals);
+app.post("/forms/import", requireAuth, postFormImport);
+
+// Submission-scoped: notes, tags, assign, priority, star, approvals, docs
+app.post("/forms/submissions/:submissionId/notes", requireAuth, postSubmissionNote);
+app.get("/forms/submissions/:submissionId/notes", requireAuth, getSubmissionNotes);
+app.delete("/forms/submission-notes/:noteId", requireAuth, deleteSubmissionNote);
+app.put("/forms/submissions/:submissionId/assign", requireAuth, putAssignSubmission);
+app.put("/forms/submissions/:submissionId/priority", requireAuth, putSubmissionPriority);
+app.put("/forms/submissions/:submissionId/star", requireAuth, putSubmissionStar);
+app.post("/forms/submissions/:submissionId/tags", requireAuth, postSubmissionTag);
+app.get("/forms/submissions/:submissionId/tags", requireAuth, getSubmissionTags);
+app.delete("/forms/submissions/:submissionId/tags/:tag", requireAuth, deleteSubmissionTag);
+app.put("/forms/submissions/:submissionId/approve", requireAuth, putApproveSubmission);
+app.put("/forms/submissions/:submissionId/reject", requireAuth, putRejectSubmission);
+app.get("/forms/submissions/:submissionId/approvals", requireAuth, getSubmissionApprovals);
+app.post("/forms/submissions/:submissionId/generate-document/:templateId", requireAuth, postGenerateDocument);
+app.get("/forms/submissions/:submissionId/documents", requireAuth, getGeneratedDocuments);
+app.get("/forms/documents/:documentId/download", requireAuth, getDocumentDownload);
+
+// Doc template routes
+app.put("/forms/document-templates/:templateId", requireAuth, putDocTemplate);
+app.delete("/forms/document-templates/:templateId", requireAuth, deleteDocTemplate);
 
 app.get("/forms", requireAuth, getForms);
 app.post("/forms", requireAuth, postForm);
@@ -1040,9 +1106,23 @@ app.post("/forms/:id/submissions/export-pdf", requireAuth, postSubmissionsExport
 app.get("/forms/:id/analytics", requireAuth, getFormAnalyticsV2);
 app.get("/forms/:id/automation-log", requireAuth, getAutomationLog);
 
-app.put("/forms/:id/publish", requireAuth, putFormPublish);
+app.put("/forms/:id/publish", requireAuth, putFormPublishWithVersion);
 app.put("/forms/:id/unpublish", requireAuth, putFormUnpublish);
 app.post("/forms/:id/duplicate", requireAuth, postFormDuplicate);
+
+// Phase 4: form-scoped
+app.get("/forms/:id/versions", requireAuth, getVersions);
+app.get("/forms/:id/versions/:versionId", requireAuth, getVersionById);
+app.post("/forms/:id/versions/restore/:versionId", requireAuth, postRestoreVersion);
+
+app.post("/forms/:id/distribute", requireAuth, postDistribute);
+app.post("/forms/:id/distribute/bulk", requireAuth, postDistributeBulk);
+app.get("/forms/:id/distributions", requireAuth, getDistributionHistory);
+
+app.get("/forms/:id/document-templates", requireAuth, getDocTemplates);
+app.post("/forms/:id/document-templates", requireAuth, postDocTemplate);
+
+app.get("/forms/:id/export", requireAuth, getFormExport);
 
 app.get("/forms/:id", requireAuth, getForm);
 app.put("/forms/:id", requireAuth, putForm);
@@ -1094,6 +1174,8 @@ async function start() {
       console.log("Database schema OK (forms).");
       await ensureFormsPhase3Schema();
       console.log("Database schema OK (forms phase 3).");
+      await ensureFormsPhase4Schema();
+      console.log("Database schema OK (forms phase 4).");
       await ensureFormTemplates();
       console.log("Form starter templates seeded.");
     } catch (e) {

@@ -20,6 +20,18 @@ export type FormSummary = {
   branding: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  // Phase 4 (optional — backend maps snake_case where present)
+  currentVersion?: number;
+  opensAt?: string | null;
+  closesAt?: string | null;
+  closedMessage?: string | null;
+  maxSubmissions?: number | null;
+  requirePassword?: boolean;
+  formPassword?: string | null;
+  oneSubmissionPerEmail?: boolean;
+  ipLimit?: number | null;
+  requiresApproval?: boolean;
+  approvalConfig?: { type?: "single" | "sequential"; approvers?: number[]; steps?: Array<{ approverUserId: number; label?: string }>; notifyOnSubmit?: boolean; notifyOnDecision?: boolean; allowResubmit?: boolean } | null;
 };
 
 export type FormPage = {

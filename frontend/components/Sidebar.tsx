@@ -71,6 +71,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const [pwdOpen, setPwdOpen] = useState(false);
   const [unread, setUnread] = useState<number | null>(null);
   const [queued, setQueued] = useState<number | null>(null);
+  const [formsBadge, setFormsBadge] = useState<number | null>(null);
 
   const userWrapRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLElement>(null);
@@ -91,16 +92,26 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const loadBadges = useCallback(async () => {
     if (!token) return;
     try {
-      const [rIn, rAg] = await Promise.all([
+      const [rIn, rAg, rFm] = await Promise.all([
         fetch(apiUrl("/inbox/stats"), { cache: "no-store", headers: { ...authHeaders() } }),
         fetch(apiUrl("/agents/metrics/summary"), { cache: "no-store", headers: { ...authHeaders() } }),
+        fetch(apiUrl("/forms/badge"), { cache: "no-store", headers: { ...authHeaders() } }),
       ]);
-      const [jIn, jAg] = await Promise.all([rIn.json().catch(() => ({})), rAg.json().catch(() => ({}))]);
+      const [jIn, jAg, jFm] = await Promise.all([
+        rIn.json().catch(() => ({})),
+        rAg.json().catch(() => ({})),
+        rFm.json().catch(() => ({})),
+      ]);
       if (rIn.ok && typeof jIn.unread === "number") setUnread(jIn.unread);
       if (rAg.ok && typeof jAg.queuedForReview === "number") setQueued(jAg.queuedForReview);
+      if (rFm.ok) {
+        const total = (jFm.unreviewedSubmissions || 0) + (jFm.pendingApprovals || 0);
+        setFormsBadge(total);
+      }
     } catch {
       setUnread(null);
       setQueued(null);
+      setFormsBadge(null);
     }
   }, [token, authHeaders]);
 
@@ -543,6 +554,8 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
           ] as const
         ).map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isForms = item.href === "/forms";
+          const badge = isForms && formsBadge && formsBadge > 0 ? formsBadge : null;
           return (
             <Link
               key={item.href}
@@ -555,6 +568,11 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
                 {item.icon}
               </span>
               {showLabels ? <span className={styles.label}>{item.label}</span> : null}
+              {badge ? (
+                <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${badge} pending`}>
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              ) : null}
             </Link>
           );
         })}

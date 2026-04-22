@@ -13,9 +13,12 @@ import {
 } from "../../types";
 import AutomationsTab from "./AutomationsTab";
 import AnalyticsTab from "./AnalyticsTab";
+import DocumentsTab from "./DocumentsTab";
+import DistributionPanel from "./DistributionPanel";
+import VersionHistoryPanel from "./VersionHistoryPanel";
 
 type PanelTab = "properties" | "validation" | "logic" | "prefill";
-type TopTab = "build" | "share" | "settings" | "automations" | "analytics";
+type TopTab = "build" | "share" | "settings" | "automations" | "analytics" | "documents";
 
 export default function FormBuilderClient({ formId }: { formId: string }) {
   const { authHeaders, token } = useAuth();
@@ -32,6 +35,7 @@ export default function FormBuilderClient({ formId }: { formId: string }) {
   const [panelTab, setPanelTab] = useState<PanelTab>("properties");
   const [topTab, setTopTab] = useState<TopTab>("build");
   const [libSearch, setLibSearch] = useState("");
+  const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [dragOverFieldId, setDragOverFieldId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -275,11 +279,17 @@ export default function FormBuilderClient({ formId }: { formId: string }) {
           <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("analytics")} disabled={topTab === "analytics"}>
             Analytics
           </button>
+          <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("documents")} disabled={topTab === "documents"}>
+            Documents
+          </button>
           <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("share")} disabled={topTab === "share"}>
             Share
           </button>
           <button type="button" className={styles.builderTopBtn} onClick={() => setTopTab("settings")} disabled={topTab === "settings"}>
             Settings
+          </button>
+          <button type="button" className={styles.builderTopBtn} onClick={() => setVersionPanelOpen(true)} title="Version history">
+            🕓
           </button>
           {form.slug ? (
             <a
@@ -343,11 +353,22 @@ export default function FormBuilderClient({ formId }: { formId: string }) {
         />
       ) : topTab === "analytics" ? (
         <AnalyticsTab formId={form.id} />
+      ) : topTab === "documents" ? (
+        <DocumentsTab formId={form.id} fields={fields} />
       ) : topTab === "share" ? (
         <ShareTab form={form} publicUrl={publicUrl} />
       ) : (
         <SettingsTab form={form} saveForm={saveForm} />
       )}
+
+      {versionPanelOpen ? (
+        <VersionHistoryPanel
+          formId={form.id}
+          currentVersion={(form as FormSummary & { currentVersion?: number }).currentVersion ?? 1}
+          onClose={() => setVersionPanelOpen(false)}
+          onRestored={() => load()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1173,15 +1194,19 @@ function PreFillTab({
 }
 
 function ShareTab({ form, publicUrl }: { form: FormSummary; publicUrl: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = (s: string) => {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [shareMode, setShareMode] = useState<"link" | "send" | "embed">("link");
+  const copy = (s: string, key: string) => {
     navigator.clipboard?.writeText(s).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
     });
   };
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(publicUrl)}`;
-  const embedCode = `<iframe src="${publicUrl}${publicUrl.includes("?") ? "&" : "?"}embed=true" width="100%" height="800" frameborder="0"></iframe>`;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const iframeCode = `<iframe src="${publicUrl}${publicUrl.includes("?") ? "&" : "?"}embed=true" width="100%" height="800" frameborder="0" style="border: none; max-width: 720px; margin: 0 auto; display: block;"></iframe>`;
+  const popupCode = `<script src="${origin}/api/forms/embed.js"></script>\n<button onclick="RPMForms.open('${form.slug}')">Open Form</button>`;
+  const inlineCode = `<div id="rpm-form-${form.slug}"></div>\n<script src="${origin}/api/forms/embed.js"></script>\n<script>RPMForms.render('${form.slug}', '#rpm-form-${form.slug}');</script>`;
 
   return (
     <div className={styles.main}>
@@ -1190,40 +1215,81 @@ function ShareTab({ form, publicUrl }: { form: FormSummary; publicUrl: string })
           Publish the form to make it shareable.
         </div>
       ) : null}
-      <div className={styles.shareSection}>
-        <h4>Direct Link</h4>
-        <div className={styles.shareLink}>
-          <input type="text" readOnly value={publicUrl} />
-          <button type="button" className={styles.smallBtn} onClick={() => copy(publicUrl)}>
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
+
+      <div className={styles.panelTabs} style={{ maxWidth: 860, marginBottom: "1rem" }}>
+        <button type="button" className={`${styles.panelTab} ${shareMode === "link" ? styles.panelTabActive : ""}`} onClick={() => setShareMode("link")}>
+          Link & QR
+        </button>
+        <button type="button" className={`${styles.panelTab} ${shareMode === "send" ? styles.panelTabActive : ""}`} onClick={() => setShareMode("send")}>
+          Send to People
+        </button>
+        <button type="button" className={`${styles.panelTab} ${shareMode === "embed" ? styles.panelTabActive : ""}`} onClick={() => setShareMode("embed")}>
+          Embed
+        </button>
       </div>
-      <div className={styles.shareSection}>
-        <h4>QR Code</h4>
-        <div className={styles.qrWrap}>
-          <img src={qrUrl} alt="QR code" />
-          <a href={qrUrl} download="form-qr.png" className={styles.smallBtn} style={{ marginTop: "0.5rem", display: "inline-block" }}>
-            Download PNG
-          </a>
-        </div>
-      </div>
-      <div className={styles.shareSection}>
-        <h4>Embed Code</h4>
-        <div className={styles.shareLink}>
-          <input type="text" readOnly value={embedCode} />
-          <button type="button" className={styles.smallBtn} onClick={() => copy(embedCode)}>Copy</button>
-        </div>
-      </div>
-      {form.accessType === "private" ? (
-        <div className={styles.shareSection}>
-          <h4>Private Access Token</h4>
-          <div className={styles.shareLink}>
-            <input type="text" readOnly value={form.accessToken || ""} />
-            <button type="button" className={styles.smallBtn} onClick={() => copy(form.accessToken || "")}>Copy</button>
+
+      {shareMode === "link" ? (
+        <>
+          <div className={styles.shareSection}>
+            <h4>Direct Link</h4>
+            <div className={styles.shareLink}>
+              <input type="text" readOnly value={publicUrl} />
+              <button type="button" className={styles.smallBtn} onClick={() => copy(publicUrl, "url")}>
+                {copied === "url" ? "Copied!" : "Copy"}
+              </button>
+            </div>
           </div>
-        </div>
-      ) : null}
+          <div className={styles.shareSection}>
+            <h4>QR Code</h4>
+            <div className={styles.qrWrap}>
+              <img src={qrUrl} alt="QR code" />
+              <a href={qrUrl} download="form-qr.png" className={styles.smallBtn} style={{ marginTop: "0.5rem", display: "inline-block" }}>
+                Download PNG
+              </a>
+            </div>
+          </div>
+          {form.accessType === "private" ? (
+            <div className={styles.shareSection}>
+              <h4>Private Access Token</h4>
+              <div className={styles.shareLink}>
+                <input type="text" readOnly value={form.accessToken || ""} />
+                <button type="button" className={styles.smallBtn} onClick={() => copy(form.accessToken || "", "token")}>
+                  {copied === "token" ? "Copied!" : "Copy"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : shareMode === "send" ? (
+        <DistributionPanel form={form} />
+      ) : (
+        <>
+          <div className={styles.embedOption}>
+            <h4>Full-Page Embed (iframe)</h4>
+            <p>Drop this into any HTML page to embed the whole form.</p>
+            <div className={styles.embedCode}>{iframeCode}</div>
+            <button type="button" className={styles.smallBtn} onClick={() => copy(iframeCode, "iframe")}>
+              {copied === "iframe" ? "Copied!" : "Copy code"}
+            </button>
+          </div>
+          <div className={styles.embedOption}>
+            <h4>Popup / Modal</h4>
+            <p>A button that opens the form in a centered modal on click.</p>
+            <div className={styles.embedCode}>{popupCode}</div>
+            <button type="button" className={styles.smallBtn} onClick={() => copy(popupCode, "popup")}>
+              {copied === "popup" ? "Copied!" : "Copy code"}
+            </button>
+          </div>
+          <div className={styles.embedOption}>
+            <h4>Inline Embed</h4>
+            <p>Renders the form inline inside a target div element.</p>
+            <div className={styles.embedCode}>{inlineCode}</div>
+            <button type="button" className={styles.smallBtn} onClick={() => copy(inlineCode, "inline")}>
+              {copied === "inline" ? "Copied!" : "Copy code"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1280,6 +1346,149 @@ function SettingsTab({
           <input type="url" value={local.successRedirectUrl || ""} onChange={(e) => setLocal({ ...local, successRedirectUrl: e.target.value })} onBlur={() => saveForm({ successRedirectUrl: local.successRedirectUrl || "" })} />
         </div>
       </div>
+
+      {/* Schedule & Limits (Phase 4) */}
+      <div style={{ background: "white", borderRadius: 10, padding: "1.25rem", border: "1px solid rgba(27,40,86,0.08)", maxWidth: 640, marginTop: "1rem" }}>
+        <h3 style={{ margin: "0 0 0.75rem", color: "#1b2856", fontSize: "1rem", fontWeight: 700 }}>Schedule &amp; Limits</h3>
+        <div className={styles.fieldRow || ""} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+          <div className={styles.field}>
+            <label>Opens At</label>
+            <input
+              type="datetime-local"
+              value={toDatetimeLocal(local.opensAt)}
+              onChange={(e) => setLocal({ ...local, opensAt: e.target.value || null })}
+              onBlur={() => saveForm({ opensAt: local.opensAt || null })}
+            />
+          </div>
+          <div className={styles.field}>
+            <label>Closes At</label>
+            <input
+              type="datetime-local"
+              value={toDatetimeLocal(local.closesAt)}
+              onChange={(e) => setLocal({ ...local, closesAt: e.target.value || null })}
+              onBlur={() => saveForm({ closesAt: local.closesAt || null })}
+            />
+          </div>
+        </div>
+        <div className={styles.field}>
+          <label>Closed Message</label>
+          <textarea
+            value={local.closedMessage || ""}
+            onChange={(e) => setLocal({ ...local, closedMessage: e.target.value })}
+            onBlur={() => saveForm({ closedMessage: local.closedMessage || "" })}
+            placeholder="This form is no longer accepting responses."
+          />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+          <div className={styles.field}>
+            <label>Max Submissions</label>
+            <input
+              type="number"
+              value={local.maxSubmissions ?? ""}
+              onChange={(e) => setLocal({ ...local, maxSubmissions: e.target.value === "" ? null : Number(e.target.value) })}
+              onBlur={() => saveForm({ maxSubmissions: local.maxSubmissions ?? null })}
+              placeholder="Unlimited"
+            />
+          </div>
+          <div className={styles.field}>
+            <label>IP Limit (per IP)</label>
+            <input
+              type="number"
+              value={local.ipLimit ?? ""}
+              onChange={(e) => setLocal({ ...local, ipLimit: e.target.value === "" ? null : Number(e.target.value) })}
+              onBlur={() => saveForm({ ipLimit: local.ipLimit ?? null })}
+              placeholder="Unlimited"
+            />
+          </div>
+        </div>
+        <div className={styles.toggleRow}>
+          <input
+            type="checkbox"
+            id="req-pw"
+            checked={!!local.requirePassword}
+            onChange={(e) => { setLocal({ ...local, requirePassword: e.target.checked }); saveForm({ requirePassword: e.target.checked }); }}
+          />
+          <label htmlFor="req-pw">Require password to access</label>
+        </div>
+        {local.requirePassword ? (
+          <div className={styles.field}>
+            <label>Password</label>
+            <input
+              type="text"
+              value={local.formPassword || ""}
+              onChange={(e) => setLocal({ ...local, formPassword: e.target.value })}
+              onBlur={() => saveForm({ formPassword: local.formPassword || "" })}
+            />
+          </div>
+        ) : null}
+        <div className={styles.toggleRow}>
+          <input
+            type="checkbox"
+            id="one-per"
+            checked={!!local.oneSubmissionPerEmail}
+            onChange={(e) => { setLocal({ ...local, oneSubmissionPerEmail: e.target.checked }); saveForm({ oneSubmissionPerEmail: e.target.checked }); }}
+          />
+          <label htmlFor="one-per">Limit to one submission per email</label>
+        </div>
+      </div>
+
+      {/* Approvals (Phase 4) */}
+      <div style={{ background: "white", borderRadius: 10, padding: "1.25rem", border: "1px solid rgba(27,40,86,0.08)", maxWidth: 640, marginTop: "1rem" }}>
+        <h3 style={{ margin: "0 0 0.75rem", color: "#1b2856", fontSize: "1rem", fontWeight: 700 }}>Approval Workflow</h3>
+        <div className={styles.toggleRow}>
+          <input
+            type="checkbox"
+            id="req-appr"
+            checked={!!local.requiresApproval}
+            onChange={(e) => { setLocal({ ...local, requiresApproval: e.target.checked }); saveForm({ requiresApproval: e.target.checked }); }}
+          />
+          <label htmlFor="req-appr">Require approval before submission is finalized</label>
+        </div>
+        {local.requiresApproval ? (
+          <>
+            <div className={styles.field}>
+              <label>Type</label>
+              <select
+                value={local.approvalConfig?.type || "single"}
+                onChange={(e) => {
+                  const next = { ...(local.approvalConfig || {}), type: e.target.value as "single" | "sequential" };
+                  setLocal({ ...local, approvalConfig: next });
+                  saveForm({ approvalConfig: next });
+                }}
+              >
+                <option value="single">Single approver (or any in list)</option>
+                <option value="sequential">Sequential (ordered)</option>
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label>Approver user IDs (comma-separated)</label>
+              <input
+                type="text"
+                value={((local.approvalConfig?.approvers as number[]) || (local.approvalConfig?.steps || []).map((s) => s.approverUserId)).join(",")}
+                onChange={(e) => {
+                  const ids = e.target.value.split(",").map((s) => Number(s.trim())).filter(Number.isFinite);
+                  const type = local.approvalConfig?.type || "single";
+                  const next = type === "sequential"
+                    ? { type, steps: ids.map((id, i) => ({ approverUserId: id, label: `Step ${i + 1}` })) }
+                    : { type, approvers: ids };
+                  setLocal({ ...local, approvalConfig: next });
+                  saveForm({ approvalConfig: next });
+                }}
+              />
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
+}
+
+function toDatetimeLocal(s?: string | null): string {
+  if (!s) return "";
+  try {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return ""; }
 }

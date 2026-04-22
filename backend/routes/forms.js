@@ -113,6 +113,18 @@ function mapForm(r) {
     createdBy: r.created_by,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    // Phase 4 additions — present once migrations run
+    currentVersion: r.current_version,
+    opensAt: r.opens_at,
+    closesAt: r.closes_at,
+    closedMessage: r.closed_message,
+    maxSubmissions: r.max_submissions,
+    requirePassword: r.require_password,
+    formPassword: r.form_password,
+    oneSubmissionPerEmail: r.one_submission_per_email,
+    ipLimit: r.ip_limit,
+    requiresApproval: r.requires_approval,
+    approvalConfig: r.approval_config,
   };
 }
 
@@ -303,6 +315,17 @@ export async function putForm(req, res) {
     ["successMessage", "success_message", (v) => (typeof v === "string" ? v : undefined)],
     ["successRedirectUrl", "success_redirect_url", (v) => (typeof v === "string" ? v.trim() || null : undefined)],
     ["slug", "slug", (v) => (typeof v === "string" && v.trim() ? slugify(v) : undefined)],
+    // Phase 4 scheduling & access controls
+    ["opensAt", "opens_at", (v) => (v === null || v === "" ? null : typeof v === "string" ? v : undefined)],
+    ["closesAt", "closes_at", (v) => (v === null || v === "" ? null : typeof v === "string" ? v : undefined)],
+    ["closedMessage", "closed_message", (v) => (typeof v === "string" ? v : undefined)],
+    ["maxSubmissions", "max_submissions", (v) => (v === null || v === "" ? null : Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined)],
+    ["requirePassword", "require_password", (v) => (typeof v === "boolean" ? v : undefined)],
+    ["formPassword", "form_password", (v) => (typeof v === "string" ? v : undefined)],
+    ["oneSubmissionPerEmail", "one_submission_per_email", (v) => (typeof v === "boolean" ? v : undefined)],
+    ["ipLimit", "ip_limit", (v) => (v === null || v === "" ? null : Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined)],
+    ["requiresApproval", "requires_approval", (v) => (typeof v === "boolean" ? v : undefined)],
+    ["approvalConfig", "approval_config", (v) => (v && typeof v === "object" ? v : undefined)],
   ];
   for (const [key, col, parse] of fields) {
     if (b[key] !== undefined) {
@@ -1107,14 +1130,15 @@ export async function postPublicFormSubmit(req, res) {
 
     const { rows: submissionRows } = await pool.query(
       `INSERT INTO form_submissions (form_id, submission_data, ip_address, user_agent, referrer,
-                                     contact_name, contact_email, property_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+                                     contact_name, contact_email, property_name, form_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         form.id, cleanedData,
         (req.ip || "").slice(0, 45),
         (req.get?.("user-agent") || "").slice(0, 500),
         (req.get?.("referer") || "").slice(0, 500),
         contactName, contactEmail, propertyName,
+        form.current_version || null,
       ]
     );
     const submission = submissionRows[0];
@@ -1128,12 +1152,36 @@ export async function postPublicFormSubmit(req, res) {
       [form.id, { submissionId: submission.id }]
     ).catch(() => {});
 
-    // Run automations — delegate to the Phase 3 engine (which handles all action types).
-    try {
-      const { executeFormAutomations } = await import("../lib/form-automations.js");
-      await executeFormAutomations(form.id, submission.id, cleanedData);
-    } catch (err) {
-      console.error("[form automation]", err?.message || err);
+    // Phase 4: link distribution record if ?t= personal token was used.
+    const distToken = typeof req.query?.t === "string" ? req.query.t.trim() : "";
+    if (distToken) {
+      await pool.query(
+        `UPDATE form_distributions
+         SET submitted_at = NOW(), submission_id = $1, status = 'submitted'
+         WHERE personal_token = $2`,
+        [submission.id, distToken]
+      ).catch(() => {});
+    }
+
+    // Phase 4: if form requires approval, init approvals and defer automations.
+    let approvalsInitialized = false;
+    if (form.requires_approval) {
+      try {
+        const { initApprovalsForSubmission } = await import("./forms-phase4.js");
+        approvalsInitialized = await initApprovalsForSubmission(submission.id, form.id);
+      } catch (err) {
+        console.error("[form approvals init]", err?.message || err);
+      }
+    }
+
+    // Run automations (skip if approvals pending — they fire on final approval).
+    if (!approvalsInitialized) {
+      try {
+        const { executeFormAutomations } = await import("../lib/form-automations.js");
+        await executeFormAutomations(form.id, submission.id, cleanedData);
+      } catch (err) {
+        console.error("[form automation]", err?.message || err);
+      }
     }
 
     res.status(201).json({
