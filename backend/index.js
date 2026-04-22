@@ -495,8 +495,10 @@ import {
   getAnalytics as getReviewsAnalytics,
   getAutomationById,
   getAutomations,
+  getGoogleAccounts,
   getGoogleBusinessCallback,
   getGoogleBusinessConnect,
+  getGoogleLocationsForAccount,
   getLeaderboard,
   getPublicOptOut,
   getPublicPixel,
@@ -524,6 +526,7 @@ import {
   processScheduledAutomations,
   putAutomation,
   putAutomationToggle,
+  putGoogleSelection,
   putReviewFlag,
   putReviewNotes,
   putReviewRead,
@@ -1199,6 +1202,9 @@ app.get("/auth/google-business", requireAuth, getGoogleBusinessConnect);
 app.get("/auth/google-business/callback", getGoogleBusinessCallback);
 app.post("/reviews/google/authorize-url", requireAuth, postGoogleBusinessAuthorizeUrl);
 app.delete("/reviews/google/connection", requireAuth, requireAdminRole, deleteGoogleBusinessConnection);
+app.get("/reviews/google/accounts", requireAuth, getGoogleAccounts);
+app.get("/reviews/google/accounts/:accountId/locations", requireAuth, getGoogleLocationsForAccount);
+app.put("/reviews/google/selection", requireAuth, requireAdminRole, putGoogleSelection);
 
 /** Reviews setup + stats + sync */
 app.get("/reviews/setup", requireAuth, getReviewsSetup);

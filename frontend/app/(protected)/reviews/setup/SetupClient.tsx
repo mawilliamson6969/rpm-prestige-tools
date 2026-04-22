@@ -19,6 +19,9 @@ type SetupStatus = {
   emailConfigured: boolean;
 };
 
+type GoogleAccount = { id: string; name: string; type: string | null; role: string | null };
+type GoogleLocation = { id: string; title: string; address: string };
+
 export default function SetupClient() {
   const { authHeaders, isAdmin } = useAuth();
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -26,6 +29,14 @@ export default function SetupClient() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [accounts, setAccounts] = useState<GoogleAccount[] | null>(null);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsErr, setAccountsErr] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [locations, setLocations] = useState<GoogleLocation[] | null>(null);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+  const [savingSelection, setSavingSelection] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(apiUrl("/reviews/setup"), { headers: { ...authHeaders() } });
@@ -39,6 +50,70 @@ export default function SetupClient() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    setAccountsErr(null);
+    try {
+      const res = await fetch(apiUrl("/reviews/google/accounts"), {
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not list accounts.");
+      setAccounts(body.accounts || []);
+      if (body.accounts?.length === 1) setSelectedAccountId(body.accounts[0].id);
+    } catch (e) {
+      setAccountsErr(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [authHeaders]);
+
+  useEffect(() => {
+    if (status?.google.connected && !status.google.locationId) loadAccounts();
+  }, [status?.google.connected, status?.google.locationId, loadAccounts]);
+
+  useEffect(() => {
+    if (!selectedAccountId) {
+      setLocations(null);
+      return;
+    }
+    setLocationsLoading(true);
+    fetch(apiUrl(`/reviews/google/accounts/${encodeURIComponent(selectedAccountId)}/locations`), {
+      headers: { ...authHeaders() },
+    })
+      .then((r) => r.json().then((b) => ({ ok: r.ok, b })))
+      .then(({ ok, b }) => {
+        if (ok && Array.isArray(b.locations)) {
+          setLocations(b.locations);
+          if (b.locations.length === 1) setSelectedLocationId(b.locations[0].id);
+        } else {
+          setAccountsErr(b.error || "Could not list locations.");
+        }
+      })
+      .finally(() => setLocationsLoading(false));
+  }, [selectedAccountId, authHeaders]);
+
+  const saveSelection = async () => {
+    if (!selectedAccountId || !selectedLocationId) return;
+    setSavingSelection(true);
+    try {
+      const res = await fetch(apiUrl("/reviews/google/selection"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ accountId: selectedAccountId, locationId: selectedLocationId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Save failed.");
+      setMsg("Saved! Starting review sync…");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSavingSelection(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
 
   const saveUrl = async () => {
     setSaving(true);
@@ -130,17 +205,163 @@ export default function SetupClient() {
             <code>GOOGLE_BUSINESS_LOCATION_ID</code> in the backend environment.
           </p>
         ) : status?.google.connected ? (
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <div style={{ fontSize: "0.85rem", color: "#6a737b" }}>
-              Account: <code>{status.google.accountId || "—"}</code> · Location:{" "}
-              <code>{status.google.locationId || "—"}</code>
-            </div>
-            {isAdmin ? (
-              <button type="button" className={styles.btnDanger} onClick={disconnectGoogle}>
-                Disconnect
-              </button>
-            ) : null}
-          </div>
+          <>
+            {status.google.locationId ? (
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ fontSize: "0.85rem", color: "#6a737b" }}>
+                  Account: <code>{status.google.accountId}</code> · Location:{" "}
+                  <code>{status.google.locationId}</code>
+                </div>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    className={styles.btnSecondary}
+                    onClick={() => {
+                      setSelectedAccountId("");
+                      setSelectedLocationId("");
+                      setLocations(null);
+                      loadAccounts();
+                    }}
+                  >
+                    Change location
+                  </button>
+                ) : null}
+                {isAdmin ? (
+                  <button type="button" className={styles.btnDanger} onClick={disconnectGoogle}>
+                    Disconnect
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: "0.88rem", color: "#1b2856", margin: "0 0 0.85rem" }}>
+                  Pick the account and location to sync reviews from:
+                </p>
+                {accountsErr ? (
+                  <div
+                    className={styles.insightCallout}
+                    style={{ color: "#b32317", marginBottom: "0.75rem" }}
+                  >
+                    {accountsErr}
+                  </div>
+                ) : null}
+                <div style={{ display: "grid", gap: "0.65rem", maxWidth: "28rem" }}>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        color: "#1b2856",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      Google Business account
+                    </label>
+                    <select
+                      value={selectedAccountId}
+                      onChange={(e) => {
+                        setSelectedAccountId(e.target.value);
+                        setSelectedLocationId("");
+                      }}
+                      disabled={accountsLoading || !accounts}
+                      style={{
+                        width: "100%",
+                        borderRadius: 8,
+                        border: "1px solid rgba(27,40,86,0.15)",
+                        padding: "0.55rem 0.7rem",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <option value="">
+                        {accountsLoading
+                          ? "Loading accounts…"
+                          : accounts?.length
+                          ? "— Select —"
+                          : "(no accounts found)"}
+                      </option>
+                      {(accounts || []).map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name || a.id}
+                          {a.type ? ` (${a.type.toLowerCase()})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        color: "#1b2856",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      Location
+                    </label>
+                    <select
+                      value={selectedLocationId}
+                      onChange={(e) => setSelectedLocationId(e.target.value)}
+                      disabled={!selectedAccountId || locationsLoading || !locations}
+                      style={{
+                        width: "100%",
+                        borderRadius: 8,
+                        border: "1px solid rgba(27,40,86,0.15)",
+                        padding: "0.55rem 0.7rem",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <option value="">
+                        {!selectedAccountId
+                          ? "(pick an account first)"
+                          : locationsLoading
+                          ? "Loading locations…"
+                          : locations?.length
+                          ? "— Select —"
+                          : "(no locations found)"}
+                      </option>
+                      {(locations || []).map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.title}
+                          {l.address ? ` — ${l.address}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={saveSelection}
+                      disabled={
+                        !isAdmin ||
+                        savingSelection ||
+                        !selectedAccountId ||
+                        !selectedLocationId
+                      }
+                    >
+                      {savingSelection ? "Saving…" : "Save & Sync Reviews"}
+                    </button>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className={styles.btnDanger}
+                        onClick={disconnectGoogle}
+                      >
+                        Disconnect
+                      </button>
+                    ) : null}
+                  </div>
+                  {!isAdmin ? (
+                    <p style={{ fontSize: "0.78rem", color: "#6a737b" }}>
+                      Only admins can save the selection.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <button
             type="button"

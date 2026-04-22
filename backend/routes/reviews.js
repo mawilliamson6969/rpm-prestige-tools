@@ -9,7 +9,10 @@ import {
   getGoogleAuthRow,
   handleGoogleCallback,
   isGoogleConfigured,
+  listGoogleAccounts,
+  listGoogleLocations,
   replyToReviewViaApi,
+  saveGoogleSelection,
   syncGoogleReviews,
   verifyGoogleOAuthState,
 } from "../lib/google-reviews-sync.js";
@@ -268,6 +271,61 @@ export async function getGoogleBusinessCallback(req, res) {
 export async function deleteGoogleBusinessConnection(_req, res) {
   await disconnectGoogle();
   res.json({ ok: true });
+}
+
+export async function getGoogleAccounts(_req, res) {
+  try {
+    const accounts = await listGoogleAccounts();
+    res.json({ accounts });
+  } catch (e) {
+    if (e.code === "GOOGLE_NOT_CONNECTED") {
+      res.status(400).json({ error: e.message });
+      return;
+    }
+    console.error("[reviews] list accounts", e);
+    res.status(502).json({ error: e.message || "Could not list Google accounts." });
+  }
+}
+
+export async function getGoogleLocationsForAccount(req, res) {
+  const accountId = String(req.params.accountId || "").trim();
+  if (!accountId) {
+    res.status(400).json({ error: "accountId is required." });
+    return;
+  }
+  try {
+    const locations = await listGoogleLocations(accountId);
+    res.json({ locations });
+  } catch (e) {
+    if (e.code === "GOOGLE_NOT_CONNECTED") {
+      res.status(400).json({ error: e.message });
+      return;
+    }
+    console.error("[reviews] list locations", e);
+    res.status(502).json({ error: e.message || "Could not list Google locations." });
+  }
+}
+
+export async function putGoogleSelection(req, res) {
+  const accountId = String(req.body?.accountId || "").trim();
+  const locationId = String(req.body?.locationId || "").trim();
+  if (!accountId || !locationId) {
+    res.status(400).json({ error: "accountId and locationId are required." });
+    return;
+  }
+  try {
+    await saveGoogleSelection(accountId, locationId);
+    syncGoogleReviews({ trigger: "post_selection" }).catch((e) =>
+      console.error("[reviews] post-selection sync", e.message || e)
+    );
+    res.json({ ok: true, accountId, locationId });
+  } catch (e) {
+    if (e.code === "GOOGLE_NOT_CONNECTED") {
+      res.status(400).json({ error: e.message });
+      return;
+    }
+    res.status(500).json({ error: e.message || "Could not save selection." });
+  }
 }
 
 /* ==========================================================

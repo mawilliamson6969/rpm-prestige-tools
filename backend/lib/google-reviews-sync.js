@@ -183,15 +183,82 @@ export async function getValidGoogleAccessToken() {
   return tokens.access_token;
 }
 
-function accountLocation() {
-  const row = process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim();
-  const loc = process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim();
-  if (!row || !loc) {
-    const err = new Error("GOOGLE_BUSINESS_ACCOUNT_ID / GOOGLE_BUSINESS_LOCATION_ID not set.");
-    err.code = "GOOGLE_NOT_CONFIGURED";
+async function accountLocation() {
+  const envRow = process.env.GOOGLE_BUSINESS_ACCOUNT_ID?.trim();
+  const envLoc = process.env.GOOGLE_BUSINESS_LOCATION_ID?.trim();
+  if (envRow && envLoc) return { accountId: envRow, locationId: envLoc };
+  const row = await getGoogleAuthRow();
+  if (row?.account_id && row?.location_id) {
+    return { accountId: row.account_id, locationId: row.location_id };
+  }
+  const err = new Error(
+    "Google Business account/location not selected. Pick one on the Setup page."
+  );
+  err.code = "GOOGLE_NOT_CONFIGURED";
+  throw err;
+}
+
+function stripPrefix(name, prefix) {
+  if (!name) return "";
+  const s = String(name);
+  return s.startsWith(prefix) ? s.slice(prefix.length) : s;
+}
+
+export async function listGoogleAccounts() {
+  const accessToken = await getValidGoogleAccessToken();
+  const url = "https://mybusinessaccountmanagement.googleapis.com/v1/accounts";
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json?.error?.message || `Google API error ${res.status}`);
+  }
+  const accounts = Array.isArray(json.accounts) ? json.accounts : [];
+  return accounts.map((a) => ({
+    id: stripPrefix(a.name, "accounts/"),
+    name: a.accountName || a.name || "",
+    type: a.type || null,
+    role: a.role || null,
+  }));
+}
+
+export async function listGoogleLocations(accountId) {
+  const accessToken = await getValidGoogleAccessToken();
+  const clean = stripPrefix(accountId, "accounts/");
+  const readMask = encodeURIComponent("name,title,storefrontAddress,websiteUri,phoneNumbers");
+  const url = `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${encodeURIComponent(
+    clean
+  )}/locations?readMask=${readMask}&pageSize=100`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json?.error?.message || `Google API error ${res.status}`);
+  }
+  const locations = Array.isArray(json.locations) ? json.locations : [];
+  return locations.map((l) => {
+    const addr = l.storefrontAddress || {};
+    const lines = Array.isArray(addr.addressLines) ? addr.addressLines.join(" ") : "";
+    const address = [lines, addr.locality, addr.administrativeArea].filter(Boolean).join(", ");
+    return {
+      id: stripPrefix(l.name, "locations/"),
+      title: l.title || l.name || "",
+      address,
+    };
+  });
+}
+
+export async function saveGoogleSelection(accountId, locationId) {
+  const pool = getPool();
+  const row = await getGoogleAuthRow();
+  if (!row) {
+    const err = new Error("Google Business Profile is not connected.");
+    err.code = "GOOGLE_NOT_CONNECTED";
     throw err;
   }
-  return { accountId: row, locationId: loc };
+  await pool.query(
+    `UPDATE google_auth_tokens SET account_id = $1, location_id = $2, updated_at = NOW() WHERE id = $3`,
+    [String(accountId).trim(), String(locationId).trim(), row.id]
+  );
+  return { ok: true };
 }
 
 async function googleGet(path, accessToken) {
@@ -247,7 +314,7 @@ export async function syncGoogleReviews({ trigger = "manual" } = {}) {
   } catch (e) {
     return { ok: false, error: e.message, code: e.code || "ERR" };
   }
-  const { accountId, locationId } = accountLocation();
+  const { accountId, locationId } = await accountLocation();
 
   let pageToken = null;
   let totalSeen = 0;
@@ -326,14 +393,14 @@ export async function syncGoogleReviews({ trigger = "manual" } = {}) {
 
 export async function replyToReviewViaApi(reviewGoogleId, comment) {
   const accessToken = await getValidGoogleAccessToken();
-  const { accountId, locationId } = accountLocation();
+  const { accountId, locationId } = await accountLocation();
   const path = `/accounts/${accountId}/locations/${locationId}/reviews/${reviewGoogleId}/reply`;
   return googlePut(path, accessToken, { comment });
 }
 
 export async function deleteReviewReplyViaApi(reviewGoogleId) {
   const accessToken = await getValidGoogleAccessToken();
-  const { accountId, locationId } = accountLocation();
+  const { accountId, locationId } = await accountLocation();
   const path = `/accounts/${accountId}/locations/${locationId}/reviews/${reviewGoogleId}/reply`;
   return googleDelete(path, accessToken);
 }
