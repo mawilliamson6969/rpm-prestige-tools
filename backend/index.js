@@ -515,6 +515,7 @@ import {
   getTemplates as getReviewTemplates,
   postAutomation,
   postAutomationTest as postReviewAutomationTest,
+  postGoogleAutoDiscover,
   postGoogleBusinessAuthorizeUrl,
   postReviewAiSuggest,
   postReviewReply,
@@ -1209,6 +1210,7 @@ app.delete("/reviews/google/connection", requireAuth, requireAdminRole, deleteGo
 app.get("/reviews/google/accounts", requireAuth, getGoogleAccounts);
 app.get("/reviews/google/accounts/:accountId/locations", requireAuth, getGoogleLocationsForAccount);
 app.put("/reviews/google/selection", requireAuth, requireAdminRole, putGoogleSelection);
+app.post("/reviews/google/auto-discover", requireAuth, requireAdminRole, postGoogleAutoDiscover);
 
 /** Reviews setup + stats + sync */
 app.get("/reviews/setup", requireAuth, getReviewsSetup);

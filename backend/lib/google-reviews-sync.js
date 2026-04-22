@@ -246,6 +246,73 @@ export async function listGoogleLocations(accountId) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * v4 auto-discovery: GET /accounts → pick first → wait 2s → GET /accounts/{id}/locations → pick first.
+ * Saves both to google_auth_tokens. Throws if none found or on API error.
+ */
+export async function autoDiscoverAndSave() {
+  const accessToken = await getValidGoogleAccessToken();
+
+  const accountsRes = await fetch(`${GMB_BASE}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const accountsBody = await accountsRes.json().catch(() => ({}));
+  if (!accountsRes.ok) {
+    const err = new Error(
+      accountsBody?.error?.message || `Google /accounts ${accountsRes.status}`
+    );
+    err.status = accountsRes.status;
+    err.code = accountsRes.status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
+    throw err;
+  }
+  const accounts = Array.isArray(accountsBody.accounts) ? accountsBody.accounts : [];
+  if (!accounts.length) {
+    const err = new Error("No Google Business accounts are accessible with this connection.");
+    err.code = "GOOGLE_NO_ACCOUNTS";
+    throw err;
+  }
+  const accountId = stripPrefix(accounts[0].name, "accounts/");
+
+  await sleep(2000);
+
+  const locRes = await fetch(
+    `${GMB_BASE}/accounts/${encodeURIComponent(accountId)}/locations`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const locBody = await locRes.json().catch(() => ({}));
+  if (!locRes.ok) {
+    const err = new Error(
+      locBody?.error?.message || `Google /locations ${locRes.status}`
+    );
+    err.status = locRes.status;
+    err.code = locRes.status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
+    throw err;
+  }
+  const locations = Array.isArray(locBody.locations) ? locBody.locations : [];
+  if (!locations.length) {
+    const err = new Error("No locations found under the first Google Business account.");
+    err.code = "GOOGLE_NO_LOCATIONS";
+    throw err;
+  }
+  // v4 location name format: "accounts/{accId}/locations/{locId}"
+  const rawName = String(locations[0].name || "");
+  const locationId = rawName.includes("/locations/")
+    ? rawName.split("/locations/")[1]
+    : stripPrefix(rawName, "locations/");
+
+  await saveGoogleSelection(accountId, locationId);
+  return {
+    accountId,
+    locationId,
+    accountName: accounts[0].accountName || accounts[0].name,
+    locationTitle: locations[0].locationName || locations[0].title || rawName,
+  };
+}
+
 export async function saveGoogleSelection(accountId, locationId) {
   const pool = getPool();
   const row = await getGoogleAuthRow();
@@ -309,12 +376,25 @@ function mapStarRating(str) {
 export async function syncGoogleReviews({ trigger = "manual" } = {}) {
   const pool = getPool();
   let accessToken;
+  let accountId;
+  let locationId;
   try {
     accessToken = await getValidGoogleAccessToken();
+    const loc = await accountLocation();
+    accountId = loc.accountId;
+    locationId = loc.locationId;
   } catch (e) {
+    if (
+      e.code === "GOOGLE_NOT_CONFIGURED" ||
+      e.code === "GOOGLE_NOT_CONNECTED"
+    ) {
+      console.log(
+        `[reviews sync] Google Business not fully configured, skipping sync (trigger=${trigger}).`
+      );
+      return { ok: false, skipped: true, code: e.code };
+    }
     return { ok: false, error: e.message, code: e.code || "ERR" };
   }
-  const { accountId, locationId } = await accountLocation();
 
   let pageToken = null;
   let totalSeen = 0;

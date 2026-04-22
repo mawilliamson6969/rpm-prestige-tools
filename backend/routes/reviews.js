@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 import { getReviewSetting, setReviewSetting } from "../lib/reviews-schema.js";
 import {
+  autoDiscoverAndSave,
   buildGoogleAuthorizeUrl,
   deleteReviewReplyViaApi,
   disconnectGoogle,
@@ -303,6 +304,34 @@ export async function getGoogleLocationsForAccount(req, res) {
     }
     console.error("[reviews] list locations", e);
     res.status(502).json({ error: e.message || "Could not list Google locations." });
+  }
+}
+
+export async function postGoogleAutoDiscover(_req, res) {
+  try {
+    const result = await autoDiscoverAndSave();
+    syncGoogleReviews({ trigger: "post_autodiscover" }).catch((e) =>
+      console.error("[reviews] post-autodiscover sync", e.message || e)
+    );
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    if (e.code === "GOOGLE_NOT_CONNECTED") {
+      res.status(400).json({ error: e.message, code: e.code });
+      return;
+    }
+    if (e.code === "GOOGLE_RATE_LIMIT") {
+      res.status(429).json({
+        error: "Google rate limit hit — wait a minute and try again.",
+        code: e.code,
+      });
+      return;
+    }
+    if (e.code === "GOOGLE_NO_ACCOUNTS" || e.code === "GOOGLE_NO_LOCATIONS") {
+      res.status(404).json({ error: e.message, code: e.code });
+      return;
+    }
+    console.error("[reviews] auto-discover", e);
+    res.status(502).json({ error: e.message || "Auto-discovery failed.", code: e.code });
   }
 }
 

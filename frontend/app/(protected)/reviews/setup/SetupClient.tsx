@@ -37,6 +37,7 @@ export default function SetupClient() {
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const [savingSelection, setSavingSelection] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(apiUrl("/reviews/setup"), { headers: { ...authHeaders() } });
@@ -93,6 +94,29 @@ export default function SetupClient() {
       })
       .finally(() => setLocationsLoading(false));
   }, [selectedAccountId, authHeaders]);
+
+  const retryDiscovery = async () => {
+    setDiscovering(true);
+    setMsg(null);
+    setAccountsErr(null);
+    try {
+      const res = await fetch(apiUrl("/reviews/google/auto-discover"), {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Discovery failed.");
+      setMsg(
+        `Discovered: ${body.accountName || body.accountId} · ${body.locationTitle || body.locationId}. Syncing reviews now…`
+      );
+      await load();
+    } catch (e) {
+      setAccountsErr(e instanceof Error ? e.message : "Discovery failed.");
+    } finally {
+      setDiscovering(false);
+      setTimeout(() => setMsg(null), 5000);
+    }
+  };
 
   const saveSelection = async () => {
     if (!selectedAccountId || !selectedLocationId) return;
@@ -235,8 +259,25 @@ export default function SetupClient() {
             ) : (
               <div>
                 <p style={{ fontSize: "0.88rem", color: "#1b2856", margin: "0 0 0.85rem" }}>
-                  Pick the account and location to sync reviews from:
+                  Pick the account and location to sync reviews from, or let us auto-select
+                  the first one found.
                 </p>
+                {isAdmin ? (
+                  <div style={{ marginBottom: "0.85rem" }}>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={retryDiscovery}
+                      disabled={discovering}
+                    >
+                      {discovering ? "Discovering…" : "🔄 Retry Auto-Discovery"}
+                    </button>
+                    <p style={{ fontSize: "0.75rem", color: "#6a737b", margin: "0.35rem 0 0" }}>
+                      Picks the first account + first location. Use the dropdowns below if you
+                      have more than one location.
+                    </p>
+                  </div>
+                ) : null}
                 {accountsErr ? (
                   <div
                     className={styles.insightCallout}
