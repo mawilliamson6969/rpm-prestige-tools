@@ -407,8 +407,22 @@ async function googleGet(path, accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Google API error ${res.status}: ${txt.slice(0, 200)}`);
+    const body = await res.json().catch(() => ({}));
+    const msg = body?.error?.message || "";
+    if (res.status === 403 && /has not been used|is disabled|accessNotConfigured/i.test(msg)) {
+      const err = new Error(
+        "Google My Business API (v4) is not enabled on your Google Cloud project. " +
+        "New projects must request access at https://support.google.com/business/contact/api_default. " +
+        "Approval usually takes 1–7 business days. Reviews cannot sync until v4 is enabled."
+      );
+      err.code = "GOOGLE_V4_NOT_ENABLED";
+      err.status = 403;
+      throw err;
+    }
+    const err = new Error(msg || `Google API error ${res.status}`);
+    err.status = res.status;
+    err.code = res.status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
+    throw err;
   }
   return res.json();
 }
@@ -483,7 +497,14 @@ export async function syncGoogleReviews({ trigger = "manual" } = {}) {
     try {
       data = await googleGet(path, accessToken);
     } catch (e) {
-      return { ok: false, error: e.message };
+      if (e.code === "GOOGLE_V4_NOT_ENABLED") {
+        console.log(
+          `[reviews sync] v4 API not enabled for this project (trigger=${trigger}). ` +
+          `Request access at https://support.google.com/business/contact/api_default`
+        );
+        return { ok: false, skipped: true, code: e.code, error: e.message };
+      }
+      return { ok: false, error: e.message, code: e.code };
     }
     const list = Array.isArray(data.reviews) ? data.reviews : [];
     totalSeen += list.length;
