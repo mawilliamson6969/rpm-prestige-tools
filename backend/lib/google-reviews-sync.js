@@ -204,14 +204,24 @@ function stripPrefix(name, prefix) {
   return s.startsWith(prefix) ? s.slice(prefix.length) : s;
 }
 
+function rateLimitError(status, bodyMsg) {
+  const err = new Error(
+    status === 429
+      ? "Google rate limit hit — wait 60 seconds and try again."
+      : bodyMsg || `Google API error ${status}`
+  );
+  err.status = status;
+  err.code = status === 429 ? "GOOGLE_RATE_LIMIT" : "GOOGLE_API";
+  return err;
+}
+
 export async function listGoogleAccounts() {
   const accessToken = await getValidGoogleAccessToken();
-  const url = "https://mybusinessaccountmanagement.googleapis.com/v1/accounts";
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetch(`${GMB_BASE}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(json?.error?.message || `Google API error ${res.status}`);
-  }
+  if (!res.ok) throw rateLimitError(res.status, json?.error?.message);
   const accounts = Array.isArray(json.accounts) ? json.accounts : [];
   return accounts.map((a) => ({
     id: stripPrefix(a.name, "accounts/"),
@@ -224,23 +234,24 @@ export async function listGoogleAccounts() {
 export async function listGoogleLocations(accountId) {
   const accessToken = await getValidGoogleAccessToken();
   const clean = stripPrefix(accountId, "accounts/");
-  const readMask = encodeURIComponent("name,title,storefrontAddress,websiteUri,phoneNumbers");
-  const url = `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${encodeURIComponent(
-    clean
-  )}/locations?readMask=${readMask}&pageSize=100`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetch(
+    `${GMB_BASE}/accounts/${encodeURIComponent(clean)}/locations`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(json?.error?.message || `Google API error ${res.status}`);
-  }
+  if (!res.ok) throw rateLimitError(res.status, json?.error?.message);
   const locations = Array.isArray(json.locations) ? json.locations : [];
   return locations.map((l) => {
-    const addr = l.storefrontAddress || {};
+    const rawName = String(l.name || "");
+    const id = rawName.includes("/locations/")
+      ? rawName.split("/locations/")[1]
+      : stripPrefix(rawName, "locations/");
+    const addr = l.address || l.storefrontAddress || {};
     const lines = Array.isArray(addr.addressLines) ? addr.addressLines.join(" ") : "";
     const address = [lines, addr.locality, addr.administrativeArea].filter(Boolean).join(", ");
     return {
-      id: stripPrefix(l.name, "locations/"),
-      title: l.title || l.name || "",
+      id,
+      title: l.locationName || l.title || rawName,
       address,
     };
   });

@@ -70,10 +70,9 @@ export default function SetupClient() {
     }
   }, [authHeaders]);
 
-  useEffect(() => {
-    if (status?.google.connected && !status.google.locationId) loadAccounts();
-  }, [status?.google.connected, status?.google.locationId, loadAccounts]);
-
+  // NOTE: intentionally NOT auto-fetching on mount. Google Business APIs have a
+  // very tight per-minute quota (1 QPM by default); auto-fetch on every Setup
+  // page visit blows through it. User clicks to load.
   useEffect(() => {
     if (!selectedAccountId) {
       setLocations(null);
@@ -263,7 +262,7 @@ export default function SetupClient() {
                   the first one found.
                 </p>
                 {isAdmin ? (
-                  <div style={{ marginBottom: "0.85rem" }}>
+                  <div style={{ marginBottom: "0.85rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className={styles.btnPrimary}
@@ -272,12 +271,22 @@ export default function SetupClient() {
                     >
                       {discovering ? "Discovering…" : "🔄 Retry Auto-Discovery"}
                     </button>
-                    <p style={{ fontSize: "0.75rem", color: "#6a737b", margin: "0.35rem 0 0" }}>
-                      Picks the first account + first location. Use the dropdowns below if you
-                      have more than one location.
-                    </p>
+                    <button
+                      type="button"
+                      className={styles.btnSecondary}
+                      onClick={loadAccounts}
+                      disabled={accountsLoading}
+                    >
+                      {accountsLoading ? "Loading…" : "Show manual pickers"}
+                    </button>
                   </div>
                 ) : null}
+                <p style={{ fontSize: "0.75rem", color: "#6a737b", margin: "0 0 0.85rem" }}>
+                  Auto-discovery picks the first account + first location. Use manual pickers
+                  only if you have multiple locations.{" "}
+                  <strong>Google APIs are rate-limited to ~1 call/minute</strong> — avoid
+                  clicking buttons repeatedly.
+                </p>
                 {accountsErr ? (
                   <div
                     className={styles.insightCallout}
@@ -286,6 +295,7 @@ export default function SetupClient() {
                     {accountsErr}
                   </div>
                 ) : null}
+                {accounts ? (
                 <div style={{ display: "grid", gap: "0.65rem", maxWidth: "28rem" }}>
                   <div>
                     <label
@@ -305,7 +315,6 @@ export default function SetupClient() {
                         setSelectedAccountId(e.target.value);
                         setSelectedLocationId("");
                       }}
-                      disabled={accountsLoading || !accounts}
                       style={{
                         width: "100%",
                         borderRadius: 8,
@@ -315,11 +324,7 @@ export default function SetupClient() {
                       }}
                     >
                       <option value="">
-                        {accountsLoading
-                          ? "Loading accounts…"
-                          : accounts?.length
-                          ? "— Select —"
-                          : "(no accounts found)"}
+                        {accounts?.length ? "— Select —" : "(no accounts found)"}
                       </option>
                       {(accounts || []).map((a) => (
                         <option key={a.id} value={a.id}>
@@ -400,6 +405,7 @@ export default function SetupClient() {
                     </p>
                   ) : null}
                 </div>
+                ) : null}
               </div>
             )}
           </>

@@ -283,6 +283,10 @@ export async function getGoogleAccounts(_req, res) {
       res.status(400).json({ error: e.message });
       return;
     }
+    if (e.code === "GOOGLE_RATE_LIMIT") {
+      res.status(429).json({ error: e.message, code: e.code });
+      return;
+    }
     console.error("[reviews] list accounts", e);
     res.status(502).json({ error: e.message || "Could not list Google accounts." });
   }
@@ -300,6 +304,10 @@ export async function getGoogleLocationsForAccount(req, res) {
   } catch (e) {
     if (e.code === "GOOGLE_NOT_CONNECTED") {
       res.status(400).json({ error: e.message });
+      return;
+    }
+    if (e.code === "GOOGLE_RATE_LIMIT") {
+      res.status(429).json({ error: e.message, code: e.code });
       return;
     }
     console.error("[reviews] list locations", e);
