@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -75,9 +75,7 @@ export default function ScorecardClient() {
   const [manageOpen, setManageOpen] = useState(false);
   const [allMetrics, setAllMetrics] = useState<Metric[]>([]);
   const [trendMetricId, setTrendMetricId] = useState<number | null>(null);
-  const [metricMenuFor, setMetricMenuFor] = useState<number | null>(null);
   const [editMetric, setEditMetric] = useState<Metric | null>(null);
-  const [deleteMetric, setDeleteMetric] = useState<Metric | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askMetricId, setAskMetricId] = useState<number | null>(null);
   const [askQuestion, setAskQuestion] = useState("");
@@ -150,15 +148,29 @@ export default function ScorecardClient() {
 
   const saveCell = async (metricId: number, periodKey: string, raw: string) => {
     const trimmed = String(raw).trim();
-    if (!trimmed) return;
-    const num = parseFloat(trimmed.replace(/[$,%]/g, ""));
-    if (Number.isNaN(num)) return;
     const metric = report?.metrics.find((m) => m.id === metricId);
     if (!metric) return;
+    const existing = report?.cells[metricId]?.[periodKey];
+    if (!trimmed) {
+      if (existing?.entryId) {
+        const res = await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
+          method: "DELETE",
+          headers: { ...authHeaders() },
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          alert(typeof j.error === "string" ? j.error : "Could not delete entry");
+          return;
+        }
+        await loadReport();
+      }
+      return;
+    }
+    const num = parseFloat(trimmed.replace(/[$,%]/g, ""));
+    if (Number.isNaN(num)) return;
     const body: Record<string, unknown> = { metricId, value: num };
     if (metric.frequency === "weekly") body.weekOf = periodKey;
     else body.monthOf = periodKey;
-    const existing = report?.cells[metricId]?.[periodKey];
     if (existing?.entryId) {
       await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
         method: "PUT",
@@ -362,15 +374,6 @@ export default function ScorecardClient() {
                             {m.goalDirection})
                           </div>
                         </div>
-                        {isAdmin ? (
-                          <MetricGearMenu
-                            open={metricMenuFor === m.id}
-                            onToggle={() => setMetricMenuFor((cur) => (cur === m.id ? null : m.id))}
-                            onClose={() => setMetricMenuFor(null)}
-                            onEdit={() => setEditMetric(m)}
-                            onDelete={() => setDeleteMetric(m)}
-                          />
-                        ) : null}
                       </div>
                     </td>
                     {report.periods.map((p, pi) => {
@@ -478,6 +481,7 @@ export default function ScorecardClient() {
             loadAllMetrics();
             loadReport();
           }}
+          onEditMetric={(m) => setEditMetric(m)}
         />
       ) : null}
 
@@ -503,31 +507,8 @@ export default function ScorecardClient() {
           onClose={() => setEditMetric(null)}
           onSaved={async () => {
             setEditMetric(null);
-            setMetricMenuFor(null);
             await loadReport();
-          }}
-        />
-      ) : null}
-
-      {deleteMetric && isAdmin ? (
-        <ConfirmModal
-          title={`Archive ${deleteMetric.name}?`}
-          body="It will be removed from the scorecard but historical data is preserved."
-          confirmLabel="Archive"
-          onClose={() => setDeleteMetric(null)}
-          onConfirm={async () => {
-            const res = await fetch(apiUrl(`/eos/scorecard/metrics/${deleteMetric.id}`), {
-              method: "DELETE",
-              headers: { ...authHeaders() },
-            });
-            const j = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              alert(typeof j.error === "string" ? j.error : "Could not archive metric.");
-              return;
-            }
-            setDeleteMetric(null);
-            setMetricMenuFor(null);
-            await loadReport();
+            await loadAllMetrics();
           }}
         />
       ) : null}
@@ -569,87 +550,6 @@ export default function ScorecardClient() {
         />
       ) : null}
     </>
-  );
-}
-
-function MetricGearMenu({
-  open,
-  onToggle,
-  onClose,
-  onEdit,
-  onDelete,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, onClose]);
-
-  return (
-    <div className={styles.gearWrap} ref={ref}>
-      <button
-        type="button"
-        className={styles.gearBtn}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Metric actions"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-      >
-        ⚙
-      </button>
-      {open ? (
-        <div
-          className={styles.gearMenu}
-          role="menu"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-              onClose();
-            }}
-          >
-            Edit Metric
-          </button>
-          <button
-            type="button"
-            className={styles.gearMenuDanger}
-            role="menuitem"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-              onClose();
-            }}
-          >
-            Archive Metric
-          </button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -738,7 +638,11 @@ function EditMetricModal({
   }, [metric]);
 
   return (
-    <div className={styles.modalOverlay} role="dialog" aria-modal>
+    <div
+      className={`${styles.modalOverlay} ${styles.modalOverlayNested}`}
+      role="dialog"
+      aria-modal
+    >
       <div className={styles.modal} style={{ maxWidth: "34rem" }}>
         <h2>Edit metric</h2>
         <div className={styles.formGrid}>
@@ -979,12 +883,14 @@ function ManageMetricsModal({
   onClose,
   authHeaders,
   onSaved,
+  onEditMetric,
 }: {
   team: TeamUser[];
   metrics: Metric[];
   onClose: () => void;
   authHeaders: () => Record<string, string>;
   onSaved: () => void;
+  onEditMetric: (m: Metric) => void;
 }) {
   const [form, setForm] = useState<{
     name: string;
@@ -1081,6 +987,13 @@ function ManageMetricsModal({
                 aria-label="Move down"
               >
                 ↓
+              </button>
+              <button
+                type="button"
+                className={styles.presetBtn}
+                onClick={() => onEditMetric(m)}
+              >
+                Edit
               </button>
               <button
                 type="button"

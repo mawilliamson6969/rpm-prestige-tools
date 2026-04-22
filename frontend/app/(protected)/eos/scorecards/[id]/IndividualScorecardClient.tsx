@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -44,9 +44,7 @@ export default function IndividualScorecardClient({ scorecardId }: { scorecardId
   const [manageOpen, setManageOpen] = useState(false);
   const [allMetrics, setAllMetrics] = useState<Metric[]>([]);
   const [trendMetricId, setTrendMetricId] = useState<number | null>(null);
-  const [metricMenuFor, setMetricMenuFor] = useState<number | null>(null);
   const [editMetric, setEditMetric] = useState<Metric | null>(null);
-  const [deleteMetric, setDeleteMetric] = useState<Metric | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askMetricId, setAskMetricId] = useState<number | null>(null);
   const [askQuestion, setAskQuestion] = useState("");
@@ -208,12 +206,6 @@ export default function IndividualScorecardClient({ scorecardId }: { scorecardId
                           </div>
                           <div className={styles.metricMeta}>Goal {formatGoal(m.unit, m.goalValue ?? 0)} ({m.goalDirection})</div>
                         </div>
-                        {canManage ? (
-                          <MetricGearMenu open={metricMenuFor === m.id}
-                            onToggle={() => setMetricMenuFor((c) => (c === m.id ? null : m.id))}
-                            onClose={() => setMetricMenuFor(null)}
-                            onEdit={() => setEditMetric(m)} onDelete={() => setDeleteMetric(m)} />
-                        ) : null}
                       </div>
                     </td>
                     {report.periods.map((p, pi) => {
@@ -282,7 +274,8 @@ export default function IndividualScorecardClient({ scorecardId }: { scorecardId
       {manageOpen && canManage ? (
         <ManageMetricsModal scId={scId} team={team} metrics={allMetrics}
           onClose={() => setManageOpen(false)} authHeaders={authHeaders}
-          onSaved={() => { loadAllMetrics(); loadReport(); }} />
+          onSaved={() => { loadAllMetrics(); loadReport(); }}
+          onEditMetric={(m) => setEditMetric(m)} />
       ) : null}
 
       {notesFor && canEnter ? (
@@ -292,18 +285,7 @@ export default function IndividualScorecardClient({ scorecardId }: { scorecardId
 
       {editMetric && canManage ? (
         <EditMetricModal key={editMetric.id} metric={editMetric} team={team} scId={scId} authHeaders={authHeaders}
-          onClose={() => setEditMetric(null)} onSaved={async () => { setEditMetric(null); setMetricMenuFor(null); await loadReport(); }} />
-      ) : null}
-
-      {deleteMetric && canManage ? (
-        <ConfirmModal title={`Archive ${deleteMetric.name}?`}
-          body="It will be removed from the scorecard but historical data is preserved."
-          confirmLabel="Archive"
-          onClose={() => setDeleteMetric(null)}
-          onConfirm={async () => {
-            await fetch(apiUrl(`/eos/individual-scorecard-metrics/${deleteMetric.id}`), { method: "DELETE", headers: { ...authHeaders() } });
-            setDeleteMetric(null); setMetricMenuFor(null); await loadReport();
-          }} />
+          onClose={() => setEditMetric(null)} onSaved={async () => { setEditMetric(null); await loadReport(); await loadAllMetrics(); }} />
       ) : null}
 
       {askOpen && report?.metrics?.length ? (
@@ -333,33 +315,6 @@ export default function IndividualScorecardClient({ scorecardId }: { scorecardId
 }
 
 /* ---- Sub-components (matching company scorecard exactly) ---- */
-
-function MetricGearMenu({ open, onToggle, onClose, onEdit, onDelete }: {
-  open: boolean; onToggle: () => void; onClose: () => void; onEdit: () => void; onDelete: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) { if (!ref.current?.contains(e.target as Node)) onClose(); }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, onClose]);
-  return (
-    <div className={styles.gearWrap} ref={ref}>
-      <button type="button" className={styles.gearBtn} aria-haspopup="menu" aria-expanded={open}
-        onClick={(e) => { e.stopPropagation(); onToggle(); }}>⚙</button>
-      {open ? (
-        <div className={styles.gearMenu} role="menu" onMouseDown={(e) => e.stopPropagation()}>
-          <button type="button" role="menuitem" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onClick={(e) => { e.stopPropagation(); onEdit(); onClose(); }}>Edit Metric</button>
-          <button type="button" className={styles.gearMenuDanger} role="menuitem"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onClick={(e) => { e.stopPropagation(); onDelete(); onClose(); }}>Archive Metric</button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function ConfirmModal({ title, body, confirmLabel, onClose, onConfirm, nested }: {
   title: string; body: string; confirmLabel: string; onClose: () => void; onConfirm: () => void | Promise<void>; nested?: boolean;
@@ -396,7 +351,7 @@ function EditMetricModal({ metric, team, scId, authHeaders, onClose, onSaved }: 
   const [saving, setSaving] = useState(false);
 
   return (
-    <div className={styles.modalOverlay} role="dialog" aria-modal>
+    <div className={`${styles.modalOverlay} ${styles.modalOverlayNested}`} role="dialog" aria-modal>
       <div className={styles.modal} style={{ maxWidth: "34rem" }}>
         <h2>Edit metric</h2>
         <div className={styles.formGrid}>
@@ -502,9 +457,10 @@ function NotesModal({ entryId, initialNotes, authHeaders, onClose, onSaved }: {
   );
 }
 
-function ManageMetricsModal({ scId, team, metrics, onClose, authHeaders, onSaved }: {
+function ManageMetricsModal({ scId, team, metrics, onClose, authHeaders, onSaved, onEditMetric }: {
   scId: number; team: TeamUser[]; metrics: Metric[]; onClose: () => void;
   authHeaders: () => Record<string, string>; onSaved: () => void;
+  onEditMetric: (m: Metric) => void;
 }) {
   const [form, setForm] = useState({ name: "", description: "", frequency: "weekly" as "weekly" | "monthly",
     goalValue: "", goalDirection: "above" as "above" | "below" | "exact", unit: "number" as "number" | "currency" | "percentage" | "days" });
@@ -549,6 +505,7 @@ function ManageMetricsModal({ scId, team, metrics, onClose, authHeaders, onSaved
               <span style={{ flex: 1, fontWeight: 600, color: "#1b2856" }}>{m.name}</span>
               <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, -1)} disabled={i === 0} aria-label="Move up">↑</button>
               <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, 1)} disabled={i === activeSorted.length - 1} aria-label="Move down">↓</button>
+              <button type="button" className={styles.presetBtn} onClick={() => onEditMetric(m)}>Edit</button>
               <button type="button" className={styles.presetBtn} onClick={async () => {
                 if (!confirm("Archive this metric?")) return;
                 await fetch(apiUrl(`/eos/individual-scorecard-metrics/${m.id}`), { method: "DELETE", headers: { ...authHeaders() } });
