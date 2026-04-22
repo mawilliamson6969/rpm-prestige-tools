@@ -213,6 +213,7 @@ import {
   putRockMilestone,
   putScorecardEntry,
   putScorecardMetric,
+  putScorecardMetricsReorder,
   postScorecardAiAnalyze,
 } from "./routes/eos.js";
 import {
@@ -226,6 +227,7 @@ import {
   getIndividualScorecardMetrics,
   postIndividualScorecardMetric,
   putIndividualScorecardMetric,
+  putIndividualScorecardMetricsReorder,
   deleteIndividualScorecardMetric,
   deleteIndividualScorecardMetricPermanent,
   putIndividualScorecardEntry,
@@ -702,6 +704,7 @@ app.get("/admin/forms/types", requireAuth, requireAdminRole, getAdminFormTypes);
 app.get("/eos/team-users", requireAuth, getEosTeamUsers);
 app.get("/eos/scorecard/metrics", requireAuth, getScorecardMetrics);
 app.post("/eos/scorecard/metrics", requireAuth, requireAdminRole, postScorecardMetric);
+app.put("/eos/scorecard/metrics/reorder", requireAuth, requireAdminRole, putScorecardMetricsReorder);
 app.put("/eos/scorecard/metrics/:id", requireAuth, requireAdminRole, putScorecardMetric);
 app.delete(
   "/eos/scorecard/metrics/:id/permanent",
@@ -724,6 +727,7 @@ app.post("/eos/individual-scorecards", requireAuth, requireAdminRole, postIndivi
 app.get("/eos/individual-scorecards/:id/report", requireAuth, getIndividualScorecardReport);
 app.get("/eos/individual-scorecards/:id/metrics", requireAuth, getIndividualScorecardMetrics);
 app.post("/eos/individual-scorecards/:id/metrics", requireAuth, requireAdminRole, postIndividualScorecardMetric);
+app.put("/eos/individual-scorecards/:id/metrics/reorder", requireAuth, requireAdminRole, putIndividualScorecardMetricsReorder);
 app.post("/eos/individual-scorecards/:id/duplicate", requireAuth, requireAdminRole, postDuplicateScorecard);
 app.post("/eos/individual-scorecards/:id/ai-analyze", requireAuth, postIndividualScorecardAiAnalyze);
 app.get("/eos/individual-scorecards/:id", requireAuth, getIndividualScorecard);

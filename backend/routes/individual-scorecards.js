@@ -374,6 +374,39 @@ export async function putIndividualScorecardMetric(req, res) {
   }
 }
 
+/** PUT /eos/individual-scorecards/:id/metrics/reorder — accepts { metricIds: [id1, id2, ...] } */
+export async function putIndividualScorecardMetricsReorder(req, res) {
+  if (req.user.role !== "admin") { res.status(403).json({ error: "Admin access required." }); return; }
+  const scId = Number(req.params.id);
+  if (!Number.isFinite(scId)) { res.status(400).json({ error: "Invalid scorecard id." }); return; }
+  const raw = req.body?.metricIds;
+  const ids = Array.isArray(raw) ? raw.map(Number).filter((n) => Number.isFinite(n)) : [];
+  if (!ids.length) { res.status(400).json({ error: "metricIds (non-empty array) is required." }); return; }
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < ids.length; i++) {
+      await client.query(
+        `UPDATE individual_scorecard_metrics SET display_order = $1 WHERE id = $2 AND scorecard_id = $3`,
+        [i, ids[i], scId]
+      );
+    }
+    await client.query("COMMIT");
+    const { rows } = await pool.query(
+      `SELECT * FROM individual_scorecard_metrics WHERE scorecard_id = $1 ORDER BY display_order ASC, id ASC`,
+      [scId]
+    );
+    res.json({ metrics: rows.map(mapMetric) });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    console.error(e);
+    res.status(500).json({ error: "Could not reorder metrics." });
+  } finally {
+    client.release();
+  }
+}
+
 export async function deleteIndividualScorecardMetric(req, res) {
   if (req.user.role !== "admin") { res.status(403).json({ error: "Admin access required." }); return; }
   const metricId = Number(req.params.metricId);

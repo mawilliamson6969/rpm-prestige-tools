@@ -142,7 +142,8 @@ export async function postScorecardMetric(req, res) {
   const goalValue = Number(b.goalValue);
   const goalDirection = b.goalDirection;
   const unit = b.unit;
-  const displayOrder = b.displayOrder != null ? Number(b.displayOrder) : 0;
+  const displayOrder =
+    b.displayOrder != null && Number.isFinite(Number(b.displayOrder)) ? Number(b.displayOrder) : null;
   const description = typeof b.description === "string" ? b.description.trim() || null : null;
 
   if (!name) {
@@ -172,17 +173,63 @@ export async function postScorecardMetric(req, res) {
 
   try {
     const pool = getPool();
+    let order = displayOrder;
+    if (order == null) {
+      const { rows: maxRows } = await pool.query(
+        `SELECT COALESCE(MAX(display_order), -1) + 1 AS n FROM scorecard_metrics`
+      );
+      order = Number(maxRows[0]?.n ?? 0);
+    }
     const { rows } = await pool.query(
       `INSERT INTO scorecard_metrics
         (name, description, owner_user_id, frequency, goal_value, goal_direction, unit, display_order, is_active, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9)
        RETURNING *, (SELECT display_name FROM users WHERE id = owner_user_id) AS owner_display_name`,
-      [name, description, ownerUserId, frequency, goalValue, goalDirection, unit, displayOrder, req.user.id]
+      [name, description, ownerUserId, frequency, goalValue, goalDirection, unit, order, req.user.id]
     );
     res.status(201).json({ metric: { ...mapMetricRow(rows[0]), latestEntry: null } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not create metric." });
+  }
+}
+
+/** PUT /eos/scorecard/metrics/reorder — accepts { metricIds: [id1, id2, ...] } */
+export async function putScorecardMetricsReorder(req, res) {
+  if (req.user.role !== "admin") {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const raw = req.body?.metricIds;
+  const ids = Array.isArray(raw) ? raw.map(Number).filter((n) => Number.isFinite(n)) : [];
+  if (!ids.length) {
+    res.status(400).json({ error: "metricIds (non-empty array) is required." });
+    return;
+  }
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < ids.length; i++) {
+      await client.query(`UPDATE scorecard_metrics SET display_order = $1 WHERE id = $2`, [i, ids[i]]);
+    }
+    await client.query("COMMIT");
+    const { rows } = await pool.query(
+      `SELECT m.*, u.display_name AS owner_display_name
+         FROM scorecard_metrics m
+         JOIN users u ON u.id = m.owner_user_id
+        WHERE m.is_active = true
+        ORDER BY m.display_order ASC, m.id ASC`
+    );
+    res.json({ metrics: rows.map(mapMetricRow) });
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {}
+    console.error(e);
+    res.status(500).json({ error: "Could not reorder metrics." });
+  } finally {
+    client.release();
   }
 }
 

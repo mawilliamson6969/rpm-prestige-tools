@@ -516,15 +516,21 @@ function ManageMetricsModal({ scId, team, metrics, onClose, authHeaders, onSaved
 
   const moveMetric = async (id: number, dir: -1 | 1) => {
     const idx = activeSorted.findIndex((m) => m.id === id);
-    const swap = activeSorted[idx + dir]; if (!swap) return;
-    await fetch(apiUrl(`/eos/individual-scorecard-metrics/${id}`), {
-      method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ displayOrder: swap.displayOrder }),
+    const swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= activeSorted.length) return;
+    const reordered = [...activeSorted];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    const metricIds = [...reordered.map((m) => m.id), ...archivedSorted.map((m) => m.id)];
+    const res = await fetch(apiUrl(`/eos/individual-scorecards/${scId}/metrics/reorder`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ metricIds }),
     });
-    await fetch(apiUrl(`/eos/individual-scorecard-metrics/${swap.id}`), {
-      method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ displayOrder: activeSorted[idx].displayOrder }),
-    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(typeof j.error === "string" ? j.error : "Could not reorder metrics");
+      return;
+    }
     onSaved();
   };
 
@@ -538,11 +544,11 @@ function ManageMetricsModal({ scId, team, metrics, onClose, authHeaders, onSaved
 
         <h3 style={{ fontSize: "0.95rem", color: "#1b2856", marginBottom: "0.35rem" }}>Active metrics</h3>
         <ul style={{ listStyle: "none", padding: 0, margin: "0 0 1rem" }}>
-          {activeSorted.map((m) => (
+          {activeSorted.map((m, i) => (
             <li key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", borderBottom: "1px solid rgba(27,40,86,0.08)" }}>
               <span style={{ flex: 1, fontWeight: 600, color: "#1b2856" }}>{m.name}</span>
-              <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, -1)}>↑</button>
-              <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, 1)}>↓</button>
+              <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+              <button type="button" className={styles.presetBtn} onClick={() => moveMetric(m.id, 1)} disabled={i === activeSorted.length - 1} aria-label="Move down">↓</button>
               <button type="button" className={styles.presetBtn} onClick={async () => {
                 if (!confirm("Archive this metric?")) return;
                 await fetch(apiUrl(`/eos/individual-scorecard-metrics/${m.id}`), { method: "DELETE", headers: { ...authHeaders() } });
