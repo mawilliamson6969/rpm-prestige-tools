@@ -8,9 +8,12 @@ import styles from "./sidebar.module.css";
 import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
 import { useNarrowScreen } from "../hooks/useNarrowScreen";
+import { useLayoutPrefs } from "../hooks/useLayoutPrefs";
+import { DEFAULT_SIDEBAR_ITEMS, type SidebarNavItem } from "../lib/layoutPrefs";
 
 const LS_COLLAPSED = "rpm-prestige-sidebar-collapsed";
 const LS_SUB = "rpm-prestige-sidebar-submenu";
+const MAX_PINNED = 5;
 
 type SubState = { dashboard: boolean; eos: boolean; operations: boolean };
 
@@ -64,6 +67,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const { user, logout, isAdmin, token, authHeaders } = useAuth();
   const narrow = useNarrowScreen();
   const isMobile = narrow;
+  const { prefs, update, saveNow, reset } = useLayoutPrefs();
 
   const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false, operations: false });
   const [flyout, setFlyout] = useState<null | "dashboard" | "eos" | "operations">(null);
@@ -72,6 +76,8 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const [unread, setUnread] = useState<number | null>(null);
   const [queued, setQueued] = useState<number | null>(null);
   const [formsBadge, setFormsBadge] = useState<number | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
 
   const userWrapRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLElement>(null);
@@ -141,9 +147,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const eosSectionActive = pathname.startsWith("/eos");
   const operationsSectionActive = pathname.startsWith("/operations");
 
-  /** Wide rail: expanded desktop, or mobile drawer (always full width labels). */
   const showLabels = isMobile || !collapsed;
-  /** Desktop icon-only column. */
   const narrowColumn = !isMobile && collapsed;
 
   useEffect(() => {
@@ -178,7 +182,6 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     }
     persistSub({ ...subOpen, dashboard: !subOpen.dashboard });
   };
-
   const toggleEosSub = () => {
     if (narrowColumn) {
       setFlyout((f) => (f === "eos" ? null : "eos"));
@@ -186,7 +189,6 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     }
     persistSub({ ...subOpen, eos: !subOpen.eos });
   };
-
   const toggleOperationsSub = () => {
     if (narrowColumn) {
       setFlyout((f) => (f === "operations" ? null : "operations"));
@@ -242,6 +244,300 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
 
   const showCollapsedTooltips = narrowColumn;
 
+  /* ========== Edit-mode: reorder/pin/hide ========== */
+
+  const itemById = useMemo(() => {
+    const m = new Map<string, SidebarNavItem>();
+    for (const i of DEFAULT_SIDEBAR_ITEMS) m.set(i.id, i);
+    return m;
+  }, []);
+
+  const orderedIds = useMemo(() => {
+    const base = prefs.sidebarOrder.length > 0 ? prefs.sidebarOrder : DEFAULT_SIDEBAR_ITEMS.map((i) => i.id);
+    const seen = new Set(base);
+    for (const i of DEFAULT_SIDEBAR_ITEMS) if (!seen.has(i.id)) base.push(i.id);
+    return base.filter((id) => itemById.has(id));
+  }, [prefs.sidebarOrder, itemById]);
+
+  const pinnedIds = useMemo(
+    () => prefs.sidebarPinned.filter((id) => itemById.has(id)).slice(0, MAX_PINNED),
+    [prefs.sidebarPinned, itemById]
+  );
+  const hiddenIds = useMemo(
+    () => new Set(prefs.sidebarHidden.filter((id) => itemById.has(id))),
+    [prefs.sidebarHidden, itemById]
+  );
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+
+  const togglePin = useCallback(
+    (id: string) => {
+      update((p) => {
+        const current = new Set(p.sidebarPinned);
+        if (current.has(id)) {
+          current.delete(id);
+        } else {
+          if (current.size >= MAX_PINNED) return p;
+          current.add(id);
+        }
+        return { ...p, sidebarPinned: Array.from(current) };
+      }, 1000);
+    },
+    [update]
+  );
+
+  const toggleHidden = useCallback(
+    (id: string) => {
+      update((p) => {
+        const current = new Set(p.sidebarHidden);
+        if (current.has(id)) current.delete(id);
+        else current.add(id);
+        return { ...p, sidebarHidden: Array.from(current) };
+      }, 1000);
+    },
+    [update]
+  );
+
+  const reorderItem = useCallback(
+    (fromId: string, toId: string) => {
+      if (fromId === toId) return;
+      update((p) => {
+        const base =
+          p.sidebarOrder.length > 0 ? [...p.sidebarOrder] : DEFAULT_SIDEBAR_ITEMS.map((i) => i.id);
+        for (const i of DEFAULT_SIDEBAR_ITEMS) if (!base.includes(i.id)) base.push(i.id);
+        const fromIdx = base.indexOf(fromId);
+        const toIdx = base.indexOf(toId);
+        if (fromIdx < 0 || toIdx < 0) return p;
+        base.splice(fromIdx, 1);
+        base.splice(toIdx, 0, fromId);
+        return { ...p, sidebarOrder: base };
+      }, 1000);
+    },
+    [update]
+  );
+
+  const onReset = useCallback(async () => {
+    if (!window.confirm("Reset sidebar layout to defaults?")) return;
+    await reset();
+  }, [reset]);
+
+  const onDoneEdit = async () => {
+    await saveNow(prefs);
+    setEditMode(false);
+  };
+
+  /* ========== Render primary rows ========== */
+
+  const renderDropdownSub = (key: "dashboard" | "eos" | "operations") => {
+    if (!showLabels) return null;
+    if (key === "dashboard" && subOpen.dashboard) {
+      return (
+        <div className={styles.subWrap} style={{ maxHeight: 320 }}>
+          <div className={styles.subList}>
+            {dashSubLinks.map(({ tab, label }) => {
+              const href = `/dashboard?tab=${tab}`;
+              const active = dashboardActive && dashboardTab === tab;
+              return (
+                <Link
+                  key={tab}
+                  href={href}
+                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                  onClick={closeMobileIfNav}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if (key === "eos" && subOpen.eos) {
+      return (
+        <div className={styles.subWrap} style={{ maxHeight: 200 }}>
+          <div className={styles.subList}>
+            {eosSubLinks.map(({ href, label }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                  onClick={closeMobileIfNav}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    if (key === "operations" && subOpen.operations) {
+      return (
+        <div className={styles.subWrap} style={{ maxHeight: 200 }}>
+          <div className={styles.subList}>
+            {operationsSubLinks.map(({ href, label }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                  onClick={closeMobileIfNav}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderNormalRow = (item: SidebarNavItem, opts: { isPinnedDisplay?: boolean } = {}) => {
+    const pinMark = opts.isPinnedDisplay ? <span className={styles.pinStar}>★</span> : null;
+    if (item.type === "dropdown") {
+      const activeCheck =
+        item.id === "dashboard" ? dashboardActive : item.id === "eos" ? eosSectionActive : operationsSectionActive;
+      const toggle =
+        item.id === "dashboard" ? toggleDashboardSub : item.id === "eos" ? toggleEosSub : toggleOperationsSub;
+      const openState =
+        item.id === "dashboard" ? subOpen.dashboard : item.id === "eos" ? subOpen.eos : subOpen.operations;
+      return (
+        <div key={`row-${item.id}`}>
+          <button
+            type="button"
+            className={`${styles.row} ${activeCheck ? styles.rowActive : ""}`}
+            onClick={toggle}
+            title={showCollapsedTooltips ? item.label : undefined}
+          >
+            <span className={styles.icon} aria-hidden>
+              {item.icon}
+            </span>
+            {showLabels ? (
+              <>
+                {pinMark}
+                <span className={styles.label}>{item.label}</span>
+                <span className={`${styles.chevron} ${openState ? styles.chevronOpen : ""}`} aria-hidden>
+                  ▸
+                </span>
+              </>
+            ) : null}
+          </button>
+          {renderDropdownSub(item.id as "dashboard" | "eos" | "operations")}
+        </div>
+      );
+    }
+    const href = item.href || "/";
+    const active = pathname === href || pathname.startsWith(`${href}/`);
+    const badge =
+      item.id === "inbox" && unread != null && unread > 0
+        ? unread
+        : item.id === "agents" && queued != null && queued > 0
+        ? queued
+        : item.id === "forms" && formsBadge && formsBadge > 0
+        ? formsBadge
+        : null;
+    return (
+      <Link
+        key={`row-${item.id}`}
+        href={href}
+        className={`${styles.row} ${active ? styles.rowActive : ""}`}
+        onClick={closeMobileIfNav}
+        title={showCollapsedTooltips ? item.label : undefined}
+      >
+        <span className={styles.icon} aria-hidden>
+          {item.icon}
+        </span>
+        {showLabels ? (
+          <>
+            {pinMark}
+            <span className={styles.label}>{item.label}</span>
+          </>
+        ) : null}
+        {badge ? (
+          <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${badge}`}>
+            {badge > 99 ? "99+" : badge}
+          </span>
+        ) : null}
+      </Link>
+    );
+  };
+
+  /* ========== Edit mode rows ========== */
+
+  const renderEditableRow = (item: SidebarNavItem) => {
+    const pinned = pinnedSet.has(item.id);
+    const hidden = hiddenIds.has(item.id);
+    const dragging = dragId === item.id;
+    return (
+      <div
+        key={`edit-${item.id}`}
+        className={`${styles.editableRow} ${hidden ? styles.editableRowGhost : ""} ${
+          dragging ? styles.editableRowDragging : ""
+        }`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", item.id);
+          setDragId(item.id);
+        }}
+        onDragOver={(e) => {
+          if (dragId && dragId !== item.id) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const fromId = e.dataTransfer.getData("text/plain") || dragId;
+          setDragId(null);
+          if (fromId && fromId !== item.id) reorderItem(fromId, item.id);
+        }}
+        onDragEnd={() => setDragId(null)}
+      >
+        <span className={styles.editableDragHandle} aria-hidden>
+          ⋮⋮
+        </span>
+        <span className={styles.icon} aria-hidden>
+          {item.icon}
+        </span>
+        <span className={styles.editableLabel}>{item.label}</span>
+        <button
+          type="button"
+          className={`${styles.editableBtn} ${pinned ? styles.editableBtnPinned : ""}`}
+          onClick={() => togglePin(item.id)}
+          title={pinned ? "Unpin" : `Pin to top${pinnedIds.length >= MAX_PINNED && !pinned ? " (max 5 reached)" : ""}`}
+          aria-label={pinned ? "Unpin item" : "Pin item"}
+          disabled={!pinned && pinnedIds.length >= MAX_PINNED}
+        >
+          {pinned ? "★" : "☆"}
+        </button>
+        <button
+          type="button"
+          className={styles.editableBtn}
+          onClick={() => toggleHidden(item.id)}
+          title={hidden ? "Show" : "Hide"}
+          aria-label={hidden ? "Show item" : "Hide item"}
+        >
+          {hidden ? "🙈" : "👁"}
+        </button>
+      </div>
+    );
+  };
+
+  /* ========== Final render ========== */
+
+  const visibleOrderedIds = orderedIds.filter((id) => !pinnedSet.has(id) && !hiddenIds.has(id));
+  const pinnedItems = pinnedIds.map((id) => itemById.get(id)).filter(Boolean) as SidebarNavItem[];
+  const hiddenItems = Array.from(hiddenIds).map((id) => itemById.get(id)).filter(Boolean) as SidebarNavItem[];
+  const nonHiddenOrderedItems = orderedIds
+    .filter((id) => !hiddenIds.has(id) || editMode)
+    .map((id) => itemById.get(id))
+    .filter(Boolean) as SidebarNavItem[];
+
   return (
     <aside
       ref={shellRef}
@@ -249,6 +545,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
       data-collapsed={collapsed && !isMobile ? "true" : "false"}
       data-mobile={isMobile ? "true" : "false"}
       data-drawer-open={isMobile && mobileDrawerOpen ? "true" : "false"}
+      data-edit-mode={editMode ? "true" : "false"}
       aria-label="Main navigation"
     >
       <div className={styles.topRow}>
@@ -271,375 +568,249 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             </Link>
           )}
         </div>
-        {isMobile ? (
-          <span className="sr-only" aria-live="polite">
-            Navigation
-          </span>
-        ) : null}
       </div>
 
+      {editMode && showLabels ? (
+        <div className={styles.editToolbar}>
+          <span className={styles.editToolbarTitle}>Edit Sidebar</span>
+          <button
+            type="button"
+            className={styles.editToolbarBtn}
+            onClick={onReset}
+            title="Reset to default"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className={`${styles.editToolbarBtn} ${styles.editToolbarBtnPrimary}`}
+            onClick={onDoneEdit}
+          >
+            Done
+          </button>
+        </div>
+      ) : null}
+
       <nav className={styles.scroll} aria-label="Primary">
-        <Link
-          href="/"
-          className={`${styles.row} ${hubActive ? styles.rowActive : ""}`}
-          onClick={closeMobileIfNav}
-          title={showCollapsedTooltips ? "Hub" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            🏠
-          </span>
-          {showLabels ? <span className={styles.label}>Hub</span> : null}
-        </Link>
-
-        <button
-          type="button"
-          className={`${styles.row} ${dashboardActive ? styles.rowActive : ""}`}
-          onClick={toggleDashboardSub}
-          title={showCollapsedTooltips ? "Dashboard" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            📊
-          </span>
-          {showLabels ? (
-            <>
-              <span className={styles.label}>Dashboard</span>
-              <span className={`${styles.chevron} ${subOpen.dashboard ? styles.chevronOpen : ""}`} aria-hidden>
-                ▸
-              </span>
-            </>
-          ) : null}
-        </button>
-        {showLabels && subOpen.dashboard ? (
-          <div className={styles.subWrap} style={{ maxHeight: 320 }}>
-            <div className={styles.subList}>
-              {dashSubLinks.map(({ tab, label }) => {
-                const href = `/dashboard?tab=${tab}`;
-                const active = dashboardActive && dashboardTab === tab;
-                return (
-                  <Link
-                    key={tab}
-                    href={href}
-                    className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                    onClick={closeMobileIfNav}
-                  >
-                    {label}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {narrowColumn && flyout === "dashboard" ? (
-          <div
-            className={styles.subList}
-            style={{
-              position: "fixed",
-              left: 60,
-              top: 96,
-              zIndex: 1300,
-              background: "#1b2856",
-              borderRadius: 12,
-              padding: "0.5rem 0",
-              minWidth: 200,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
-            {dashSubLinks.map(({ tab, label }) => {
-              const href = `/dashboard?tab=${tab}`;
-              const active = dashboardActive && dashboardTab === tab;
-              return (
-                <Link
-                  key={tab}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  style={{ color: "#fff" }}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <Link
-          href="/inbox"
-          className={`${styles.row} ${inboxActive ? styles.rowActive : ""}`}
-          onClick={closeMobileIfNav}
-          title={showCollapsedTooltips ? "Inbox" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            📧
-          </span>
-          {showLabels ? <span className={styles.label}>Inbox</span> : null}
-          {unread != null && unread > 0 ? (
-            <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${unread} unread`}>
-              {unread > 99 ? "99+" : unread}
-            </span>
-          ) : null}
-        </Link>
-
-        <Link
-          href="/agents"
-          className={`${styles.row} ${agentsActive ? styles.rowActive : ""}`}
-          onClick={closeMobileIfNav}
-          title={showCollapsedTooltips ? "Agents" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            🤖
-          </span>
-          {showLabels ? <span className={styles.label}>Agents</span> : null}
-          {queued != null && queued > 0 ? (
-            <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${queued} in queue`}>
-              {queued > 99 ? "99+" : queued}
-            </span>
-          ) : null}
-        </Link>
-
-        <div className={styles.sectionLabel}>Tools</div>
-
-        <button
-          type="button"
-          className={`${styles.row} ${eosSectionActive ? styles.rowActive : ""}`}
-          onClick={toggleEosSub}
-          title={showCollapsedTooltips ? "EOS" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            📈
-          </span>
-          {showLabels ? (
-            <>
-              <span className={styles.label}>EOS</span>
-              <span className={`${styles.chevron} ${subOpen.eos ? styles.chevronOpen : ""}`} aria-hidden>
-                ▸
-              </span>
-            </>
-          ) : null}
-        </button>
-        {showLabels && subOpen.eos ? (
-          <div className={styles.subWrap} style={{ maxHeight: 200 }}>
-            <div className={styles.subList}>
-              {eosSubLinks.map(({ href, label }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                    onClick={closeMobileIfNav}
-                  >
-                    {label}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {narrowColumn && flyout === "eos" ? (
-          <div
-            className={styles.subList}
-            style={{
-              position: "fixed",
-              left: 60,
-              top: 200,
-              zIndex: 1300,
-              background: "#1b2856",
-              borderRadius: 12,
-              padding: "0.5rem 0",
-              minWidth: 200,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
-            {eosSubLinks.map(({ href, label }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  style={{ color: "#fff" }}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className={`${styles.row} ${operationsSectionActive ? styles.rowActive : ""}`}
-          onClick={toggleOperationsSub}
-          title={showCollapsedTooltips ? "Operations" : undefined}
-        >
-          <span className={styles.icon} aria-hidden>
-            🗂️
-          </span>
-          {showLabels ? (
-            <>
-              <span className={styles.label}>Operations</span>
-              <span className={`${styles.chevron} ${subOpen.operations ? styles.chevronOpen : ""}`} aria-hidden>
-                ▸
-              </span>
-            </>
-          ) : null}
-        </button>
-        {showLabels && subOpen.operations ? (
-          <div className={styles.subWrap} style={{ maxHeight: 200 }}>
-            <div className={styles.subList}>
-              {operationsSubLinks.map(({ href, label }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                    onClick={closeMobileIfNav}
-                  >
-                    {label}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {narrowColumn && flyout === "operations" ? (
-          <div
-            className={styles.subList}
-            style={{
-              position: "fixed",
-              left: 60,
-              top: 240,
-              zIndex: 1300,
-              background: "#1b2856",
-              borderRadius: 12,
-              padding: "0.5rem 0",
-              minWidth: 200,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
-            {operationsSubLinks.map(({ href, label }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  style={{ color: "#fff" }}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {(
-          [
-            { href: "/ask", label: "Ask the AI", icon: "💬" },
-            { href: "/videos", label: "Videos", icon: "🎬" },
-            { href: "/wiki", label: "Wiki", icon: "📚" },
-            { href: "/playbooks", label: "Playbooks", icon: "📋" },
-            { href: "/files", label: "Files", icon: "📁" },
-            { href: "/forms", label: "Forms", icon: "📋" },
-            { href: "/marketing/calendar", label: "Marketing", icon: "📅" },
-          ] as const
-        ).map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const isForms = item.href === "/forms";
-          const badge = isForms && formsBadge && formsBadge > 0 ? formsBadge : null;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`${styles.row} ${active ? styles.rowActive : ""}`}
-              onClick={closeMobileIfNav}
-              title={showCollapsedTooltips ? item.label : undefined}
-            >
-              <span className={styles.icon} aria-hidden>
-                {item.icon}
-              </span>
-              {showLabels ? <span className={styles.label}>{item.label}</span> : null}
-              {badge ? (
-                <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${badge} pending`}>
-                  {badge > 99 ? "99+" : badge}
-                </span>
-              ) : null}
-            </Link>
-          );
-        })}
-
-        <div className={styles.sectionLabel}>External</div>
-        {EXTERNAL.map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.row}
-            title={item.label}
-          >
-            <span className={styles.icon} aria-hidden>
-              {showLabels ? "\u00a0" : "↗"}
-            </span>
-            {showLabels ? (
+        {editMode && showLabels ? (
+          <>
+            <div className={styles.pinnedLabel}>Order · Pin · Hide</div>
+            {nonHiddenOrderedItems.map((item) => renderEditableRow(item))}
+            {hiddenItems.length > 0 ? (
               <>
-                <span className={styles.label}>{item.label}</span>
-                <span className={styles.externalMark} aria-hidden>
-                  ↗
-                </span>
+                <div className={styles.hiddenLabel}>Hidden</div>
+                {hiddenItems.map((item) => renderEditableRow(item))}
               </>
             ) : null}
-          </a>
-        ))}
-
-        {isAdmin ? (
-          <>
-            <div className={styles.sectionLabel}>Admin</div>
-            <Link
-              href="/admin/users"
-              className={`${styles.row} ${pathname.startsWith("/admin/users") ? styles.rowActive : ""}`}
-              onClick={closeMobileIfNav}
-              title={showCollapsedTooltips ? "User Management" : undefined}
-            >
-              <span className={styles.icon} aria-hidden>
-                👥
-              </span>
-              {showLabels ? <span className={styles.label}>User Management</span> : null}
-            </Link>
-            <Link
-              href="/admin/forms"
-              className={`${styles.row} ${pathname.startsWith("/admin/forms") ? styles.rowActive : ""}`}
-              onClick={closeMobileIfNav}
-              title={showCollapsedTooltips ? "Form Submissions" : undefined}
-            >
-              <span className={styles.icon} aria-hidden>
-                📋
-              </span>
-              {showLabels ? <span className={styles.label}>Form Submissions</span> : null}
-            </Link>
-            <Link
-              href="/admin/walkthru"
-              className={`${styles.row} ${pathname.startsWith("/admin/walkthru") ? styles.rowActive : ""}`}
-              onClick={closeMobileIfNav}
-              title={showCollapsedTooltips ? "Walk-Thru Reports" : undefined}
-            >
-              <span className={styles.icon} aria-hidden>
-                📝
-              </span>
-              {showLabels ? <span className={styles.label}>Walk-Thru Reports</span> : null}
-            </Link>
           </>
-        ) : null}
+        ) : (
+          <>
+            {pinnedItems.length > 0 && showLabels ? (
+              <>
+                <div className={styles.pinnedLabel}>
+                  <span aria-hidden>★</span> Pinned
+                </div>
+                {pinnedItems.map((item) => renderNormalRow(item, { isPinnedDisplay: true }))}
+                <div className={styles.pinnedDivider} aria-hidden />
+              </>
+            ) : null}
+
+            {visibleOrderedIds.map((id) => {
+              const item = itemById.get(id);
+              if (!item) return null;
+              if (item.section === "tools" && visibleOrderedIds.indexOf(id) > 0) {
+                const prevId = visibleOrderedIds[visibleOrderedIds.indexOf(id) - 1];
+                const prevItem = itemById.get(prevId);
+                if (prevItem?.section !== "tools") {
+                  return (
+                    <div key={`tools-anchor-${id}`}>
+                      {showLabels ? <div className={styles.sectionLabel}>Tools</div> : null}
+                      {renderNormalRow(item)}
+                    </div>
+                  );
+                }
+              }
+              return renderNormalRow(item);
+            })}
+
+            {/* Narrow-column dropdown flyouts */}
+            {narrowColumn && flyout === "dashboard" ? (
+              <div
+                className={styles.subList}
+                style={{
+                  position: "fixed",
+                  left: 60,
+                  top: 96,
+                  zIndex: 1300,
+                  background: "#1b2856",
+                  borderRadius: 12,
+                  padding: "0.5rem 0",
+                  minWidth: 200,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                {dashSubLinks.map(({ tab, label }) => {
+                  const href = `/dashboard?tab=${tab}`;
+                  const active = dashboardActive && dashboardTab === tab;
+                  return (
+                    <Link
+                      key={tab}
+                      href={href}
+                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                      style={{ color: "#fff" }}
+                      onClick={closeMobileIfNav}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {narrowColumn && flyout === "eos" ? (
+              <div
+                className={styles.subList}
+                style={{
+                  position: "fixed",
+                  left: 60,
+                  top: 200,
+                  zIndex: 1300,
+                  background: "#1b2856",
+                  borderRadius: 12,
+                  padding: "0.5rem 0",
+                  minWidth: 200,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                {eosSubLinks.map(({ href, label }) => {
+                  const active = pathname === href || pathname.startsWith(`${href}/`);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                      style={{ color: "#fff" }}
+                      onClick={closeMobileIfNav}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {narrowColumn && flyout === "operations" ? (
+              <div
+                className={styles.subList}
+                style={{
+                  position: "fixed",
+                  left: 60,
+                  top: 240,
+                  zIndex: 1300,
+                  background: "#1b2856",
+                  borderRadius: 12,
+                  padding: "0.5rem 0",
+                  minWidth: 200,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                {operationsSubLinks.map(({ href, label }) => {
+                  const active = pathname === href || pathname.startsWith(`${href}/`);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                      style={{ color: "#fff" }}
+                      onClick={closeMobileIfNav}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {/* External section (always shown) */}
+            {showLabels ? <div className={styles.sectionLabel}>External</div> : null}
+            {EXTERNAL.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.row}
+                title={item.label}
+              >
+                <span className={styles.icon} aria-hidden>
+                  {showLabels ? "\u00a0" : "↗"}
+                </span>
+                {showLabels ? (
+                  <>
+                    <span className={styles.label}>{item.label}</span>
+                    <span className={styles.externalMark} aria-hidden>
+                      ↗
+                    </span>
+                  </>
+                ) : null}
+              </a>
+            ))}
+
+            {isAdmin ? (
+              <>
+                {showLabels ? <div className={styles.sectionLabel}>Admin</div> : null}
+                <Link
+                  href="/admin/users"
+                  className={`${styles.row} ${pathname.startsWith("/admin/users") ? styles.rowActive : ""}`}
+                  onClick={closeMobileIfNav}
+                  title={showCollapsedTooltips ? "User Management" : undefined}
+                >
+                  <span className={styles.icon} aria-hidden>
+                    👥
+                  </span>
+                  {showLabels ? <span className={styles.label}>User Management</span> : null}
+                </Link>
+                <Link
+                  href="/admin/forms"
+                  className={`${styles.row} ${pathname.startsWith("/admin/forms") ? styles.rowActive : ""}`}
+                  onClick={closeMobileIfNav}
+                  title={showCollapsedTooltips ? "Form Submissions" : undefined}
+                >
+                  <span className={styles.icon} aria-hidden>
+                    📋
+                  </span>
+                  {showLabels ? <span className={styles.label}>Form Submissions</span> : null}
+                </Link>
+                <Link
+                  href="/admin/walkthru"
+                  className={`${styles.row} ${pathname.startsWith("/admin/walkthru") ? styles.rowActive : ""}`}
+                  onClick={closeMobileIfNav}
+                  title={showCollapsedTooltips ? "Walk-Thru Reports" : undefined}
+                >
+                  <span className={styles.icon} aria-hidden>
+                    📝
+                  </span>
+                  {showLabels ? <span className={styles.label}>Walk-Thru Reports</span> : null}
+                </Link>
+              </>
+            ) : null}
+          </>
+        )}
       </nav>
+
+      {!editMode && showLabels ? (
+        <button
+          type="button"
+          className={styles.sidebarEditGear}
+          onClick={() => setEditMode(true)}
+          aria-label="Edit sidebar layout"
+        >
+          ⚙ Customize sidebar
+        </button>
+      ) : null}
 
       <div className={styles.userFooter}>
         <div className={styles.userWrap} ref={userWrapRef}>

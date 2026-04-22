@@ -26,6 +26,13 @@ import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
+import { ensureLayoutPreferencesSchema } from "./lib/layout-prefs-schema.js";
+import {
+  getLayoutPrefs,
+  putLayoutPrefs,
+  resetLayoutPrefs,
+} from "./routes/userPreferences.js";
+import { getWidgetData } from "./routes/widgetData.js";
 import { ensureFormsSchema } from "./lib/formsSchema.js";
 import { ensureFormsPhase3Schema } from "./lib/forms-phase3-schema.js";
 import { ensureFormsPhase4Schema } from "./lib/forms-phase4-schema.js";
@@ -572,6 +579,12 @@ app.get("/users", requireAuth, requireAdminRole, listUsers);
 app.post("/users", requireAuth, requireAdminRole, createUser);
 app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
 app.delete("/users/:id", requireAuth, requireAdminRole, deleteUser);
+
+app.get("/user-preferences/layout", requireAuth, getLayoutPrefs);
+app.put("/user-preferences/layout", requireAuth, putLayoutPrefs);
+app.put("/user-preferences/layout/reset", requireAuth, resetLayoutPrefs);
+
+app.get("/widgets/data/:widgetId", requireAuth, getWidgetData);
 
 app.get("/announcements", requireAuth, getAnnouncements);
 app.put("/announcements/:id/archive", requireAuth, requireAdminRole, archiveAnnouncement);
@@ -1178,6 +1191,8 @@ async function start() {
       console.log("Database schema OK (forms phase 4).");
       await ensureFormTemplates();
       console.log("Form starter templates seeded.");
+      await ensureLayoutPreferencesSchema();
+      console.log("Database schema OK (user_layout_preferences).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

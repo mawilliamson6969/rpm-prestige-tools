@@ -331,3 +331,171 @@
 .userWrap {
   position: relative;
 }
+
+/* Edit mode */
+.sidebarEditGear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.78rem;
+  padding: 0.55rem;
+  cursor: pointer;
+  font-family: inherit;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebarEditGear:hover {
+  color: var(--sidebar-white);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shell[data-edit-mode="true"] .scroll {
+  background: rgba(0, 152, 208, 0.06);
+}
+
+.editToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(0, 152, 208, 0.2);
+  border-bottom: 1px solid rgba(0, 152, 208, 0.35);
+}
+
+.editToolbarTitle {
+  flex: 1;
+  color: var(--sidebar-white);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.editToolbarBtn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: var(--sidebar-white);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.editToolbarBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.editToolbarBtnPrimary {
+  background: var(--sidebar-blue);
+  border-color: var(--sidebar-blue);
+}
+
+.editToolbarBtnPrimary:hover {
+  background: #007aa8;
+  border-color: #007aa8;
+}
+
+.pinnedLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(0, 152, 208, 0.85);
+  padding: 0.6rem 0.85rem 0.2rem;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.pinnedDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0.35rem 0.55rem 0.35rem;
+}
+
+.hiddenLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(106, 115, 123, 0.85);
+  padding: 0.6rem 0.85rem 0.2rem;
+  text-transform: uppercase;
+}
+
+.editableRow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0.45rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sidebar-white);
+  font-size: 0.9rem;
+  font-weight: 600;
+  position: relative;
+}
+
+.editableRowGhost {
+  opacity: 0.35;
+  filter: grayscale(0.5);
+}
+
+.editableRowDragging {
+  opacity: 0.4;
+}
+
+.editableDragHandle {
+  cursor: grab;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85rem;
+  padding: 0 0.1rem;
+  user-select: none;
+}
+
+.editableDragHandle:active {
+  cursor: grabbing;
+}
+
+.editableLabel {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editableBtn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.editableBtn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--sidebar-white);
+}
+
+.editableBtnPinned {
+  background: rgba(255, 215, 0, 0.25);
+  color: #ffd700;
+}
+
+.pinStar {
+  color: rgba(255, 215, 0, 0.75);
+  font-size: 0.7rem;
+  margin-right: 0.2rem;
+}
