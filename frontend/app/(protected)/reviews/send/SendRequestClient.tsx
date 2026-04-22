@@ -39,7 +39,20 @@ export default function SendRequestClient() {
   const [channel, setChannel] = useState<string>("email");
   const [teamMemberId, setTeamMemberId] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ sent: number; failed: number; skipped: number } | null>(null);
+  type SendResultRow = {
+    name: string;
+    skipped?: boolean;
+    reason?: string;
+    ok?: boolean;
+    status?: string;
+    errors?: string[];
+  };
+  const [result, setResult] = useState<{
+    sent: number;
+    failed: number;
+    skipped: number;
+    results?: SendResultRow[];
+  } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [skipDedupe, setSkipDedupe] = useState(false);
 
@@ -144,7 +157,12 @@ export default function SendRequestClient() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Send failed.");
-      setResult({ sent: body.sent || 0, failed: body.failed || 0, skipped: body.skipped || 0 });
+      setResult({
+        sent: body.sent || 0,
+        failed: body.failed || 0,
+        skipped: body.skipped || 0,
+        results: Array.isArray(body.results) ? body.results : [],
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Send failed.");
     } finally {
@@ -156,6 +174,9 @@ export default function SendRequestClient() {
 
   if (result) {
     const allSkipped = result.skipped > 0 && result.sent === 0 && result.failed === 0;
+    const failures = (result.results || []).filter(
+      (r) => r.ok === false && !r.skipped && Array.isArray(r.errors) && r.errors.length
+    );
     return (
       <div className={styles.page}>
         <h1 className={styles.title}>✉️ Send Review Request</h1>
@@ -171,6 +192,31 @@ export default function SendRequestClient() {
               Recipients already received a review request in the last 30 days. For testing,
               use <strong>Send anyway</strong> below to override the dedupe guard.
             </p>
+          ) : null}
+          {failures.length > 0 ? (
+            <div
+              style={{
+                marginTop: "0.85rem",
+                padding: "0.75rem 1rem",
+                background: "rgba(179,35,23,0.06)",
+                border: "1px solid rgba(179,35,23,0.25)",
+                borderRadius: 10,
+                textAlign: "left",
+                maxWidth: "32rem",
+                margin: "0.85rem auto 0",
+              }}
+            >
+              <div style={{ fontWeight: 700, color: "#b32317", fontSize: "0.88rem", marginBottom: "0.35rem" }}>
+                Failures
+              </div>
+              <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.82rem", color: "#1b2856", lineHeight: 1.5 }}>
+                {failures.map((f, i) => (
+                  <li key={i}>
+                    <strong>{f.name}:</strong> {(f.errors || []).join("; ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginTop: "0.75rem", flexWrap: "wrap" }}>
             {result.skipped > 0 ? (
