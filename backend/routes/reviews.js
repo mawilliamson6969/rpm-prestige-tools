@@ -921,6 +921,8 @@ export async function postSendBulk(req, res) {
   const template = tmpl[0];
   const channel = (b.channel || template.channel).toLowerCase();
   const teamMemberId = b.teamMemberId ? Number(b.teamMemberId) : req.user.id;
+  const skipDedupe = b.skipDedupe === true;
+  const triggeredBy = b.triggeredBy === "manual_test" ? "manual_test" : "manual_bulk";
 
   const results = [];
   let sent = 0;
@@ -934,7 +936,7 @@ export async function postSendBulk(req, res) {
       results.push({ name, skipped: true, reason: "no_name" });
       continue;
     }
-    if (await wasRecentlyRequested({ email: r.email, phone: r.phone, days: 30 })) {
+    if (!skipDedupe && (await wasRecentlyRequested({ email: r.email, phone: r.phone, days: 30 }))) {
       skipped++;
       results.push({ name, skipped: true, reason: "recently_requested" });
       continue;
@@ -950,7 +952,7 @@ export async function postSendBulk(req, res) {
       propertyId: r.propertyId ? Number(r.propertyId) : null,
       teamMemberId,
       createdBy: req.user.id,
-      triggeredBy: "manual_bulk",
+      triggeredBy,
     });
     if (one.ok) sent++;
     else failed++;

@@ -41,6 +41,7 @@ export default function SendRequestClient() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ sent: number; failed: number; skipped: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [skipDedupe, setSkipDedupe] = useState(false);
 
   const load = useCallback(async () => {
     const [tRes, uRes] = await Promise.all([
@@ -122,13 +123,20 @@ export default function SendRequestClient() {
     return true;
   };
 
-  const onSend = async () => {
+  const runSend = async (overrideDedupe: boolean) => {
     if (!templateId) return;
     setSending(true);
     setErr(null);
     try {
       const recipients = finalRecipients();
-      const payload = { templateId, channel, recipients, teamMemberId };
+      const payload = {
+        templateId,
+        channel,
+        recipients,
+        teamMemberId,
+        skipDedupe: overrideDedupe,
+        triggeredBy: overrideDedupe ? "manual_test" : "manual_bulk",
+      };
       const res = await fetch(apiUrl("/reviews/requests/send-bulk"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -144,24 +152,47 @@ export default function SendRequestClient() {
     }
   };
 
+  const onSend = () => runSend(skipDedupe);
+
   if (result) {
+    const allSkipped = result.skipped > 0 && result.sent === 0 && result.failed === 0;
     return (
       <div className={styles.page}>
         <h1 className={styles.title}>✉️ Send Review Request</h1>
         <ReviewsNav />
         <div className={styles.emptyState}>
-          <h3>Done!</h3>
+          <h3>{allSkipped ? "Nothing sent" : "Done!"}</h3>
           <p>
             Sent: <strong>{result.sent}</strong> · Failed: <strong>{result.failed}</strong> ·
             Skipped (dedupe): <strong>{result.skipped}</strong>
           </p>
-          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginTop: "0.75rem" }}>
+          {result.skipped > 0 ? (
+            <p style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
+              Recipients already received a review request in the last 30 days. For testing,
+              use <strong>Send anyway</strong> below to override the dedupe guard.
+            </p>
+          ) : null}
+          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", marginTop: "0.75rem", flexWrap: "wrap" }}>
+            {result.skipped > 0 ? (
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={() => {
+                  setResult(null);
+                  runSend(true);
+                }}
+                disabled={sending}
+              >
+                {sending ? "Sending…" : "Send anyway (override dedupe)"}
+              </button>
+            ) : null}
             <button
               type="button"
-              className={styles.btnPrimary}
+              className={styles.btnSecondary}
               onClick={() => {
                 setResult(null);
                 setStep(0);
+                setSkipDedupe(false);
                 setIndividuals([{ name: "", email: "", phone: "", propertyName: "", recipientType: "tenant" }]);
                 setBulkCsv("");
               }}
@@ -490,6 +521,30 @@ export default function SendRequestClient() {
               <strong>{teamUsers.find((u) => u.id === teamMemberId)?.displayName || "—"}</strong>
             </li>
           </ul>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.45rem",
+              marginTop: "0.85rem",
+              padding: "0.55rem 0.75rem",
+              border: "1px solid rgba(27,40,86,0.12)",
+              borderRadius: 8,
+              background: "#fafbfd",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              color: "#1b2856",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={skipDedupe}
+              onChange={(e) => setSkipDedupe(e.target.checked)}
+            />
+            <span>
+              <strong>Send anyway</strong> — skip the 30-day dedupe guard (use for testing).
+            </span>
+          </label>
           {err ? (
             <p style={{ color: "#b32317", fontWeight: 600, marginTop: "0.75rem" }}>{err}</p>
           ) : null}
