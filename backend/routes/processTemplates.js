@@ -344,11 +344,14 @@ export async function postTemplateStep(req, res) {
       ? Number.parseInt(req.body.dependsOnStep, 10)
       : null;
     const isRequired = req.body?.isRequired === false ? false : true;
+    const stageId = Number.isFinite(Number.parseInt(req.body?.stageId, 10))
+      ? Number.parseInt(req.body.stageId, 10)
+      : null;
     const { rows } = await pool.query(
       `INSERT INTO process_template_steps
          (template_id, step_number, name, description, assigned_role, assigned_user_id,
-          due_days_offset, depends_on_step, is_required)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+          due_days_offset, depends_on_step, is_required, stage_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         templateId,
         stepNumber,
@@ -359,6 +362,7 @@ export async function postTemplateStep(req, res) {
         dueDaysOffset,
         dependsOnStep,
         isRequired,
+        stageId,
       ]
     );
     res.status(201).json({ step: mapTemplateStep(rows[0]) });

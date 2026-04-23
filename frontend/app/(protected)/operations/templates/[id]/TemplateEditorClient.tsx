@@ -244,6 +244,8 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragStepId, setDragStepId] = useState<number | null>(null);
+  const [collapsedStages, setCollapsedStages] = useState<Set<number>>(new Set());
   const [activeTab, setActiveTab] = useState<
     "steps" | "custom_fields" | "automations" | "task_templates" | "board_settings"
   >("steps");
@@ -419,13 +421,13 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
     }
   };
 
-  const addStep = async () => {
+  const addStep = async (stageId: number | null = null) => {
     if (!template) return;
     try {
       const res = await fetch(apiUrl(`/processes/templates/${template.id}/steps`), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ name: "New step", dueDaysOffset: 0 }),
+        body: JSON.stringify({ name: "New step", dueDaysOffset: 0, stageId }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Add failed.");
@@ -700,124 +702,82 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           />
         ) : null}
 
-        {activeTab === "steps" ? (
-        <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "1rem 0 0.5rem" }}>
-          <h3 style={{ color: "#1b2856", margin: 0, fontSize: "1rem" }}>
-            Stages ({stages.length})
-          </h3>
-          <button type="button" className={styles.smallBtn} onClick={addStage}>
-            + Add Stage
-          </button>
-        </div>
-        {stages.length ? (
-          <div style={{ marginBottom: "0.75rem" }}>
-            {stages.map((stage) => (
-              <div
-                key={stage.id}
-                className={styles.stageBlock}
-                style={{ borderLeftColor: stage.color || undefined }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <input
-                    className={styles.input}
-                    value={stage.name}
-                    onChange={(e) =>
-                      setStages((prev) =>
-                        prev.map((s) => (s.id === stage.id ? { ...s, name: e.target.value } : s))
-                      )
-                    }
-                    onBlur={(e) => updateStage(stage, { name: e.target.value })}
-                    style={{ flex: 1, minWidth: 200, fontWeight: 700, color: "#1b2856" }}
-                  />
-                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={stage.isGate}
-                      onChange={(e) => updateStage(stage, { isGate: e.target.checked })}
-                    />
-                    🔒 Gate
-                  </label>
-                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={(stage as unknown as { isFinal?: boolean }).isFinal ?? false}
-                      onChange={(e) => updateStage(stage, { isFinal: e.target.checked } as Partial<typeof stage>)}
-                    />
-                    ✓ Final
-                  </label>
-                  <label style={{ fontSize: "0.78rem", color: "#1b2856", display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={(stage as unknown as { autoAdvance?: boolean }).autoAdvance ?? true}
-                      onChange={(e) => updateStage(stage, { autoAdvance: e.target.checked } as Partial<typeof stage>)}
-                    />
-                    Auto-advance
-                  </label>
-                  <input
-                    type="color"
-                    value={stage.color || "#0098D0"}
-                    onChange={(e) => updateStage(stage, { color: e.target.value.toUpperCase() })}
-                    title="Background color"
-                  />
-                  <input
-                    type="color"
-                    value={(stage as unknown as { textColor?: string }).textColor || "#042C53"}
-                    onChange={(e) =>
-                      updateStage(stage, {
-                        textColor: e.target.value.toUpperCase(),
-                      } as Partial<typeof stage>)
-                    }
-                    title="Text color"
-                  />
-                  <button
-                    type="button"
-                    className={`${styles.smallBtn} ${styles.smallBtnDanger}`}
-                    onClick={() => deleteStage(stage)}
-                  >
-                    Delete
-                  </button>
-                </div>
-                <div className={styles.stageMeta} style={{ marginTop: "0.25rem" }}>
-                  {steps.filter((s) => s.stageId === stage.id).length} step(s) in this stage
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <h3 style={{ color: "#1b2856", margin: "1rem 0 0.75rem", fontSize: "1rem" }}>
-          Steps ({steps.length})
-        </h3>
-        <div className={styles.stepEditList}>
-          {steps.map((step, idx) => (
+        {activeTab === "steps" ? (() => {
+          // Steps sorted by step_number (global order)
+          const orderedSteps = [...steps].sort((a, b) => a.stepNumber - b.stepNumber);
+          const stepsByStage = new Map<number | null, TemplateStep[]>();
+          for (const s of orderedSteps) {
+            const key = s.stageId ?? null;
+            if (!stepsByStage.has(key)) stepsByStage.set(key, []);
+            stepsByStage.get(key)!.push(s);
+          }
+          const unassigned = stepsByStage.get(null) ?? [];
+
+          const handleStepDrop = async (
+            targetStageId: number | null,
+            dropAfterStep: TemplateStep | null
+          ) => {
+            if (dragStepId === null) return;
+            const moved = steps.find((s) => s.id === dragStepId);
+            if (!moved) return;
+            const reordered = orderedSteps.filter((s) => s.id !== moved.id);
+            let insertAt = reordered.length;
+            if (dropAfterStep) {
+              const idx = reordered.findIndex((s) => s.id === dropAfterStep.id);
+              insertAt = idx >= 0 ? idx + 1 : reordered.length;
+            } else {
+              // Drop on stage body (no specific step) → append to that stage's group
+              const lastOfStage = [...reordered]
+                .reverse()
+                .find((s) => (s.stageId ?? null) === targetStageId);
+              if (lastOfStage) {
+                insertAt = reordered.findIndex((s) => s.id === lastOfStage.id) + 1;
+              } else {
+                // Empty stage: insert at the position that matches stage order
+                const targetStageOrder = stages.find((st) => st.id === targetStageId)?.stageOrder ?? 999;
+                insertAt = reordered.findIndex((s) => {
+                  if (s.stageId == null) return false;
+                  const so = stages.find((st) => st.id === s.stageId)?.stageOrder ?? 999;
+                  return so > targetStageOrder;
+                });
+                if (insertAt === -1) insertAt = reordered.length;
+              }
+            }
+            const newMoved = { ...moved, stageId: targetStageId };
+            reordered.splice(insertAt, 0, newMoved);
+            setSteps(
+              reordered.map((s, i) => ({
+                ...s,
+                stepNumber: i + 1,
+              }))
+            );
+            setDragStepId(null);
+            // Persist stage change first, then global reorder
+            if ((moved.stageId ?? null) !== (targetStageId ?? null)) {
+              await moveStepToStage(moved.id, targetStageId);
+            }
+            await reorder(reordered.map((s) => s.id));
+          };
+
+          const renderStepCard = (step: TemplateStep) => (
             <div
               key={step.id}
               className={styles.stepEditCard}
               draggable
-              onDragStart={() => setDragIdx(idx)}
+              onDragStart={() => setDragStepId(step.id)}
+              onDragEnd={() => setDragStepId(null)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                if (dragIdx === null || dragIdx === idx) return;
-                const reordered = [...steps];
-                const [moved] = reordered.splice(dragIdx, 1);
-                reordered.splice(idx, 0, moved);
-                setSteps(reordered);
-                reorder(reordered.map((s) => s.id));
-                setDragIdx(null);
+                e.stopPropagation();
+                if (dragStepId === null || dragStepId === step.id) return;
+                handleStepDrop(step.stageId ?? null, step);
               }}
             >
-              <span className={styles.dragHandle} title="Drag to reorder">
+              <span className={styles.dragHandle} title="Drag to reorder or move between stages">
                 ⋮⋮
               </span>
-              <span className={styles.stepEditNumber}>{idx + 1}</span>
+              <span className={styles.stepEditNumber}>{step.stepNumber}</span>
               <div className={styles.stepEditMain}>
                 <input
                   value={step.name}
@@ -869,7 +829,9 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                       )
                     )
                   }
-                  onBlur={(e) => updateStep(step, { instructions: e.target.value } as Partial<TemplateStep>)}
+                  onBlur={(e) =>
+                    updateStep(step, { instructions: e.target.value } as Partial<TemplateStep>)
+                  }
                   placeholder="Instructions / how to complete this step (markdown supported)"
                   style={{
                     border: "1px solid rgba(27, 40, 86, 0.12)",
@@ -940,10 +902,12 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     Stage
                     <select
                       value={step.stageId ?? ""}
-                      onChange={(e) => moveStepToStage(step.id, e.target.value ? Number(e.target.value) : null)}
+                      onChange={(e) =>
+                        moveStepToStage(step.id, e.target.value ? Number(e.target.value) : null)
+                      }
                       className={styles.select}
                     >
-                      <option value="">— Ungrouped —</option>
+                      <option value="">— Unassigned —</option>
                       {stages.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
@@ -991,7 +955,10 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     Required
                   </label>
                   {step.autoAction ? (
-                    <span className={styles.boltIcon} title={`Automated: ${AUTO_ACTION_LABELS[step.autoAction]?.label}`}>
+                    <span
+                      className={styles.boltIcon}
+                      title={`Automated: ${AUTO_ACTION_LABELS[step.autoAction]?.label}`}
+                    >
                       ⚡
                     </span>
                   ) : null}
@@ -1012,18 +979,274 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                 <StepFieldsToggle stepId={step.id} />
               </div>
             </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          style={{ marginTop: "0.75rem" }}
-          onClick={addStep}
-        >
-          + Add Step
-        </button>
-        </>
-        ) : null}
+          );
+
+          return (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  margin: "1rem 0 0.5rem",
+                }}
+              >
+                <h3 style={{ color: "#1b2856", margin: 0, fontSize: "1rem" }}>
+                  Stages ({stages.length}) · {steps.length} total step
+                  {steps.length === 1 ? "" : "s"}
+                </h3>
+                <button type="button" className={styles.smallBtn} onClick={addStage}>
+                  + Add Stage
+                </button>
+              </div>
+
+              {stages.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <h3>No stages yet</h3>
+                  <p>Add a stage to start organizing steps.</p>
+                </div>
+              ) : null}
+
+              {stages.map((stage) => {
+                const stageSteps = stepsByStage.get(stage.id) ?? [];
+                const isCollapsed = collapsedStages.has(stage.id);
+                const isFinal =
+                  (stage as unknown as { isFinal?: boolean }).isFinal ?? false;
+                const autoAdvance =
+                  (stage as unknown as { autoAdvance?: boolean }).autoAdvance ?? true;
+                const textColor =
+                  (stage as unknown as { textColor?: string }).textColor ?? "#042C53";
+                return (
+                  <div
+                    key={stage.id}
+                    className={styles.stageBlock}
+                    style={{ borderLeftColor: stage.color || undefined }}
+                    onDragOver={(e) => {
+                      if (dragStepId !== null) e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (dragStepId === null) return;
+                      e.preventDefault();
+                      handleStepDrop(stage.id, null);
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollapsedStages((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(stage.id)) next.delete(stage.id);
+                            else next.add(stage.id);
+                            return next;
+                          })
+                        }
+                        className={styles.smallBtn}
+                        style={{ minWidth: 28 }}
+                        aria-label={isCollapsed ? "Expand stage" : "Collapse stage"}
+                      >
+                        {isCollapsed ? "▸" : "▾"}
+                      </button>
+                      <input
+                        className={styles.input}
+                        value={stage.name}
+                        onChange={(e) =>
+                          setStages((prev) =>
+                            prev.map((s) =>
+                              s.id === stage.id ? { ...s, name: e.target.value } : s
+                            )
+                          )
+                        }
+                        onBlur={(e) => updateStage(stage, { name: e.target.value })}
+                        style={{
+                          flex: 1,
+                          minWidth: 180,
+                          fontWeight: 700,
+                          color: "#1b2856",
+                        }}
+                      />
+                      <span className={styles.stageMeta}>
+                        {stageSteps.length} step{stageSteps.length === 1 ? "" : "s"}
+                      </span>
+                      <label
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#1b2856",
+                          display: "inline-flex",
+                          gap: "0.3rem",
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={stage.isGate}
+                          onChange={(e) => updateStage(stage, { isGate: e.target.checked })}
+                        />
+                        🔒 Gate
+                      </label>
+                      <label
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#1b2856",
+                          display: "inline-flex",
+                          gap: "0.3rem",
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isFinal}
+                          onChange={(e) =>
+                            updateStage(stage, { isFinal: e.target.checked } as Partial<typeof stage>)
+                          }
+                        />
+                        ✓ Final
+                      </label>
+                      <label
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#1b2856",
+                          display: "inline-flex",
+                          gap: "0.3rem",
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={autoAdvance}
+                          onChange={(e) =>
+                            updateStage(stage, {
+                              autoAdvance: e.target.checked,
+                            } as Partial<typeof stage>)
+                          }
+                        />
+                        Auto-advance
+                      </label>
+                      <input
+                        type="color"
+                        value={stage.color || "#0098D0"}
+                        onChange={(e) =>
+                          updateStage(stage, { color: e.target.value.toUpperCase() })
+                        }
+                        title="Background color"
+                      />
+                      <input
+                        type="color"
+                        value={textColor}
+                        onChange={(e) =>
+                          updateStage(stage, {
+                            textColor: e.target.value.toUpperCase(),
+                          } as Partial<typeof stage>)
+                        }
+                        title="Text color"
+                      />
+                      <button
+                        type="button"
+                        className={`${styles.smallBtn} ${styles.smallBtnDanger}`}
+                        onClick={() => deleteStage(stage)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+
+                    {!isCollapsed ? (
+                      <div
+                        className={styles.stepEditList}
+                        style={{ marginTop: "0.5rem", paddingLeft: "0.5rem" }}
+                      >
+                        {stageSteps.length === 0 ? (
+                          <div
+                            style={{
+                              fontSize: "0.82rem",
+                              color: "#6a737b",
+                              padding: "0.5rem 0.75rem",
+                              border: "1px dashed rgba(27, 40, 86, 0.15)",
+                              borderRadius: 8,
+                            }}
+                          >
+                            No steps yet — drag a step here or add one below.
+                          </div>
+                        ) : (
+                          stageSteps.map((step) => renderStepCard(step))
+                        )}
+                        <button
+                          type="button"
+                          className={styles.smallBtn}
+                          style={{ alignSelf: "flex-start", marginTop: "0.25rem" }}
+                          onClick={() => addStep(stage.id)}
+                        >
+                          + Add step to this stage
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+
+              {unassigned.length > 0 ? (
+                <div
+                  className={styles.stageBlock}
+                  style={{
+                    borderLeftColor: "#f59e0b",
+                    background: "rgba(245, 158, 11, 0.04)",
+                    marginTop: "1rem",
+                  }}
+                  onDragOver={(e) => {
+                    if (dragStepId !== null) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    if (dragStepId === null) return;
+                    e.preventDefault();
+                    handleStepDrop(null, null);
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div>
+                      <h4 style={{ margin: 0, color: "#92400e", fontSize: "0.95rem" }}>
+                        ⚠️ Unassigned Steps ({unassigned.length})
+                      </h4>
+                      <div
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#92400e",
+                          marginTop: "0.2rem",
+                        }}
+                      >
+                        These steps need to be assigned to a stage. Drag them into a stage
+                        above.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.smallBtn}
+                      onClick={() => addStep(null)}
+                    >
+                      + Add unassigned step
+                    </button>
+                  </div>
+                  <div className={styles.stepEditList} style={{ marginTop: "0.5rem" }}>
+                    {unassigned.map((step) => renderStepCard(step))}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          );
+        })() : null}
       </div>
     </div>
   );
