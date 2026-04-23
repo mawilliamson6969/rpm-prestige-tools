@@ -5,6 +5,7 @@ import {
 } from "../lib/process-automation.js";
 import { evaluateConditions } from "../lib/condition-engine.js";
 import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
+import { bumpActivity } from "../lib/process-activity.js";
 
 function mapProcess(r) {
   return {
@@ -30,6 +31,11 @@ function mapProcess(r) {
     totalSteps: r.total_steps != null ? Number(r.total_steps) : undefined,
     completedSteps: r.completed_steps != null ? Number(r.completed_steps) : undefined,
     currentStepName: r.current_step_name ?? undefined,
+    lastActivityAt: r.last_activity_at ?? null,
+    lastActivityType: r.last_activity_type ?? null,
+    lastActivityBy: r.last_activity_by ?? null,
+    archivedAt: r.archived_at ?? null,
+    deletedAt: r.deleted_at ?? null,
   };
 }
 
@@ -188,6 +194,30 @@ export async function postProcess(req, res) {
     return;
   }
   const pool = getPool();
+  // Duplicate-prevention check (runs before the transaction so we can cleanly reject).
+  try {
+    const { checkDuplicate } = await import("./processBoardExtras.js");
+    const dupCheck = await checkDuplicate(pool, templateId, {
+      propertyName:
+        typeof req.body?.propertyName === "string" ? req.body.propertyName.trim() : null,
+      propertyId: Number.isFinite(Number.parseInt(req.body?.propertyId, 10))
+        ? Number.parseInt(req.body.propertyId, 10)
+        : null,
+      contactName:
+        typeof req.body?.contactName === "string" ? req.body.contactName.trim() : null,
+      contactEmail:
+        typeof req.body?.contactEmail === "string" ? req.body.contactEmail.trim() : null,
+    });
+    if (!dupCheck.allowed) {
+      res.status(409).json({
+        error: `Duplicate prevented by "${dupCheck.rule}" rule`,
+        conflictId: dupCheck.conflictId,
+      });
+      return;
+    }
+  } catch (err) {
+    console.warn("[duplicate-check] skipped:", err.message);
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -342,11 +372,38 @@ export async function postProcess(req, res) {
       [processRow.id]
     );
     res.status(201).json({ process: mapProcess(finalRows[0]), steps: steps.map(mapStep) });
-    setImmediate(() => {
-      runAutomationForProcessLaunch(processRow.id).catch((err) =>
-        console.warn("[automation] launch failed:", err.message)
-      );
-      evaluateConditions(processRow.id, "process_launched", {}).catch(() => {});
+    setImmediate(async () => {
+      try {
+        runAutomationForProcessLaunch(processRow.id).catch((err) =>
+          console.warn("[automation] launch failed:", err.message)
+        );
+        evaluateConditions(processRow.id, "process_launched", {}).catch(() => {});
+        // Apply round-robin assignment if configured on the template.
+        const assignmentRule = template.assignment_rule || "manual";
+        if (assignmentRule === "round_robin" || assignmentRule === "specific_user") {
+          const config = template.assignment_config || {};
+          let assigneeId = null;
+          if (assignmentRule === "specific_user" && config.userId) {
+            assigneeId = Number(config.userId);
+          } else if (
+            assignmentRule === "round_robin" &&
+            Array.isArray(config.userIds) &&
+            config.userIds.length
+          ) {
+            const { pickRoundRobinUser } = await import("./processBoardExtras.js");
+            assigneeId = await pickRoundRobinUser(pool, templateId, config.userIds.map(Number));
+          }
+          if (Number.isFinite(assigneeId)) {
+            await pool.query(
+              `UPDATE process_steps SET assigned_user_id = $1, updated_at = NOW()
+               WHERE process_id = $2 AND assigned_user_id IS NULL`,
+              [assigneeId, processRow.id]
+            );
+          }
+        }
+      } catch (err) {
+        console.warn("[launch] post-commit tasks failed:", err.message);
+      }
     });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
@@ -587,6 +644,10 @@ async function completeOrSkipStep(req, res, kind) {
     // Fire step_completed conditions + recalc dependent due dates + stage advancement.
     setImmediate(async () => {
       try {
+        await bumpActivity(step.process_id, {
+          type: "step_completed",
+          userId: req.user?.id,
+        });
         await evaluateConditions(step.process_id, "step_completed", {
           templateStepId: step.template_step_id,
           stepName: step.name,
@@ -780,6 +841,13 @@ export async function getProcessesBoard(req, res) {
     const whereParts = [];
     const params = [];
     let n = 1;
+    // Exclude archived and deleted by default; explicit filter can include them.
+    const includeArchived = req.query.archived === "true" || req.query.archived === "1";
+    const includeDeleted = req.query.deleted === "true" || req.query.deleted === "1";
+    if (!includeArchived) whereParts.push(`p.archived_at IS NULL`);
+    else whereParts.push(`p.archived_at IS NOT NULL`);
+    if (!includeDeleted) whereParts.push(`p.deleted_at IS NULL`);
+    else whereParts.push(`p.deleted_at IS NOT NULL`);
     if (statusFilter && statusFilter !== "all") {
       whereParts.push(`p.status = $${n++}`);
       params.push(statusFilter);
@@ -802,6 +870,7 @@ export async function getProcessesBoard(req, res) {
     const { rows: procs } = await pool.query(
       `SELECT p.*,
          t.name AS template_name, t.icon AS template_icon, t.color AS template_color,
+         t.aging_green_hours, t.aging_yellow_hours, t.card_badge_field,
          (SELECT COUNT(*)::int FROM process_steps s WHERE s.process_id = p.id) AS total_steps,
          (SELECT COUNT(*)::int FROM process_steps s WHERE s.process_id = p.id AND s.status IN ('completed','skipped')) AS completed_steps,
          (SELECT s.name FROM process_steps s WHERE s.process_id = p.id
@@ -861,6 +930,12 @@ export async function getProcessesBoard(req, res) {
         progress: pct,
         currentStepName: p.current_step_name,
         overdue,
+        lastActivityAt: p.last_activity_at,
+        lastActivityType: p.last_activity_type,
+        lastActivityBy: p.last_activity_by,
+        agingGreenHours: Number(p.aging_green_hours ?? 48),
+        agingYellowHours: Number(p.aging_yellow_hours ?? 96),
+        cardBadgeField: p.card_badge_field || "due_date",
       };
 
       let stageKey;
@@ -917,9 +992,18 @@ export async function putProcessStage(req, res) {
          board_position = COALESCE($2, board_position),
          status = CASE WHEN $3 THEN 'completed' ELSE CASE WHEN status = 'completed' THEN 'active' ELSE status END END,
          completed_at = CASE WHEN $3 THEN COALESCE(completed_at, NOW()) ELSE CASE WHEN status = 'completed' THEN NULL ELSE completed_at END END,
+         last_activity_at = NOW(),
+         last_activity_type = 'stage_changed',
+         last_activity_by = $5,
          updated_at = NOW()
        WHERE id = $4 RETURNING *`,
-      [Number.isFinite(stageId) ? stageId : null, Number.isFinite(boardPos) ? boardPos : null, isFinal, id]
+      [
+        Number.isFinite(stageId) ? stageId : null,
+        Number.isFinite(boardPos) ? boardPos : null,
+        isFinal,
+        id,
+        req.user?.id ?? null,
+      ]
     );
     if (!rows.length) {
       res.status(404).json({ error: "Process not found." });

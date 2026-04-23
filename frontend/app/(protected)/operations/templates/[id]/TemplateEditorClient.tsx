@@ -9,6 +9,7 @@ import AutomationConfigEditor from "../../AutomationConfigEditor";
 import CustomFieldManager from "../../CustomFieldManager";
 import ConditionBuilder from "../../ConditionBuilder";
 import DueDateEditor from "../../DueDateEditor";
+import TaskTemplatesManager from "../../TaskTemplatesManager";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
@@ -22,6 +23,177 @@ import type {
   TeamUser,
 } from "../../types";
 import { AUTO_ACTION_LABELS, ROLES } from "../../types";
+
+type BoardTemplateExtras = Template & {
+  agingGreenHours?: number;
+  agingYellowHours?: number;
+  cardBadgeField?: string;
+  assignmentRule?: string;
+  assignmentConfig?: Record<string, unknown>;
+  duplicationRule?: string;
+};
+
+function BoardSettingsEditor({
+  template,
+  users,
+  onChange,
+}: {
+  template: Template;
+  users: TeamUser[];
+  onChange: (patch: Partial<BoardTemplateExtras>) => void;
+}) {
+  const t = template as BoardTemplateExtras;
+  const { authHeaders } = useAuth();
+  const save = async (patch: Partial<BoardTemplateExtras>) => {
+    onChange(patch);
+    try {
+      await fetch(apiUrl(`/processes/templates/${template.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(patch),
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+  const cfg = (t.assignmentConfig ?? {}) as { userId?: number; userIds?: number[] };
+  return (
+    <div>
+      <div className={styles.cfSection}>
+        <div className={styles.cfSectionHeader}>
+          <h4>Aging thresholds</h4>
+        </div>
+        <div className={styles.cfSectionBody}>
+          <div className={styles.fieldRow}>
+            <label className={styles.cfField}>
+              <span className={styles.cfLabel}>Green within (hours)</span>
+              <input
+                type="number"
+                className={styles.cfInput}
+                defaultValue={t.agingGreenHours ?? 48}
+                onBlur={(e) => save({ agingGreenHours: Number(e.target.value) || 48 })}
+              />
+            </label>
+            <label className={styles.cfField}>
+              <span className={styles.cfLabel}>Yellow within (hours)</span>
+              <input
+                type="number"
+                className={styles.cfInput}
+                defaultValue={t.agingYellowHours ?? 96}
+                onBlur={(e) => save({ agingYellowHours: Number(e.target.value) || 96 })}
+              />
+            </label>
+          </div>
+          <label className={styles.cfField}>
+            <span className={styles.cfLabel}>Card badge field</span>
+            <select
+              className={styles.cfSelect}
+              defaultValue={t.cardBadgeField ?? "due_date"}
+              onChange={(e) => save({ cardBadgeField: e.target.value })}
+            >
+              <option value="due_date">Due date</option>
+              <option value="started_at">Start date</option>
+              <option value="lease_expiration">Lease expiration</option>
+              <option value="move_in_date">Move-in date</option>
+              <option value="move_out_date">Move-out date</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className={styles.cfSection}>
+        <div className={styles.cfSectionHeader}>
+          <h4>Assignment rule</h4>
+        </div>
+        <div className={styles.cfSectionBody}>
+          <label className={styles.cfField}>
+            <span className={styles.cfLabel}>Rule</span>
+            <select
+              className={styles.cfSelect}
+              defaultValue={t.assignmentRule ?? "manual"}
+              onChange={(e) =>
+                save({ assignmentRule: e.target.value, assignmentConfig: {} })
+              }
+            >
+              <option value="manual">Manual</option>
+              <option value="specific_user">Specific user</option>
+              <option value="round_robin">Round robin</option>
+              <option value="round_robin_by_role">Round robin by role</option>
+              <option value="by_property">By property (AppFolio owner)</option>
+            </select>
+          </label>
+          {t.assignmentRule === "specific_user" ? (
+            <label className={styles.cfField}>
+              <span className={styles.cfLabel}>User</span>
+              <select
+                className={styles.cfSelect}
+                defaultValue={cfg.userId ?? ""}
+                onChange={(e) =>
+                  save({
+                    assignmentConfig: e.target.value ? { userId: Number(e.target.value) } : {},
+                  })
+                }
+              >
+                <option value="">— Unassigned —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {t.assignmentRule === "round_robin" ? (
+            <div>
+              <div className={styles.cfLabel}>Rotation pool</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                {users.map((u) => {
+                  const included = (cfg.userIds ?? []).map(Number).includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className={`${styles.cfChip} ${included ? styles.cfChipActive : ""}`}
+                      onClick={() => {
+                        const next = included
+                          ? (cfg.userIds ?? []).filter((x) => Number(x) !== u.id)
+                          : [...(cfg.userIds ?? []), u.id];
+                        save({ assignmentConfig: { ...cfg, userIds: next } });
+                      }}
+                    >
+                      {u.displayName}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className={styles.cfSection}>
+        <div className={styles.cfSectionHeader}>
+          <h4>Duplicate prevention</h4>
+        </div>
+        <div className={styles.cfSectionBody}>
+          <label className={styles.cfField}>
+            <span className={styles.cfLabel}>Rule</span>
+            <select
+              className={styles.cfSelect}
+              defaultValue={t.duplicationRule ?? "none"}
+              onChange={(e) => save({ duplicationRule: e.target.value })}
+            >
+              <option value="none">None (allow duplicates)</option>
+              <option value="one_per_property">One per property</option>
+              <option value="one_per_contact">One per contact</option>
+              <option value="one_per_property_contact">One per property + contact</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StepFieldsToggle({ stepId }: { stepId: number }) {
   const [open, setOpen] = useState(false);
@@ -72,7 +244,9 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"steps" | "custom_fields" | "automations">("steps");
+  const [activeTab, setActiveTab] = useState<
+    "steps" | "custom_fields" | "automations" | "task_templates" | "board_settings"
+  >("steps");
   const [stages, setStages] = useState<TemplateStage[]>([]);
   const [templateFields, setTemplateFields] = useState<CustomFieldDefinition[]>([]);
 
@@ -479,7 +653,33 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           >
             Conditions &amp; Automations
           </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "task_templates" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("task_templates")}
+          >
+            Task Templates
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "board_settings" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("board_settings")}
+          >
+            Board Settings
+          </button>
         </div>
+
+        {activeTab === "task_templates" ? (
+          <TaskTemplatesManager processTemplateId={template.id} users={users} />
+        ) : null}
+
+        {activeTab === "board_settings" ? (
+          <BoardSettingsEditor
+            template={template}
+            users={users}
+            onChange={(patch) => setTemplate({ ...template, ...patch })}
+          />
+        ) : null}
 
         {activeTab === "custom_fields" ? (
           <CustomFieldManager

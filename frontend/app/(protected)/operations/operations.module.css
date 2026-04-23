@@ -2791,3 +2791,212 @@
   background: rgba(27, 40, 86, 0.02);
   flex-wrap: wrap;
 }
+
+/* Aging indicator */
+.agingDotWrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.agingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.agingGreen { background: #1D9E75; }
+.agingYellow { background: #EF9F27; }
+.agingRed { background: #E24B4A; }
+
+.badgePill {
+  display: inline-block;
+  padding: 0.08rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(27, 40, 86, 0.06);
+  color: #1b2856;
+}
+.badgePillOverdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #b91c1c;
+}
+.badgePillDue {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+}
+
+/* Bulk action bar */
+.bulkBar {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1b2856;
+  color: #fff;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  box-shadow: 0 12px 40px rgba(27, 40, 86, 0.35);
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  z-index: 5000;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 2rem);
+}
+.bulkCount {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.bulkBtn {
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bulkBtn:hover {
+  background: rgba(255,255,255,0.22);
+}
+.bulkBtnDanger {
+  background: rgba(239, 68, 68, 0.3);
+}
+.bulkBtnDanger:hover {
+  background: rgba(239, 68, 68, 0.55);
+}
+
+.cardCheckbox {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.processCardBoard:hover .cardCheckbox,
+.cardCheckbox:checked {
+  opacity: 1;
+}
+
+/* Calendar */
+.calendarToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  background: rgba(27,40,86,0.1);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.calendarDayHeader {
+  background: #fff;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6a737b;
+  letter-spacing: 0.04em;
+}
+.calendarDay {
+  background: #fff;
+  min-height: 90px;
+  padding: 0.35rem 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+}
+.calendarDayOther {
+  background: rgba(245, 245, 245, 0.6);
+  color: #9ca3af;
+}
+.calendarDayToday {
+  background: rgba(0, 152, 208, 0.06);
+}
+.calendarDayNumber {
+  font-weight: 700;
+  color: #1b2856;
+}
+.calendarEvent {
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendarEventOverdue {
+  background: #ef4444 !important;
+}
+
+/* My Tasks dashboard */
+.myTasksSection {
+  margin-bottom: 1.25rem;
+}
+.myTasksRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: #fff;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-radius: 8px;
+  margin-bottom: 0.35rem;
+  cursor: pointer;
+}
+.myTasksRow:hover {
+  border-color: #0098D0;
+}
+.myTasksTypeIcon {
+  font-size: 0.95rem;
+}
+.myTasksTitle {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: #1b2856;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.myTasksMeta {
+  font-size: 0.75rem;
+  color: #6a737b;
+}
+.myTasksRowDone .myTasksTitle {
+  text-decoration: line-through;
+  color: #6a737b;
+}
+
+/* Priority badges for new scheme */
+.priorityAsap {
+  background: rgba(239, 68, 68, 0.2);
+  color: #b91c1c;
+  animation: asapPulse 1.8s ease-in-out infinite;
+}
+@keyframes asapPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25); }
+}
+.priorityMedium {
+  background: rgba(0, 152, 208, 0.15);
+  color: #007aa8;
+}

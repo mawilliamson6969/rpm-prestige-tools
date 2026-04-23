@@ -9,9 +9,11 @@ import ProcessCardDetailPanel from "../ProcessCardDetailPanel";
 import BoardView from "./BoardView";
 import TableView from "./TableView";
 import TimelineView from "./TimelineView";
+import CalendarView from "./CalendarView";
+import BulkActionBar from "./BulkActionBar";
 import { apiUrl } from "../../../../lib/api";
 import { useAuth } from "../../../../context/AuthContext";
-import type { ProcessRecord, ProcessStatus, Template } from "../types";
+import type { ProcessRecord, ProcessStatus, TeamUser, Template, TemplateStage } from "../types";
 
 type DashboardTemplate = {
   templateId: number;
@@ -54,9 +56,15 @@ export default function ProcessesListClient() {
   const [launchOpen, setLaunchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [view, setView] = useState<"board" | "table" | "timeline" | "grid" | "dashboard">("board");
+  const [view, setView] = useState<
+    "board" | "table" | "timeline" | "calendar" | "grid" | "dashboard"
+  >("board");
   const [detailOpen, setDetailOpen] = useState<number | null>(null);
   const [boardRefresh, setBoardRefresh] = useState(0);
+  const [filterPill, setFilterPill] = useState<"all" | "stale" | "archived">("all");
+  const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
+  const [users, setUsers] = useState<TeamUser[]>([]);
+  const [boardStages, setBoardStages] = useState<TemplateStage[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [dashboard, setDashboard] = useState<DashboardTemplate[]>([]);
 
@@ -123,6 +131,41 @@ export default function ProcessesListClient() {
   useEffect(() => {
     if (view === "dashboard") loadDashboard();
   }, [view, loadDashboard]);
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch(apiUrl("/users"), {
+          headers: { ...authHeaders() },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (Array.isArray(body.users)) setUsers(body.users);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [authHeaders, token]);
+  useEffect(() => {
+    if (!token || !templateFilter) {
+      setBoardStages([]);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(apiUrl(`/processes/templates/${templateFilter}/stages`), {
+          headers: { ...authHeaders() },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (Array.isArray(body.stages)) setBoardStages(body.stages);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [authHeaders, token, templateFilter]);
 
   return (
     <div className={styles.page}>
@@ -195,10 +238,41 @@ export default function ProcessesListClient() {
             </button>
             <button
               type="button"
+              className={`${styles.viewToggleBtn} ${view === "calendar" ? styles.viewToggleActive : ""}`}
+              onClick={() => setView("calendar")}
+            >
+              Calendar
+            </button>
+            <button
+              type="button"
               className={`${styles.viewToggleBtn} ${view === "dashboard" ? styles.viewToggleActive : ""}`}
               onClick={() => setView("dashboard")}
             >
               Dashboard
+            </button>
+          </div>
+          <div className={styles.viewToggle}>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${filterPill === "all" ? styles.viewToggleActive : ""}`}
+              onClick={() => setFilterPill("all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${filterPill === "stale" ? styles.viewToggleActive : ""}`}
+              onClick={() => setFilterPill("stale")}
+              title="Cards with no recent activity (red aging dot)"
+            >
+              Stale
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${filterPill === "archived" ? styles.viewToggleActive : ""}`}
+              onClick={() => setFilterPill("archived")}
+            >
+              Archived
             </button>
           </div>
         </div>
@@ -211,9 +285,18 @@ export default function ProcessesListClient() {
             assigneeId={null}
             search={search}
             priorityFilter=""
+            archived={filterPill === "archived"}
+            showStale={filterPill === "stale"}
             onOpenCard={(id) => setDetailOpen(id)}
             refreshKey={boardRefresh}
+            onBulkChange={setSelectedCardIds}
           />
+        ) : view === "calendar" ? (
+          loading ? (
+            <div className={styles.loading}>Loading…</div>
+          ) : (
+            <CalendarView processes={processes} onOpenDay={(id) => setDetailOpen(id)} />
+          )
         ) : view === "table" ? (
           loading ? (
             <div className={styles.loading}>Loading…</div>
@@ -353,6 +436,18 @@ export default function ProcessesListClient() {
             setBoardRefresh((r) => r + 1);
             load();
           }}
+        />
+      ) : null}
+      {view === "board" ? (
+        <BulkActionBar
+          selectedIds={selectedCardIds}
+          onClear={() => setSelectedCardIds([])}
+          onRefresh={() => {
+            setBoardRefresh((r) => r + 1);
+            load();
+          }}
+          users={users}
+          stages={boardStages.map((s) => ({ id: s.id, name: s.name }))}
         />
       ) : null}
     </div>

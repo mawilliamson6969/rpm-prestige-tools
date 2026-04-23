@@ -14,6 +14,12 @@ function mapTemplate(r) {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     stepCount: r.step_count != null ? Number(r.step_count) : undefined,
+    agingGreenHours: r.aging_green_hours ?? 48,
+    agingYellowHours: r.aging_yellow_hours ?? 96,
+    cardBadgeField: r.card_badge_field ?? "due_date",
+    assignmentRule: r.assignment_rule ?? "manual",
+    assignmentConfig: r.assignment_config ?? {},
+    duplicationRule: r.duplication_rule ?? "none",
   };
 }
 
@@ -164,6 +170,36 @@ export async function putTemplate(req, res) {
   if (typeof req.body?.isActive === "boolean") {
     sets.push(`is_active = $${n++}`);
     vals.push(req.body.isActive);
+  }
+  if (req.body?.agingGreenHours !== undefined) {
+    const v = Number.parseInt(req.body.agingGreenHours, 10);
+    if (Number.isFinite(v)) {
+      sets.push(`aging_green_hours = $${n++}`);
+      vals.push(v);
+    }
+  }
+  if (req.body?.agingYellowHours !== undefined) {
+    const v = Number.parseInt(req.body.agingYellowHours, 10);
+    if (Number.isFinite(v)) {
+      sets.push(`aging_yellow_hours = $${n++}`);
+      vals.push(v);
+    }
+  }
+  if (typeof req.body?.cardBadgeField === "string") {
+    sets.push(`card_badge_field = $${n++}`);
+    vals.push(req.body.cardBadgeField);
+  }
+  if (typeof req.body?.assignmentRule === "string") {
+    sets.push(`assignment_rule = $${n++}`);
+    vals.push(req.body.assignmentRule);
+  }
+  if (req.body?.assignmentConfig !== undefined && typeof req.body.assignmentConfig === "object") {
+    sets.push(`assignment_config = $${n++}::jsonb`);
+    vals.push(JSON.stringify(req.body.assignmentConfig));
+  }
+  if (typeof req.body?.duplicationRule === "string") {
+    sets.push(`duplication_rule = $${n++}`);
+    vals.push(req.body.duplicationRule);
   }
   if (!sets.length) {
     res.status(400).json({ error: "No valid fields to update." });

@@ -39,6 +39,11 @@ type BoardCard = {
   progress: number;
   currentStepName: string | null;
   overdue: boolean;
+  lastActivityAt?: string | null;
+  lastActivityType?: string | null;
+  agingGreenHours?: number;
+  agingYellowHours?: number;
+  cardBadgeField?: string;
 };
 
 type Props = {
@@ -46,9 +51,42 @@ type Props = {
   assigneeId: number | null;
   search: string;
   priorityFilter: string;
+  archived?: boolean;
+  showStale?: boolean;
   onOpenCard: (processId: number) => void;
   refreshKey: number;
+  onBulkChange?: (ids: number[]) => void;
 };
+
+function agingClass(card: BoardCard): string {
+  if (!card.lastActivityAt) return styles.agingGreen;
+  const hoursSince = (Date.now() - new Date(card.lastActivityAt).getTime()) / 3600000;
+  const green = card.agingGreenHours ?? 48;
+  const yellow = card.agingYellowHours ?? 96;
+  if (hoursSince < green) return styles.agingGreen;
+  if (hoursSince < yellow) return styles.agingYellow;
+  return styles.agingRed;
+}
+
+function isStale(card: BoardCard): boolean {
+  if (!card.lastActivityAt) return false;
+  const hoursSince = (Date.now() - new Date(card.lastActivityAt).getTime()) / 3600000;
+  return hoursSince >= (card.agingYellowHours ?? 96);
+}
+
+function badgeText(card: BoardCard): { text: string; cls: string } | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (card.targetCompletion) {
+    const d = new Date(card.targetCompletion);
+    const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000);
+    const text = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    if (diffDays < 0) return { text: `${text} · overdue`, cls: styles.badgePillOverdue };
+    if (diffDays <= 7) return { text, cls: styles.badgePillDue };
+    return { text, cls: styles.badgePill };
+  }
+  return null;
+}
 
 function initials(name: string | null | undefined) {
   if (!name) return "?";
@@ -72,8 +110,11 @@ export default function BoardView({
   assigneeId,
   search,
   priorityFilter,
+  archived,
+  showStale,
   onOpenCard,
   refreshKey,
+  onBulkChange,
 }: Props) {
   const { authHeaders, token } = useAuth();
   const [stages, setStages] = useState<BoardStage[]>([]);
@@ -82,6 +123,11 @@ export default function BoardView({
   const [err, setErr] = useState<string | null>(null);
   const [dragCardId, setDragCardId] = useState<number | null>(null);
   const [hoverStage, setHoverStage] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    onBulkChange?.(Array.from(selectedIds));
+  }, [selectedIds, onBulkChange]);
 
   useEffect(() => {
     if (!token) return;
@@ -89,6 +135,7 @@ export default function BoardView({
     if (templateId) params.set("templateId", String(templateId));
     if (assigneeId) params.set("assignee", String(assigneeId));
     if (priorityFilter) params.set("priority", priorityFilter);
+    if (archived) params.set("archived", "true");
     setLoading(true);
     setErr(null);
     (async () => {
@@ -107,18 +154,30 @@ export default function BoardView({
         setLoading(false);
       }
     })();
-  }, [authHeaders, token, templateId, assigneeId, priorityFilter, refreshKey]);
+  }, [authHeaders, token, templateId, assigneeId, priorityFilter, archived, refreshKey]);
 
   const filtered = (cards: BoardCard[]) => {
-    if (!search.trim()) return cards;
+    let arr = cards;
+    if (showStale) arr = arr.filter(isStale);
+    if (!search.trim()) return arr;
     const q = search.trim().toLowerCase();
-    return cards.filter(
+    return arr.filter(
       (c) =>
         c.title?.toLowerCase().includes(q) ||
         c.propertyName?.toLowerCase().includes(q) ||
         c.contactName?.toLowerCase().includes(q) ||
         c.templateName?.toLowerCase().includes(q)
     );
+  };
+
+  const toggleSelect = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const moveCard = async (cardId: number, targetStageId: number) => {
@@ -198,12 +257,16 @@ export default function BoardView({
                   cards.map((c) => {
                     const pct = c.progress ?? 0;
                     const barColor = progressColor(pct);
+                    const aging = agingClass(c);
+                    const badge = badgeText(c);
+                    const isSelected = selectedIds.has(c.id);
                     return (
                       <div
                         key={c.id}
                         className={`${styles.processCardBoard} ${
                           c.overdue ? styles.processCardBoardOverdue : ""
                         } ${dragCardId === c.id ? styles.processCardBoardDragging : ""}`}
+                        style={{ position: "relative" }}
                         draggable={!st.virtual}
                         onDragStart={(e) => {
                           e.dataTransfer.setData("text/plain", String(c.id));
@@ -212,7 +275,27 @@ export default function BoardView({
                         onDragEnd={() => setDragCardId(null)}
                         onClick={() => onOpenCard(c.id)}
                       >
-                        <h4 className={styles.processCardTitle}>
+                        <input
+                          type="checkbox"
+                          className={styles.cardCheckbox}
+                          checked={isSelected}
+                          onChange={() => {
+                            /* handled by onClick */
+                          }}
+                          onClick={(e) => toggleSelect(c.id, e)}
+                          aria-label="Select card"
+                        />
+                        <span className={styles.agingDotWrap}>
+                          <span
+                            className={`${styles.agingDot} ${aging}`}
+                            title={
+                              c.lastActivityAt
+                                ? `Last activity ${new Date(c.lastActivityAt).toLocaleString()}`
+                                : "No activity recorded"
+                            }
+                          />
+                        </span>
+                        <h4 className={styles.processCardTitle} style={{ paddingRight: "1rem" }}>
                           {c.templateIcon ? `${c.templateIcon} ` : ""}
                           {c.title}
                         </h4>
@@ -237,14 +320,8 @@ export default function BoardView({
                         </div>
                         <div className={styles.processCardFootRow}>
                           <span className={styles.processCardAvatar}>{initials(c.contactName)}</span>
-                          {c.targetCompletion ? (
-                            <span
-                              className={`${styles.processCardDue} ${
-                                c.overdue ? styles.processCardDueOverdue : ""
-                              }`}
-                            >
-                              {new Date(c.targetCompletion).toLocaleDateString()}
-                            </span>
+                          {badge ? (
+                            <span className={badge.cls}>{badge.text}</span>
                           ) : (
                             <span style={{ color: "#9ca3af" }}>No target</span>
                           )}

@@ -445,6 +445,27 @@ import {
 } from "./routes/taskDependencies.js";
 import { runTimeBasedConditions } from "./lib/condition-engine.js";
 import {
+  deleteProcessesBulk,
+  deleteTaskTemplate,
+  deleteTaskTemplateItem,
+  getMyTasksAll,
+  getTaskTemplate,
+  getTaskTemplates,
+  postLoadTaskTemplate,
+  postTaskTemplate,
+  postTaskTemplateItem,
+  purgeExpiredRecycleBin,
+  putProcessArchive,
+  putProcessBulkArchive,
+  putProcessBulkAssign,
+  putProcessBulkStage,
+  putProcessRestore,
+  putProcessSoftDelete,
+  putProcessUnarchive,
+  putTaskTemplate,
+  putTaskTemplateItem,
+} from "./routes/processBoardExtras.js";
+import {
   customFieldUploadMiddleware,
   deleteFieldDefinition,
   deleteFieldValue,
@@ -1024,6 +1045,36 @@ app.put("/processes/:id/board-position", requireAuth, putProcessBoardPosition);
 app.put("/processes/:id", requireAuth, putProcess);
 app.delete("/processes/:id", requireAuth, requireAdminRole, deleteProcess);
 
+/** Archive + recycle bin */
+app.put("/processes/:id/archive", requireAuth, putProcessArchive);
+app.put("/processes/:id/unarchive", requireAuth, putProcessUnarchive);
+app.put("/processes/:id/soft-delete", requireAuth, putProcessSoftDelete);
+app.put("/processes/:id/restore", requireAuth, putProcessRestore);
+
+/** Bulk actions */
+app.put("/processes/bulk/stage", requireAuth, putProcessBulkStage);
+app.put("/processes/bulk/assign", requireAuth, putProcessBulkAssign);
+app.put("/processes/bulk/archive", requireAuth, putProcessBulkArchive);
+app.delete("/processes/bulk", requireAuth, requireAdminRole, deleteProcessesBulk);
+
+/** Task templates */
+app.get("/task-templates", requireAuth, getTaskTemplates);
+app.post("/task-templates", requireAuth, requireAdminRole, postTaskTemplate);
+app.get("/task-templates/:id", requireAuth, getTaskTemplate);
+app.put("/task-templates/:id", requireAuth, requireAdminRole, putTaskTemplate);
+app.delete("/task-templates/:id", requireAuth, requireAdminRole, deleteTaskTemplate);
+app.post("/task-templates/:id/items", requireAuth, requireAdminRole, postTaskTemplateItem);
+app.put("/task-template-items/:itemId", requireAuth, requireAdminRole, putTaskTemplateItem);
+app.delete("/task-template-items/:itemId", requireAuth, requireAdminRole, deleteTaskTemplateItem);
+app.post(
+  "/processes/:processId/load-template/:taskTemplateId",
+  requireAuth,
+  postLoadTaskTemplate
+);
+
+/** Cross-board My Tasks (all assigned process steps) */
+app.get("/tasks/my-all", requireAuth, getMyTasksAll);
+
 app.get("/tasks/dashboard", requireAuth, getTasksDashboard);
 app.get("/tasks/my", requireAuth, getMyTasks);
 app.get("/tasks", requireAuth, getTasks);
@@ -1366,6 +1417,13 @@ async function start() {
       );
     });
     console.log("Scheduled time-based condition check: 15 * * * * (hourly, offset).");
+
+    cron.schedule("30 3 * * *", () => {
+      purgeExpiredRecycleBin().catch((e) =>
+        console.error("[recycle-bin cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled recycle-bin purge: 30 3 * * * (daily 3:30 AM).");
 
     cron.schedule("*/30 * * * *", () => {
       syncGoogleReviews({ trigger: "cron" }).catch((e) =>

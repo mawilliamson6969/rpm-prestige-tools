@@ -11,6 +11,7 @@ export default function OperationsTopBar({ actions }: { actions?: ReactNode }) {
   const { isAdmin } = useAuth();
   const links = [
     { href: "/operations/tasks", label: "Tasks" },
+    { href: "/operations/my-tasks", label: "My Tasks" },
     { href: "/operations/projects", label: "Projects" },
     { href: "/operations/processes", label: "Processes" },
     ...(isAdmin ? [{ href: "/operations/templates", label: "Templates" }] : []),
