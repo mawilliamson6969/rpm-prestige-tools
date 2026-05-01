@@ -29,6 +29,7 @@ const TASK_TYPE_ICONS: Record<string, string> = {
   email: "✉",
   sms: "💬",
   call: "📞",
+  esign: "✍️",
 };
 
 const PRIORITY_CLASS: Record<string, string> = {
