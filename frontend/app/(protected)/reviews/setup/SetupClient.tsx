@@ -299,14 +299,25 @@ export default function SetupClient() {
             <code>GOOGLE_BUSINESS_LOCATION_ID</code> in the backend environment.
           </p>
         ) : status?.google.needsReconnect ? (
-          <button
-            type="button"
-            className={styles.btnPrimary}
-            onClick={connectGoogle}
-            disabled={connecting}
-          >
-            {connecting ? "Redirecting…" : "🔄 Reconnect Google →"}
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              onClick={connectGoogle}
+              disabled={connecting}
+            >
+              {connecting ? "Redirecting…" : "🔄 Reconnect Google →"}
+            </button>
+            {isAdmin ? (
+              <button
+                type="button"
+                className={styles.btnDanger}
+                onClick={disconnectGoogle}
+              >
+                Disconnect (clear stored tokens)
+              </button>
+            ) : null}
+          </div>
         ) : status?.google.connected ? (
           <>
             {status.google.locationId ? (
