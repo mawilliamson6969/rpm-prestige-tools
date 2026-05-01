@@ -59,20 +59,32 @@ const PRESETS = [
   { label: "This Year", days: 365 },
 ];
 
+type SetupStatus = {
+  google: { connected: boolean; needsReconnect?: boolean; locationId: string | null };
+};
+
 export default function AnalyticsClient() {
   const { authHeaders } = useAuth();
   const [preset, setPreset] = useState<number>(90);
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [setup, setSetup] = useState<SetupStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const to = new Date();
     const from = new Date(Date.now() - preset * 24 * 3600 * 1000);
     const qs = `?from=${from.toISOString()}&to=${to.toISOString()}`;
-    const res = await fetch(apiUrl(`/reviews/analytics${qs}`), { headers: { ...authHeaders() } });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) setData(body);
+    const [aRes, sRes] = await Promise.all([
+      fetch(apiUrl(`/reviews/analytics${qs}`), { headers: { ...authHeaders() } }),
+      fetch(apiUrl("/reviews/setup"), { headers: { ...authHeaders() } }),
+    ]);
+    const [body, sBody] = await Promise.all([
+      aRes.json().catch(() => ({})),
+      sRes.json().catch(() => ({})),
+    ]);
+    if (aRes.ok) setData(body);
+    if (sRes.ok) setSetup(sBody);
     setLoading(false);
   }, [authHeaders, preset]);
 
@@ -145,6 +157,51 @@ export default function AnalyticsClient() {
       </div>
 
       <ReviewsNav />
+
+      {setup &&
+      data &&
+      data.overview.totalReviews === 0 &&
+      (!setup.google.connected ||
+        setup.google.needsReconnect ||
+        !setup.google.locationId) ? (
+        <div
+          style={{
+            padding: "0.85rem 1.1rem",
+            background: "rgba(245, 158, 11, 0.1)",
+            border: "1px solid rgba(245, 158, 11, 0.4)",
+            borderRadius: 10,
+            marginBottom: "1rem",
+            fontSize: "0.88rem",
+            color: "#1b2856",
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>📭 No Google reviews are syncing yet.</strong>{" "}
+          {setup.google.needsReconnect
+            ? "Your Google connection needs to be reconnected — "
+            : !setup.google.connected
+            ? "Connect Google Business Profile — "
+            : "Pick an account + location — "}
+          <a href="/reviews/setup" style={{ color: "#0098D0", fontWeight: 600 }}>
+            go to Setup
+          </a>
+          .{" "}
+          <em>
+            Note: Even once connected, review sync requires legacy v4 API access (
+            <a
+              href="https://support.google.com/business/contact/api_default"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#0098D0" }}
+            >
+              request here
+            </a>
+            ) — Google never migrated the reviews endpoint to v1. Approval typically takes
+            1–7 business days.
+          </em>{" "}
+          Request data shown below works regardless.
+        </div>
+      ) : null}
 
       {loading || !data ? (
         <div className={styles.loading}>Loading analytics…</div>
