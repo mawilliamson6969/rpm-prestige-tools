@@ -41,6 +41,8 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env for team login}
+      DOCUSEAL_API_URL: ${DOCUSEAL_API_URL:-http://docuseal:3000/api}
+      DOCUSEAL_API_KEY: ${DOCUSEAL_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -61,6 +63,24 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
 
+  # Docuseal — self-hosted e-signature service. Browser hits sign.prestigedash.com,
+  # which Nginx proxies to localhost:3001. Backend talks to it over the compose network at docuseal:3000.
+  docuseal:
+    image: docuseal/docuseal:latest
+    container_name: rpm-docuseal
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - docuseal_data:/data
+    environment:
+      FORCE_SSL: "false"
+      HOST: sign.prestigedash.com
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
   backend_uploads:
+  docuseal_data:

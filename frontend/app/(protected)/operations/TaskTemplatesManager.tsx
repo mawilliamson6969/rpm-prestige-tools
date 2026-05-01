@@ -36,6 +36,7 @@ const TASK_TYPES = [
   { value: "email", label: "✉ Email" },
   { value: "sms", label: "💬 SMS" },
   { value: "call", label: "📞 Call" },
+  { value: "esign", label: "✍️ E-Signature" },
 ];
 
 const PRIORITIES = [

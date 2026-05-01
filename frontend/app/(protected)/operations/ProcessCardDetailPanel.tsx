@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./operations.module.css";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import NewSigningRequestModal from "../esign/NewSigningRequestModal";
+import type { EsignRequestRow } from "../esign/EsignClient";
 import type {
   ProcessRecord,
   ProcessStageRecord,
@@ -32,6 +34,8 @@ export default function ProcessCardDetailPanel({ processId, onClose, onChanged }
   const [templateStages, setTemplateStages] = useState<StageWithFlags[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [esignRequests, setEsignRequests] = useState<EsignRequestRow[]>([]);
+  const [esignModalOpen, setEsignModalOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -72,6 +76,24 @@ export default function ProcessCardDetailPanel({ processId, onClose, onChanged }
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadEsign = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/esign/requests?processId=${processId}`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => []);
+      setEsignRequests(Array.isArray(body) ? body : []);
+    } catch {
+      setEsignRequests([]);
+    }
+  }, [authHeaders, processId, token]);
+
+  useEffect(() => {
+    loadEsign();
+  }, [loadEsign]);
 
   const completeStep = async (step: ProcessStep) => {
     try {
@@ -210,6 +232,67 @@ export default function ProcessCardDetailPanel({ processId, onClose, onChanged }
             </div>
           ) : null}
 
+          {esignRequests.length > 0 && (
+            <div className={styles.slideSection}>
+              <h3>E-Signatures</h3>
+              {esignRequests.map((r) => (
+                <div
+                  key={r.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.4rem 0.6rem",
+                    border: "1px solid rgba(27, 40, 86, 0.08)",
+                    borderRadius: "8px",
+                    marginBottom: "0.4rem",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  <span aria-hidden>✍️</span>
+                  <span style={{ flex: 1, color: "#1b2856", fontWeight: 600 }}>
+                    {r.template_name || `Template ${r.template_id ?? "—"}`}
+                  </span>
+                  <span
+                    style={{
+                      padding: "0.15rem 0.55rem",
+                      borderRadius: 999,
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      background:
+                        r.status === "completed"
+                          ? "#10b981"
+                          : r.status === "viewed"
+                          ? "#8b5cf6"
+                          : r.status === "declined"
+                          ? "#b32317"
+                          : r.status === "sent"
+                          ? "#0098d0"
+                          : "#fac775",
+                      color:
+                        r.status === "completed" ||
+                        r.status === "viewed" ||
+                        r.status === "declined" ||
+                        r.status === "sent"
+                          ? "#fff"
+                          : "#412402",
+                    }}
+                  >
+                    {r.status === "completed" ? "Signed ✓" : r.status}
+                  </span>
+                  <Link
+                    href={`/esign?request=${r.id}`}
+                    className={styles.slideStepMeta}
+                    style={{ textDecoration: "none" }}
+                  >
+                    View
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className={styles.slideSection}>
             <h3>Checklist</h3>
             {templateStages.length ? (
@@ -293,6 +376,13 @@ export default function ProcessCardDetailPanel({ processId, onClose, onChanged }
               ✓ Complete next step
             </button>
           ) : null}
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGhost}`}
+            onClick={() => setEsignModalOpen(true)}
+          >
+            ✍️ Send for Signature
+          </button>
           <Link
             href={`/operations/processes/${processId}`}
             className={`${styles.btn} ${styles.btnGhost}`}
@@ -301,6 +391,29 @@ export default function ProcessCardDetailPanel({ processId, onClose, onChanged }
           </Link>
         </div>
       </div>
+      {esignModalOpen ? (
+        <NewSigningRequestModal
+          onClose={() => setEsignModalOpen(false)}
+          onSent={() => {
+            setEsignModalOpen(false);
+            loadEsign();
+            onChanged?.();
+          }}
+          initial={{
+            processId,
+            propertyName: processData.propertyName ?? null,
+            signers: processData.contactName || processData.contactEmail
+              ? [
+                  {
+                    name: processData.contactName ?? "",
+                    email: processData.contactEmail ?? "",
+                    role: "Owner",
+                  },
+                ]
+              : undefined,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

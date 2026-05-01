@@ -158,6 +158,14 @@ export const DEFAULT_HUB_CARDS: HubCardDef[] = [
     section: "Marketing",
     icon: "⭐",
   },
+  {
+    id: "esign",
+    title: "E-Signatures",
+    description: "Send, track, and manage digital signatures",
+    href: "/esign",
+    section: "Tools",
+    icon: "✍️",
+  },
 ];
 
 export const DEFAULT_HUB_LAYOUT: HubCardLayout[] = DEFAULT_HUB_CARDS.map((c, i) => ({
@@ -298,6 +306,7 @@ export const DEFAULT_SIDEBAR_ITEMS: SidebarNavItem[] = [
   { id: "forms", type: "link", label: "Forms", icon: "📋", href: "/forms", section: "tools" },
   { id: "marketing", type: "link", label: "Marketing", icon: "📅", href: "/marketing/calendar", section: "tools" },
   { id: "reviews", type: "link", label: "Reviews", icon: "⭐", href: "/reviews", section: "tools" },
+  { id: "esign", type: "link", label: "E-Signatures", icon: "✍️", href: "/esign", section: "tools" },
 ];
 
 export const DEFAULT_PREFS: LayoutPrefs = {

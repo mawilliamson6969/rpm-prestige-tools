@@ -590,6 +590,18 @@ import {
   putQueueEdit,
   putQueueReject,
 } from "./routes/agents.js";
+import { ensureEsignSchema } from "./lib/esign-schema.js";
+import {
+  deleteRequest as deleteEsignRequest,
+  getRequestDownload as getEsignRequestDownload,
+  getRequestStatus as getEsignRequestStatus,
+  getRequests as getEsignRequests,
+  getTemplate as getEsignTemplate,
+  getTemplates as getEsignTemplates,
+  postRequestResend as postEsignRequestResend,
+  postSend as postEsignSend,
+  postWebhook as postEsignWebhook,
+} from "./routes/esign.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -1314,6 +1326,17 @@ app.post("/reviews/:id/reply", requireAuth, postReviewReply);
 app.delete("/reviews/:id/reply", requireAuth, deleteReviewReply);
 app.post("/reviews/:id/ai-suggest", requireAuth, postReviewAiSuggest);
 
+/** E-signatures (Docuseal). Webhook is public so Docuseal can call it server-to-server. */
+app.post("/esign/webhook", postEsignWebhook);
+app.get("/esign/templates", requireAuth, getEsignTemplates);
+app.get("/esign/templates/:id", requireAuth, getEsignTemplate);
+app.post("/esign/send", requireAuth, postEsignSend);
+app.get("/esign/requests", requireAuth, getEsignRequests);
+app.get("/esign/requests/:id/status", requireAuth, getEsignRequestStatus);
+app.get("/esign/requests/:id/download", requireAuth, getEsignRequestDownload);
+app.post("/esign/requests/:id/resend", requireAuth, postEsignRequestResend);
+app.delete("/esign/requests/:id", requireAuth, deleteEsignRequest);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -1368,6 +1391,8 @@ async function start() {
       console.log("Database schema OK (user_layout_preferences).");
       await ensureReviewsSchema();
       console.log("Database schema OK (reviews + templates + automations + leaderboard).");
+      await ensureEsignSchema();
+      console.log("Database schema OK (esign_requests).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

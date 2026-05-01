@@ -1,0 +1,432 @@
+.page {
+  --navy: #1b2856;
+  --blue: #0098d0;
+  --red: #b32317;
+  --grey: #6a737b;
+  --white: #ffffff;
+  --off: #f5f5f5;
+
+  --pending: #fac775;
+  --pending-text: #412402;
+  --sent: #0098d0;
+  --sent-text: #ffffff;
+  --viewed: #8b5cf6;
+  --viewed-text: #ffffff;
+  --completed: #10b981;
+  --completed-text: #ffffff;
+  --declined: #b32317;
+  --declined-text: #ffffff;
+  --cancelled: #6a737b;
+  --cancelled-text: #ffffff;
+
+  min-height: 100vh;
+  background: var(--off);
+  color: var(--navy);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.main {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.headerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--navy);
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--grey);
+}
+
+.headerActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btnPrimary {
+  background: var(--blue);
+  color: var(--white);
+}
+.btnPrimary:hover {
+  filter: brightness(1.06);
+}
+.btnPrimary:disabled {
+  background: rgba(0, 152, 208, 0.4);
+  cursor: not-allowed;
+}
+
+.btnGhost {
+  background: var(--white);
+  color: var(--navy);
+  border: 1px solid rgba(27, 40, 86, 0.15);
+}
+.btnGhost:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.btnDanger {
+  background: var(--red);
+  color: var(--white);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--white);
+  border-radius: 12px;
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.04);
+}
+
+.filterBtn {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--white);
+  color: var(--grey);
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.filterBtn:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+.filterActive {
+  background: var(--navy) !important;
+  color: var(--white) !important;
+  border-color: var(--navy) !important;
+}
+
+.searchInput {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  background: var(--white);
+  color: var(--navy);
+  font-family: inherit;
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 2px 8px rgba(27, 40, 86, 0.04);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem 1rem;
+  align-items: start;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 14px rgba(27, 40, 86, 0.08);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.templateName {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--navy);
+}
+
+.propertyName {
+  font-size: 0.85rem;
+  color: var(--grey);
+}
+
+.signers {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--grey);
+}
+
+.signerLine {
+  display: block;
+}
+
+.dates {
+  font-size: 0.78rem;
+  color: var(--grey);
+  margin-top: 0.4rem;
+}
+
+.processLink {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.processLink:hover {
+  text-decoration: underline;
+}
+
+.cardActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-end;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.statusPending { background: var(--pending); color: var(--pending-text); }
+.statusSent { background: var(--sent); color: var(--sent-text); }
+.statusViewed { background: var(--viewed); color: var(--viewed-text); }
+.statusCompleted { background: var(--completed); color: var(--completed-text); }
+.statusDeclined { background: var(--declined); color: var(--declined-text); }
+.statusCancelled { background: var(--cancelled); color: var(--cancelled-text); }
+.statusExpired { background: var(--cancelled); color: var(--cancelled-text); }
+
+.miniBtn {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--white);
+  color: var(--navy);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.miniBtn:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.empty {
+  background: var(--white);
+  border: 1px dashed rgba(27, 40, 86, 0.2);
+  border-radius: 14px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--grey);
+}
+
+.empty h3 {
+  color: var(--navy);
+  margin: 0 0 0.5rem;
+}
+
+.empty a {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+/* ------ Modal ------ */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--white);
+  border-radius: 14px;
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 1.5rem;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.stepLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--grey);
+  margin: 0 0 0.5rem;
+}
+
+.formRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.7rem;
+}
+
+.formInput {
+  flex: 1 1 180px;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--navy);
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  gap: 0.5rem;
+}
+
+.templateGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.templateCard {
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 10px;
+  padding: 0.85rem;
+  background: var(--white);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.templateCard:hover {
+  border-color: var(--blue);
+}
+.templateCardSelected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(0, 152, 208, 0.18);
+}
+
+.templateCardName {
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 0.25rem;
+}
+
+.templateCardMeta {
+  font-size: 0.78rem;
+  color: var(--grey);
+}
+
+/* ------ Detail panel ------ */
+.detailBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 70;
+}
+
+.detailPanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100%);
+  background: var(--white);
+  z-index: 71;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.timelineStep {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--grey);
+  padding: 0.5rem;
+  border-radius: 8px;
+  background: rgba(27, 40, 86, 0.04);
+  border: 1px solid rgba(27, 40, 86, 0.06);
+}
+
+.timelineStepActive {
+  background: rgba(0, 152, 208, 0.12);
+  color: var(--navy);
+  font-weight: 700;
+  border-color: rgba(0, 152, 208, 0.35);
+}
+
+.timelineStepDone {
+  background: rgba(16, 185, 129, 0.16);
+  color: #065f46;
+  font-weight: 700;
+  border-color: rgba(16, 185, 129, 0.35);
+}
