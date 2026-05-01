@@ -10,6 +10,7 @@ type SetupStatus = {
   google: {
     configured: boolean;
     connected: boolean;
+    needsReconnect?: boolean;
     accountId: string | null;
     locationId: string | null;
     connectedAt: string | null;
@@ -233,14 +234,18 @@ export default function SetupClient() {
           Step 1 — Google Business Profile
           <span
             className={`${styles.setupStatus} ${
-              status?.google.connected
+              status?.google.needsReconnect
+                ? styles.setupStatusErr
+                : status?.google.connected
                 ? styles.setupStatusOk
                 : status?.google.configured
                 ? styles.setupStatusWarn
                 : styles.setupStatusErr
             }`}
           >
-            {status?.google.connected
+            {status?.google.needsReconnect
+              ? "⚠ Reconnect required"
+              : status?.google.connected
               ? "✓ Connected"
               : status?.google.configured
               ? "Not connected"
@@ -250,12 +255,58 @@ export default function SetupClient() {
         <p style={{ color: "#6a737b", fontSize: "0.88rem", margin: "0.5rem 0 0.85rem" }}>
           Connect so reviews sync every 30 minutes and replies can be posted from here.
         </p>
+        {status?.google.needsReconnect ? (
+          <div
+            style={{
+              padding: "0.75rem 0.95rem",
+              background: "rgba(245, 158, 11, 0.12)",
+              border: "1px solid rgba(245, 158, 11, 0.4)",
+              borderRadius: 10,
+              marginBottom: "0.85rem",
+              fontSize: "0.85rem",
+              color: "#1b2856",
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Your Google refresh token has expired.</strong> Google invalidates refresh
+            tokens after 7 days for OAuth apps in <em>Testing</em> mode. Two fixes:
+            <ol style={{ margin: "0.45rem 0 0", paddingLeft: "1.2rem" }}>
+              <li>
+                <strong>Now:</strong> click{" "}
+                <strong>Connect Google</strong> below to re-authorize (works for another 7
+                days).
+              </li>
+              <li>
+                <strong>Permanent:</strong> in{" "}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials/consent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "#0098D0" }}
+                >
+                  Google Cloud Console → OAuth consent screen
+                </a>
+                , publish your app from "Testing" to "In production" — removes the 7-day
+                expiry.
+              </li>
+            </ol>
+          </div>
+        ) : null}
         {!status?.google.configured ? (
           <p style={{ fontSize: "0.85rem", color: "#6a737b" }}>
             Ask your administrator to set <code>GOOGLE_BUSINESS_CLIENT_ID</code>,{" "}
             <code>GOOGLE_BUSINESS_CLIENT_SECRET</code>, <code>GOOGLE_BUSINESS_ACCOUNT_ID</code>, and{" "}
             <code>GOOGLE_BUSINESS_LOCATION_ID</code> in the backend environment.
           </p>
+        ) : status?.google.needsReconnect ? (
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            onClick={connectGoogle}
+            disabled={connecting}
+          >
+            {connecting ? "Redirecting…" : "🔄 Reconnect Google →"}
+          </button>
         ) : status?.google.connected ? (
           <>
             {status.google.locationId ? (

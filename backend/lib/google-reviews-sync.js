@@ -101,7 +101,20 @@ async function refreshTokens(refreshToken) {
     body,
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error_description || json.error || `Refresh failed (${res.status})`);
+  if (!res.ok) {
+    const desc = json.error_description || json.error || "";
+    const isExpired =
+      json.error === "invalid_grant" ||
+      /expired|revoked|invalid_grant/i.test(String(desc));
+    if (isExpired) {
+      const err = new Error(
+        "Google refresh token expired or revoked. OAuth apps in 'Testing' mode have a 7-day refresh token lifetime — reconnect, or publish your OAuth consent screen to remove the limit."
+      );
+      err.code = "GOOGLE_TOKEN_EXPIRED";
+      throw err;
+    }
+    throw new Error(desc || `Refresh failed (${res.status})`);
+  }
   return json;
 }
 
@@ -172,7 +185,20 @@ export async function getValidGoogleAccessToken() {
     err.code = "GOOGLE_NOT_CONNECTED";
     throw err;
   }
-  const tokens = await refreshTokens(row.refresh_token);
+  let tokens;
+  try {
+    tokens = await refreshTokens(row.refresh_token);
+  } catch (e) {
+    if (e.code === "GOOGLE_TOKEN_EXPIRED") {
+      // Mark the access token as gone so the Setup page reflects "needs reconnect".
+      const pool = getPool();
+      await pool.query(
+        `UPDATE google_auth_tokens SET access_token = NULL, token_expires_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [row.id]
+      );
+    }
+    throw e;
+  }
   const expiresIn = Number(tokens.expires_in) || 3600;
   const expiresAt = new Date(now + expiresIn * 1000);
   const pool = getPool();

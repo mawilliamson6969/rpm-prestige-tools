@@ -180,11 +180,15 @@ async function wasRecentlyRequested({ email, phone, days = 30 }) {
 export async function getReviewsSetup(_req, res) {
   try {
     const google = await getGoogleAuthRow();
+    // If access_token has been wiped (refresh failed) or refresh_token is missing,
+    // the connection needs to be re-authorized.
+    const tokensAlive = !!(google && google.access_token && google.refresh_token);
     const url = googleReviewUrl() || (await getReviewSetting("google_review_url")) || "";
     res.json({
       google: {
         configured: isGoogleConfigured(),
-        connected: !!google,
+        connected: !!google && tokensAlive,
+        needsReconnect: !!google && !tokensAlive,
         accountId: google?.account_id || process.env.GOOGLE_BUSINESS_ACCOUNT_ID || null,
         locationId: google?.location_id || process.env.GOOGLE_BUSINESS_LOCATION_ID || null,
         connectedAt: google?.connected_at || null,
@@ -283,6 +287,10 @@ export async function getGoogleAccounts(_req, res) {
       res.status(400).json({ error: e.message });
       return;
     }
+    if (e.code === "GOOGLE_TOKEN_EXPIRED") {
+      res.status(401).json({ error: e.message, code: e.code });
+      return;
+    }
     if (e.code === "GOOGLE_RATE_LIMIT") {
       res.status(429).json({ error: e.message, code: e.code });
       return;
@@ -310,6 +318,10 @@ export async function getGoogleLocationsForAccount(req, res) {
       res.status(400).json({ error: e.message });
       return;
     }
+    if (e.code === "GOOGLE_TOKEN_EXPIRED") {
+      res.status(401).json({ error: e.message, code: e.code });
+      return;
+    }
     if (e.code === "GOOGLE_RATE_LIMIT") {
       res.status(429).json({ error: e.message, code: e.code });
       return;
@@ -333,6 +345,10 @@ export async function postGoogleAutoDiscover(_req, res) {
   } catch (e) {
     if (e.code === "GOOGLE_NOT_CONNECTED") {
       res.status(400).json({ error: e.message, code: e.code });
+      return;
+    }
+    if (e.code === "GOOGLE_TOKEN_EXPIRED") {
+      res.status(401).json({ error: e.message, code: e.code });
       return;
     }
     if (e.code === "GOOGLE_RATE_LIMIT") {
