@@ -76,6 +76,15 @@ services:
     environment:
       FORCE_SSL: "false"
       HOST: sign.prestigedash.com
+      # Reuse the platform's existing SMTP creds so signing emails actually send.
+      # Docuseal expects SMTP_ADDRESS / SMTP_USERNAME / SMTP_PASSWORD; we map our existing keys.
+      SMTP_ADDRESS: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_AUTHENTICATION: ${DOCUSEAL_SMTP_AUTHENTICATION:-login}
+      SMTP_DOMAIN: ${DOCUSEAL_SMTP_DOMAIN:-prestigedash.com}
     depends_on:
       db:
         condition: service_healthy
