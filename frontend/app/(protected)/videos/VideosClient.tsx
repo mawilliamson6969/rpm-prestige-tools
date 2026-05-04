@@ -19,8 +19,33 @@ import styles from "./videos.module.css";
 
 type SortOption = "newest" | "oldest" | "most_viewed";
 type FilterOption = "all" | "my" | "shared";
-
+type HomeView = "recent" | "mine" | "shared" | "organize";
 type FolderScope = { kind: "all" } | { kind: "unfiled" } | { kind: "folder"; id: number };
+
+function statusTone(video: VideoRow) {
+  if (video.processingStatus === "error" || video.transcriptStatus === "failed") return "danger";
+  if (video.processingStatus === "ffmpeg" || video.transcriptStatus === "pending" || video.transcriptStatus === "processing") {
+    return "warning";
+  }
+  if (video.transcriptStatus === "completed") return "success";
+  return "neutral";
+}
+
+function statusLabel(video: VideoRow) {
+  if (video.processingStatus === "error") return "Processing failed";
+  if (video.processingStatus === "ffmpeg") return "Processing";
+  if (video.transcriptStatus === "processing" || video.transcriptStatus === "pending") return "Transcribing";
+  if (video.transcriptStatus === "completed") return "Transcript ready";
+  if (video.visibility === "shared") return "Shared";
+  return "Private";
+}
+
+function recordingTypeLabel(type: VideoRow["recordingType"]) {
+  if (type === "screen") return "Screen";
+  if (type === "webcam") return "Webcam";
+  if (type === "both") return "Screen + webcam";
+  return "Video";
+}
 
 export default function VideosClient() {
   const router = useRouter();
@@ -30,7 +55,7 @@ export default function VideosClient() {
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterOption>("all");
+  const [view, setView] = useState<HomeView>("recent");
   const [sort, setSort] = useState<SortOption>("newest");
   const [recorderOpen, setRecorderOpen] = useState(false);
   const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" });
@@ -42,11 +67,22 @@ export default function VideosClient() {
   const [moveMenuVideoId, setMoveMenuVideoId] = useState<number | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<number | "unfiled" | "all" | null>(null);
   const [allVideosTotal, setAllVideosTotal] = useState(0);
+  const [folderPanelOpen, setFolderPanelOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  const filter: FilterOption = useMemo(() => {
+    if (view === "mine") return "my";
+    if (view === "shared") return "shared";
+    return "all";
+  }, [view]);
+
+  useEffect(() => {
+    if (view === "recent") setSort("newest");
+  }, [view]);
 
   const loadFolders = useCallback(async () => {
     try {
@@ -66,7 +102,7 @@ export default function VideosClient() {
 
   const refreshAllVideosTotal = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl(`/videos?limit=1&offset=0&sort=newest&filter=all`), {
+      const res = await fetch(apiUrl("/videos?limit=1&offset=0&sort=newest&filter=all"), {
         headers: { ...authHeaders() },
         cache: "no-store",
       });
@@ -119,6 +155,10 @@ export default function VideosClient() {
   useEffect(() => {
     void refreshAllVideosTotal();
   }, [refreshAllVideosTotal]);
+
+  useEffect(() => {
+    if (view === "organize") setFolderPanelOpen(true);
+  }, [view]);
 
   useEffect(() => {
     if (!moveMenuVideoId) return;
@@ -241,10 +281,11 @@ export default function VideosClient() {
       return;
     }
     await loadFolders();
+    setFolderPanelOpen(true);
   };
 
-  const renderFolderNodes = (nodes: VideoFolderNode[], depth: number) => {
-    return nodes.map((node) => {
+  const renderFolderNodes = (nodes: VideoFolderNode[], depth: number) =>
+    nodes.map((node) => {
       const hasChildren = node.children && node.children.length > 0;
       const isOpen = expanded[node.id] ?? false;
       const isActive = folderScope.kind === "folder" && folderScope.id === node.id;
@@ -302,31 +343,105 @@ export default function VideosClient() {
         </div>
       );
     });
-  };
+
+  const featuredVideo = videos[0] ?? null;
+  const folderCount = flatFolders.length;
+  const transcriptReadyCount = videos.filter((video) => video.transcriptStatus === "completed").length;
+  const sharedCount = videos.filter((video) => video.visibility === "shared").length;
+
+  const viewLabel =
+    view === "mine" ? "My videos" : view === "shared" ? "Shared with me" : view === "organize" ? "Organize library" : "Recent videos";
+
+  const emptyCopy =
+    search || folderScope.kind !== "all"
+      ? "No videos match this view yet."
+      : view === "mine"
+        ? "You haven't recorded any videos yet."
+        : view === "shared"
+          ? "Nothing has been shared with you yet."
+          : "No videos yet. Record the first one to get this space moving.";
 
   return (
     <main className={styles.page}>
-      <header className={styles.pageHeader}>
-        <div>
+      <section className={styles.libraryHero}>
+        <div className={styles.libraryHeroMain}>
+          <span className={styles.heroEyebrow}>Async video workspace</span>
           <h1>Video Messages</h1>
-          <p>Record, transcribe, and share async updates with your team.</p>
+          <p>
+            Record updates fast, find the right clip without digging, and keep the library organized only when you need
+            to.
+          </p>
+          <div className={styles.heroActions}>
+            <button type="button" className={styles.btnPrimary} onClick={() => setRecorderOpen(true)}>
+              <span aria-hidden>🔴</span> Record Video
+            </button>
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              onClick={() => setFolderPanelOpen((open) => !open)}
+              aria-expanded={folderPanelOpen}
+            >
+              {folderPanelOpen ? "Hide folders" : "Organize folders"}
+            </button>
+          </div>
         </div>
-        <button type="button" className={styles.btnPrimary} onClick={() => setRecorderOpen(true)}>
-          <span aria-hidden>🔴</span> Record Video
-        </button>
-      </header>
 
-      <button
-        type="button"
-        className={`${styles.btnSecondary} ${styles.sidebarToggle}`}
-        onClick={() => setSidebarMobileOpen((o) => !o)}
-        aria-expanded={sidebarMobileOpen}
-      >
-        {sidebarMobileOpen ? "Hide folders" : "Folders"}
-      </button>
+        <div className={styles.heroStats}>
+          <article className={styles.heroStatCard}>
+            <span>Total library</span>
+            <strong>{allVideosTotal || total}</strong>
+            <small>All recorded videos</small>
+          </article>
+          <article className={styles.heroStatCard}>
+            <span>This view</span>
+            <strong>{total}</strong>
+            <small>{viewLabel}</small>
+          </article>
+          <article className={styles.heroStatCard}>
+            <span>Unfiled</span>
+            <strong>{unfiledVideoCount}</strong>
+            <small>Ready to organize</small>
+          </article>
+          <article className={styles.heroStatCard}>
+            <span>Folders</span>
+            <strong>{folderCount}</strong>
+            <small>Library structure</small>
+          </article>
+        </div>
+      </section>
+
+      <section className={styles.viewTabs} aria-label="Video views">
+        {([
+          ["recent", "Recent"],
+          ["mine", "My videos"],
+          ["shared", "Shared with me"],
+          ["organize", "Organize"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={`${styles.viewTab} ${view === id ? styles.viewTabActive : ""}`}
+            onClick={() => setView(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </section>
 
       <div className={styles.libraryLayout}>
-        <aside className={`${styles.sidebar} ${sidebarMobileOpen ? styles.sidebarMobileOpen : ""}`}>
+        <aside
+          className={`${styles.sidebar} ${folderPanelOpen ? styles.sidebarOpen : ""} ${sidebarMobileOpen ? styles.sidebarMobileOpen : ""}`}
+        >
+          <div className={styles.sidebarHeader}>
+            <div>
+              <strong>Folders</strong>
+              <p>Drag videos here when you want to tidy the library.</p>
+            </div>
+            <button type="button" className={styles.btnSecondary} onClick={createRootFolder}>
+              New
+            </button>
+          </div>
+
           <button
             type="button"
             className={`${styles.folderNavBtn} ${folderScope.kind === "all" ? styles.folderNavActive : ""} ${dragOverFolderId === "all" ? styles.folderDropTarget : ""}`}
@@ -372,12 +487,28 @@ export default function VideosClient() {
             <span className={styles.folderBadge}>{unfiledVideoCount}</span>
           </button>
           {renderFolderNodes(folders, 0)}
-          <button type="button" className={`${styles.btnPrimary}`} style={{ width: "100%", marginTop: "0.5rem" }} onClick={createRootFolder}>
-            New Folder
-          </button>
         </aside>
 
         <div className={styles.libraryMain}>
+          <div className={styles.libraryTopRow}>
+            <div>
+              <h2>{viewLabel}</h2>
+              <p className={styles.sectionSubtle}>
+                {folderScope.kind === "all"
+                  ? "Start with the videos that need attention, then organize only when it helps."
+                  : "You’re browsing a focused folder view."}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`${styles.btnSecondary} ${styles.sidebarToggle}`}
+              onClick={() => setSidebarMobileOpen((o) => !o)}
+              aria-expanded={sidebarMobileOpen}
+            >
+              {sidebarMobileOpen ? "Hide folders" : "Folders"}
+            </button>
+          </div>
+
           {folderScope.kind !== "all" ? (
             <nav className={styles.breadcrumb} aria-label="Folder path">
               <button type="button" onClick={() => setFolderScope({ kind: "all" })}>
@@ -392,102 +523,161 @@ export default function VideosClient() {
             </nav>
           ) : null}
 
-          <section className={styles.toolbar}>
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search videos by title or transcript..."
-              aria-label="Search videos"
-            />
-            <select value={filter} onChange={(e) => setFilter(e.target.value as FilterOption)} aria-label="Filter videos">
-              <option value="all">All</option>
-              <option value="my">My Videos</option>
-              <option value="shared">Shared with Me</option>
-            </select>
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortOption)} aria-label="Sort videos">
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="most_viewed">Most Viewed</option>
-            </select>
+          <section className={styles.toolbarShell}>
+            <div className={styles.toolbarMeta}>
+              <span className={styles.toolbarChip}>{transcriptReadyCount} transcript-ready</span>
+              <span className={styles.toolbarChip}>{sharedCount} shared</span>
+              <span className={styles.toolbarChip}>
+                {folderScope.kind === "folder" ? "Drop cards here to move them" : "Search title or transcript"}
+              </span>
+            </div>
+
+            <section className={styles.toolbar}>
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search videos by title or transcript..."
+                aria-label="Search videos"
+              />
+              <select value={filter} disabled aria-label="Filter videos">
+                <option value="all">All</option>
+                <option value="my">My Videos</option>
+                <option value="shared">Shared with Me</option>
+              </select>
+              <select value={sort} onChange={(e) => setSort(e.target.value as SortOption)} aria-label="Sort videos">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="most_viewed">Most Viewed</option>
+              </select>
+            </section>
           </section>
 
+          {!loading && featuredVideo ? (
+            <Link href={`/videos/${featuredVideo.id}`} className={styles.featuredCard}>
+              <div className={styles.featuredMedia}>
+                <img
+                  src={apiUrlWithAuthQuery(`/videos/${featuredVideo.id}/thumbnail`, token)}
+                  alt=""
+                  className={styles.featuredThumb}
+                  loading="lazy"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = "/icons/icon-512.png";
+                  }}
+                />
+                <span className={styles.featuredPlay}>▶ Watch</span>
+              </div>
+              <div className={styles.featuredBody}>
+                <div className={styles.featuredMetaRow}>
+                  <span className={`${styles.statusBadge} ${styles[`status${statusTone(featuredVideo)[0].toUpperCase()}${statusTone(featuredVideo).slice(1)}`]}`}>
+                    {statusLabel(featuredVideo)}
+                  </span>
+                  <span>{recordingTypeLabel(featuredVideo.recordingType)}</span>
+                  <span>{formatDuration(featuredVideo.durationSeconds)}</span>
+                </div>
+                <h3>{featuredVideo.title}</h3>
+                <p>{featuredVideo.description || "No description yet. Open the video to add context and comments."}</p>
+                <div className={styles.featuredFooter}>
+                  <span className={styles.metaRow}>
+                    <span className={styles.avatar}>{avatarInitials(featuredVideo.recordedByName)}</span>
+                    <span>{featuredVideo.recordedByName}</span>
+                  </span>
+                  <span className={styles.metaInfo}>
+                    {relativeTime(featuredVideo.createdAt)} · {featuredVideo.viewsCount} views
+                    {user?.id === featuredVideo.recordedBy ? " · You" : ""}
+                  </span>
+                </div>
+              </div>
+            </Link>
+          ) : null}
+
           {loading ? <div className={styles.emptyState}>Loading videos...</div> : null}
-          {!loading && videos.length === 0 ? <div className={styles.emptyState}>No videos found.</div> : null}
+          {!loading && videos.length === 0 ? <div className={styles.emptyState}>{emptyCopy}</div> : null}
 
           <section className={styles.videoGrid}>
-            {videos.map((video) => (
-              <div
-                key={video.id}
-                className={styles.videoCardWrap}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("text/video-id", String(video.id));
-                  e.dataTransfer.effectAllowed = "move";
-                }}
-              >
-                <div className={styles.cardMenuRow}>
-                  <div className={styles.cardMenuHost} data-video-move-menu>
-                    <button
-                      type="button"
-                      className={styles.btnKebab}
-                      aria-label="Video actions"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setMoveMenuVideoId((id) => (id === video.id ? null : video.id));
-                      }}
-                    >
-                      ⋮
-                    </button>
-                    {moveMenuVideoId === video.id ? (
-                      <div className={styles.moveMenu} role="menu" data-video-move-menu>
-                        <div style={{ padding: "0.25rem 0.65rem", fontSize: "0.75rem", color: "#6a737b" }}>Move to folder</div>
-                        <button type="button" onClick={() => moveVideoToFolder(video.id, null)}>
-                          Unfiled
-                        </button>
-                        {flatFolders.map((f) => (
-                          <button
-                            key={f.id}
-                            type="button"
-                            style={{ paddingLeft: `${0.75 + f.depth * 0.65}rem` }}
-                            onClick={() => moveVideoToFolder(video.id, f.id)}
-                          >
-                            {f.name}
+            {videos.map((video) => {
+              const tone = statusTone(video);
+              const toneClass = styles[`status${tone[0].toUpperCase()}${tone.slice(1)}`];
+              return (
+                <div
+                  key={video.id}
+                  className={styles.videoCardWrap}
+                  draggable={folderPanelOpen || view === "organize"}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/video-id", String(video.id));
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                >
+                  <div className={styles.cardMenuRow}>
+                    <div className={styles.cardMenuHost} data-video-move-menu>
+                      <button
+                        type="button"
+                        className={styles.btnKebab}
+                        aria-label="Video actions"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setMoveMenuVideoId((id) => (id === video.id ? null : video.id));
+                        }}
+                      >
+                        ⋮
+                      </button>
+                      {moveMenuVideoId === video.id ? (
+                        <div className={styles.moveMenu} role="menu" data-video-move-menu>
+                          <div className={styles.menuLabel}>Move to folder</div>
+                          <button type="button" onClick={() => moveVideoToFolder(video.id, null)}>
+                            Unfiled
                           </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <Link href={`/videos/${video.id}`} className={styles.videoCard}>
-                  <div className={styles.thumbWrap}>
-                    <img
-                      src={apiUrlWithAuthQuery(`/videos/${video.id}/thumbnail`, token)}
-                      alt=""
-                      className={styles.thumb}
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = "/icons/icon-512.png";
-                      }}
-                    />
-                    <span className={styles.playBadge}>▶</span>
-                    <span className={styles.durationBadge}>{formatDuration(video.durationSeconds)}</span>
-                  </div>
-                  <div className={styles.cardBody}>
-                    <h3>{video.title}</h3>
-                    <div className={styles.metaRow}>
-                      <span className={styles.avatar}>{avatarInitials(video.recordedByName)}</span>
-                      <span>{video.recordedByName}</span>
-                      {video.visibility === "shared" ? <span title="Shared">🔗</span> : null}
+                          {flatFolders.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              style={{ paddingLeft: `${0.75 + f.depth * 0.65}rem` }}
+                              onClick={() => moveVideoToFolder(video.id, f.id)}
+                            >
+                              {f.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                    <p className={styles.metaInfo}>
-                      {relativeTime(video.createdAt)} · {video.viewsCount} views
-                      {user?.id === video.recordedBy ? " · You" : ""}
-                    </p>
                   </div>
-                </Link>
-              </div>
-            ))}
+                  <Link href={`/videos/${video.id}`} className={styles.videoCard}>
+                    <div className={styles.thumbWrap}>
+                      <img
+                        src={apiUrlWithAuthQuery(`/videos/${video.id}/thumbnail`, token)}
+                        alt=""
+                        className={styles.thumb}
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = "/icons/icon-512.png";
+                        }}
+                      />
+                      <span className={styles.playBadge}>▶</span>
+                      <span className={styles.durationBadge}>{formatDuration(video.durationSeconds)}</span>
+                    </div>
+                    <div className={styles.cardBody}>
+                      <div className={styles.cardBadgeRow}>
+                        <span className={`${styles.statusBadge} ${toneClass}`}>{statusLabel(video)}</span>
+                        <span className={styles.cardTypeBadge}>{recordingTypeLabel(video.recordingType)}</span>
+                      </div>
+                      <h3>{video.title}</h3>
+                      <p className={styles.cardDescription}>
+                        {video.description || "Open the video to add a short summary and make it easier to scan later."}
+                      </p>
+                      <div className={styles.metaRow}>
+                        <span className={styles.avatar}>{avatarInitials(video.recordedByName)}</span>
+                        <span>{video.recordedByName}</span>
+                        {video.visibility === "shared" ? <span title="Shared">🔗</span> : null}
+                      </div>
+                      <p className={styles.metaInfo}>
+                        {relativeTime(video.createdAt)} · {video.viewsCount} views
+                        {user?.id === video.recordedBy ? " · You" : ""}
+                      </p>
+                    </div>
+                  </Link>
+                </div>
+              );
+            })}
           </section>
 
           <footer className={styles.libraryFooter}>{total} video(s) in this view</footer>

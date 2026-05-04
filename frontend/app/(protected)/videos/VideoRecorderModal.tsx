@@ -7,20 +7,25 @@ import { useAuth } from "../../../context/AuthContext";
 import styles from "./videos.module.css";
 
 type RecordingMode = "screen" | "webcam" | "both";
-
 type UploadPhase = "idle" | "uploading" | "processing" | "transcribing" | "error";
+type RecorderStep = "setup" | "record" | "review";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onUploaded: (videoId: number) => void;
-  /** When set, new uploads are filed under this folder */
   defaultFolderId?: number | null;
 };
 
 function defaultTitle() {
   const now = new Date();
   return `Video from ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function modeTitle(mode: RecordingMode) {
+  if (mode === "screen") return "Screen only";
+  if (mode === "webcam") return "Webcam only";
+  return "Screen + webcam";
 }
 
 async function mixAudioStreams(streams: MediaStream[]): Promise<MediaStreamTrack | null> {
@@ -41,8 +46,7 @@ function pickRecorderMime(): { mimeType: string; bits: number } {
   if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(preferred)) {
     return { mimeType: preferred, bits: 1_500_000 };
   }
-  const fallback = "video/webm";
-  return { mimeType: fallback, bits: 1_500_000 };
+  return { mimeType: "video/webm", bits: 1_500_000 };
 }
 
 export default function VideoRecorderModal({ open, onClose, onUploaded, defaultFolderId = null }: Props) {
@@ -56,6 +60,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
   const meterAnimationRef = useRef<number | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [step, setStep] = useState<RecorderStep>("setup");
   const [mode, setMode] = useState<RecordingMode>("screen");
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [micId, setMicId] = useState<string>("");
@@ -118,6 +123,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
     if (!open) {
       clearPoll();
       stopEverything();
+      setStep("setup");
       setIsRecording(false);
       setIsPaused(false);
       setSeconds(0);
@@ -129,6 +135,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
       setTitle(defaultTitle());
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       setBlobUrl("");
+      setAudioLevel(0);
     }
   }, [open, stopEverything, blobUrl, clearPoll]);
 
@@ -256,9 +263,11 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
         setBlobUrl(nextUrl);
         setIsRecording(false);
         setIsPaused(false);
+        setStep("review");
         stopEverything();
       };
       recorder.start(1000);
+      setStep("record");
       setIsRecording(true);
       setIsPaused(false);
 
@@ -271,6 +280,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start recording.");
       stopEverything();
+      setStep("setup");
     }
   }, [blobUrl, buildRecordingStream, startAudioMeter, stopEverything]);
 
@@ -304,6 +314,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
     setError(null);
     setUploadPhase("idle");
     setUploadProgress(0);
+    setStep("setup");
   }, [blobUrl]);
 
   const pollUntilReady = useCallback(
@@ -330,14 +341,9 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
             pollTimerRef.current = setTimeout(poll, 1000);
             return;
           }
-          if (v.transcriptStatus === "processing") {
+          if (v.transcriptStatus === "processing" || v.transcriptStatus === "pending") {
             setUploadPhase("transcribing");
             pollTimerRef.current = setTimeout(poll, 1200);
-            return;
-          }
-          if (v.transcriptStatus === "pending") {
-            setUploadPhase("transcribing");
-            pollTimerRef.current = setTimeout(poll, 1000);
             return;
           }
           if (
@@ -420,98 +426,196 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
 
   const pipelineBusy = uploadPhase === "uploading" || uploadPhase === "processing" || uploadPhase === "transcribing";
 
+  const phaseMessage =
+    uploadPhase === "uploading"
+      ? `Uploading ${uploadProgress}%`
+      : uploadPhase === "processing"
+        ? "Processing video"
+        : uploadPhase === "transcribing"
+          ? "Generating transcript"
+          : uploadPhase === "error"
+            ? "Upload failed"
+            : "Ready to publish";
+
   if (!open) return null;
 
   return (
     <div className={styles.recorderOverlay}>
       <div className={styles.recorderShell}>
         <div className={styles.recorderHeader}>
-          <h2>Record Video Message</h2>
-          <button type="button" onClick={onClose} className={`${styles.btnSecondary}`} disabled={pipelineBusy}>
+          <div>
+            <h2>Record Video Message</h2>
+            <p className={styles.recorderSubtle}>Capture, review, and publish in one guided flow.</p>
+          </div>
+          <button type="button" onClick={onClose} className={styles.btnSecondary} disabled={pipelineBusy}>
             Close
           </button>
         </div>
 
-        {!blob ? (
-          <>
-            <div className={styles.modeRow}>
-              {(["screen", "webcam", "both"] as RecordingMode[]).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`${styles.modeButton} ${mode === value ? styles.modeActive : ""}`}
-                  onClick={() => setMode(value)}
-                  disabled={isRecording}
-                >
-                  {value === "screen" ? "Screen" : value === "webcam" ? "Webcam" : "Screen + Webcam"}
-                </button>
-              ))}
+        <div className={styles.stepper}>
+          {([
+            ["setup", "1. Setup"],
+            ["record", "2. Record"],
+            ["review", "3. Review"],
+          ] as const).map(([value, label]) => (
+            <div
+              key={value}
+              className={`${styles.stepPill} ${step === value ? styles.stepPillActive : ""} ${
+                (step === "record" && value === "setup") || (step === "review" && value !== "review") ? styles.stepPillDone : ""
+              }`}
+            >
+              {label}
             </div>
-            <div className={styles.recorderBody}>
-              <div className={styles.previewPane}>
-                <video
-                  ref={previewRef}
-                  className={styles.previewVideo}
-                  autoPlay
-                  muted
-                  playsInline
-                  controls={false}
-                  poster="/icons/icon-512.png"
-                />
-              </div>
-              <div className={styles.recorderControls}>
-                <label>
-                  Microphone
-                  <select value={micId} onChange={(e) => setMicId(e.target.value)} disabled={isRecording}>
-                    {microphones.map((mic) => (
-                      <option key={mic.deviceId} value={mic.deviceId}>
-                        {mic.label || "Microphone"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className={styles.audioMeter}>
-                  <div className={styles.audioMeterFill} style={{ width: `${audioLevel}%` }} />
-                </div>
-                <div className={`${styles.timer} ${timerTone}`}>⏺ {formatDuration(seconds)}</div>
-                {!isRecording ? (
-                  <button type="button" className={styles.btnPrimary} onClick={startRecording}>
-                    Start Recording
+          ))}
+        </div>
+
+        {step === "setup" ? (
+          <div className={styles.setupGrid}>
+            <div className={styles.setupCard}>
+              <h3>Choose what to record</h3>
+              <div className={styles.modeRow}>
+                {(["screen", "webcam", "both"] as RecordingMode[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`${styles.modeButton} ${mode === value ? styles.modeActive : ""}`}
+                    onClick={() => setMode(value)}
+                  >
+                    {value === "screen" ? "Screen" : value === "webcam" ? "Webcam" : "Screen + Webcam"}
                   </button>
-                ) : (
-                  <div className={styles.recordingActions}>
-                    <button type="button" className={styles.btnSecondary} onClick={togglePause}>
-                      {isPaused ? "Resume" : "Pause"}
-                    </button>
-                    <button type="button" className={styles.btnDanger} onClick={stopRecording}>
-                      Stop Recording
-                    </button>
-                  </div>
-                )}
-                {error ? <p className={styles.errorText}>{error}</p> : null}
+                ))}
+              </div>
+
+              <label className={styles.formStack}>
+                <span>Microphone</span>
+                <select value={micId} onChange={(e) => setMicId(e.target.value)}>
+                  {microphones.length === 0 ? <option value="">No microphone found</option> : null}
+                  {microphones.map((mic) => (
+                    <option key={mic.deviceId} value={mic.deviceId}>
+                      {mic.label || "Microphone"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className={styles.audioMeter}>
+                <div className={styles.audioMeterFill} style={{ width: `${audioLevel}%` }} />
+              </div>
+
+              <div className={styles.setupTips}>
+                <strong>Before you start</strong>
+                <ul className={styles.setupList}>
+                  <li>Close noisy tabs and notifications.</li>
+                  <li>Keep the update short and title it clearly.</li>
+                  <li>{defaultFolderId ? "This recording will save into the current folder." : "You can organize it after publishing."}</li>
+                </ul>
               </div>
             </div>
-          </>
-        ) : (
+
+            <div className={styles.setupSummaryCard}>
+              <span className={styles.summaryEyebrow}>Ready to capture</span>
+              <h3>{modeTitle(mode)}</h3>
+              <p>
+                {mode === "screen"
+                  ? "Best for walkthroughs, process demos, and task handoffs."
+                  : mode === "webcam"
+                    ? "Best for quick personal updates or announcements."
+                    : "Best when you want the screen context plus a face-to-face feel."}
+              </p>
+              <div className={styles.summaryRows}>
+                <div>
+                  <span>Destination</span>
+                  <strong>{defaultFolderId ? "Current folder" : "Main video library"}</strong>
+                </div>
+                <div>
+                  <span>Microphone</span>
+                  <strong>{microphones.find((mic) => mic.deviceId === micId)?.label || "Default mic"}</strong>
+                </div>
+              </div>
+              <button type="button" className={styles.btnPrimary} onClick={startRecording}>
+                Start Recording
+              </button>
+              {error ? <p className={styles.errorText}>{error}</p> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {step === "record" ? (
+          <div className={styles.recorderStage}>
+            <div className={styles.previewPane}>
+              <video
+                ref={previewRef}
+                className={styles.previewVideo}
+                autoPlay
+                muted
+                playsInline
+                controls={false}
+                poster="/icons/icon-512.png"
+              />
+            </div>
+            <div className={styles.recorderControls}>
+              <div className={styles.liveBadgeRow}>
+                <span className={styles.liveBadge}>{isPaused ? "Paused" : "Recording live"}</span>
+                <span className={styles.recordingModeLabel}>{modeTitle(mode)}</span>
+              </div>
+              <div className={`${styles.timer} ${timerTone}`}>⏺ {formatDuration(seconds)}</div>
+              <div className={styles.audioMeter}>
+                <div className={styles.audioMeterFill} style={{ width: `${audioLevel}%` }} />
+              </div>
+              <p className={styles.recorderSubtle}>
+                {mode === "screen"
+                  ? "Share your screen, talk through the work, then stop when you’re ready to review."
+                  : mode === "webcam"
+                    ? "Speak naturally like a quick async standup or handoff."
+                    : "Keep the screen as the main story and let the webcam support it."}
+              </p>
+              <div className={styles.recordingActions}>
+                <button type="button" className={styles.btnSecondary} onClick={togglePause}>
+                  {isPaused ? "Resume" : "Pause"}
+                </button>
+                <button type="button" className={styles.btnDanger} onClick={stopRecording}>
+                  Stop Recording
+                </button>
+              </div>
+              {error ? <p className={styles.errorText}>{error}</p> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {step === "review" ? (
           <div className={styles.reviewPane}>
             <video src={blobUrl} controls className={styles.reviewVideo} />
             <div className={styles.reviewForm}>
-              <label>
-                Title
+              <div className={styles.publishSummary}>
+                <span className={styles.summaryEyebrow}>Ready to publish</span>
+                <strong>{phaseMessage}</strong>
+                <small>{formatDuration(seconds)} · {modeTitle(mode)}</small>
+              </div>
+
+              <label className={styles.formStack}>
+                <span>Title</span>
                 <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} disabled={pipelineBusy} />
               </label>
-              <label>
-                Description
+
+              <label className={styles.formStack}>
+                <span>Description</span>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} disabled={pipelineBusy} />
               </label>
+
+              <div className={styles.reviewMeta}>
+                <span className={styles.toolbarChip}>{modeTitle(mode)}</span>
+                <span className={styles.toolbarChip}>{defaultFolderId ? "Saving to current folder" : "Saving to library"}</span>
+              </div>
+
               <div className={styles.reviewActions}>
                 <button type="button" className={styles.btnSecondary} onClick={reRecord} disabled={pipelineBusy}>
-                  Re-record
+                  Record Again
                 </button>
                 <button type="button" className={styles.btnPrimary} onClick={saveAndUpload} disabled={pipelineBusy}>
-                  Save & Upload
+                  Publish Video
                 </button>
               </div>
+
               {uploadPhase === "uploading" ? (
                 <>
                   <p className={styles.progressLabel}>Uploading... {uploadProgress}%</p>
@@ -521,11 +625,11 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
                 </>
               ) : null}
               {uploadPhase === "processing" ? <p className={styles.phaseMessage}>Processing video...</p> : null}
-              {uploadPhase === "transcribing" ? <p className={styles.phaseMessage}>Transcribing...</p> : null}
+              {uploadPhase === "transcribing" ? <p className={styles.phaseMessage}>Generating transcript...</p> : null}
               {uploadPhase === "error" && error ? <p className={styles.errorText}>{error}</p> : null}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
