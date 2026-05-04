@@ -419,6 +419,19 @@ import {
   putProcessStepSkip,
 } from "./routes/processes.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
+import { runAutopilotCheck } from "./lib/autopilot-engine.js";
+import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
+import {
+  deleteAutopilotRule,
+  getAutopilotRuleLog,
+  getAutopilotRules,
+  getAutopilotSummary,
+  postAutopilotRule,
+  postAutopilotRuleRunNow,
+  postAutopilotRuleTest,
+  putAutopilotRule,
+  putAutopilotRuleEnabled,
+} from "./routes/autopilot.js";
 import {
   getPropertyContextById,
   getPropertyContextByName,
@@ -1238,6 +1251,23 @@ app.post("/processes/:processId/send-email", requireAuth, postProcessSendEmail);
 app.post("/processes/:processId/send-text", requireAuth, postProcessSendText);
 app.post("/processes/:processId/send-template-preview", requireAuth, postProcessTemplatePreview);
 
+/** Autopilot rules (Phase 4) — auto-start processes on schedule with conditions */
+app.get("/autopilot/summary", requireAuth, getAutopilotSummary);
+app.get("/processes/templates/:templateId/autopilot-rules", requireAuth, getAutopilotRules);
+app.post(
+  "/processes/templates/:templateId/autopilot-rules",
+  requireAuth,
+  requireAdminRole,
+  postAutopilotRule
+);
+app.put("/autopilot-rules/:id", requireAuth, requireAdminRole, putAutopilotRule);
+app.delete("/autopilot-rules/:id", requireAuth, requireAdminRole, deleteAutopilotRule);
+app.put("/autopilot-rules/:id/enable", requireAuth, requireAdminRole, putAutopilotRuleEnabled(true));
+app.put("/autopilot-rules/:id/disable", requireAuth, requireAdminRole, putAutopilotRuleEnabled(false));
+app.post("/autopilot-rules/:id/test", requireAuth, postAutopilotRuleTest);
+app.post("/autopilot-rules/:id/run-now", requireAuth, requireAdminRole, postAutopilotRuleRunNow);
+app.get("/autopilot-rules/:id/log", requireAuth, getAutopilotRuleLog);
+
 /** Property context — aggregates cached AppFolio/Boom/LeadSimple/RentEngine data */
 app.get("/property-context/search", requireAuth, getPropertySearch);
 app.get("/property-context/by-name/:propertyName", requireAuth, getPropertyContextByName);
@@ -1518,6 +1548,22 @@ async function start() {
       );
     });
     console.log("Scheduled process automation delay check: 0 * * * * (hourly).");
+
+    // Phase 4: autopilot rule firing every minute and scheduled email/SMS
+    // sends every 5 minutes.
+    cron.schedule("* * * * *", () => {
+      runAutopilotCheck().catch((e) =>
+        console.error("[autopilot cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled autopilot check: * * * * * (every minute).");
+
+    cron.schedule("*/5 * * * *", () => {
+      executeScheduledSteps().catch((e) =>
+        console.error("[scheduled-steps cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled step executor: */5 * * * * (every 5 minutes).");
 
     cron.schedule("15 * * * *", () => {
       runTimeBasedConditions().catch((e) =>

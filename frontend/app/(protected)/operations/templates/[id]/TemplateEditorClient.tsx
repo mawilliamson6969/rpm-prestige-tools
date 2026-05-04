@@ -12,6 +12,7 @@ import DueDateEditor from "../../DueDateEditor";
 import TaskTemplatesManager from "../../TaskTemplatesManager";
 import { EmailTemplatesPanel, RolesPanel, TextTemplatesPanel } from "./SettingsPanels";
 import StepMessagingConfig from "./StepMessagingConfig";
+import AutopilotPanel from "./AutopilotPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
@@ -261,6 +262,7 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
     | "roles"
     | "email_templates"
     | "text_templates"
+    | "autopilot"
   >("steps");
   const [stages, setStages] = useState<TemplateStage[]>([]);
   const [templateFields, setTemplateFields] = useState<CustomFieldDefinition[]>([]);
@@ -737,6 +739,13 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           </button>
           <button
             type="button"
+            className={`${styles.tabBtn} ${activeTab === "autopilot" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("autopilot")}
+          >
+            Autopilot
+          </button>
+          <button
+            type="button"
             className={`${styles.tabBtn} ${activeTab === "board_settings" ? styles.tabBtnActive : ""}`}
             onClick={() => setActiveTab("board_settings")}
           >
@@ -747,6 +756,7 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
         {activeTab === "roles" ? <RolesPanel templateId={template.id} users={users} /> : null}
         {activeTab === "email_templates" ? <EmailTemplatesPanel templateId={template.id} /> : null}
         {activeTab === "text_templates" ? <TextTemplatesPanel templateId={template.id} /> : null}
+        {activeTab === "autopilot" ? <AutopilotPanel template={template} stages={stages} /> : null}
 
         {activeTab === "task_templates" ? (
           <TaskTemplatesManager processTemplateId={template.id} users={users} />
