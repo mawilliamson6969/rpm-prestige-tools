@@ -12,6 +12,7 @@ import {
 } from "./ProcessExtraPanels";
 import StageStepper from "./StageStepper";
 import ProcessFieldsGrid from "./ProcessFieldsGrid";
+import AiSuggestionsPanel, { type AppliedAction } from "./AiSuggestionsPanel";
 import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
@@ -288,6 +289,22 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                 currentTemplateStageId={processData.currentStageId ?? null}
               />
             ) : null}
+
+            <AiSuggestionsPanel
+              processId={processData.id}
+              onAction={(a: AppliedAction) => {
+                if (a.action === "stage_changed" || a.action === "reassigned") {
+                  load();
+                  return;
+                }
+                if (
+                  a.action === "open_email_composer" ||
+                  a.action === "open_text_composer"
+                ) {
+                  setActiveTab("communications");
+                }
+              }}
+            />
 
             <ProcessFieldsGrid processId={processData.id} />
 
