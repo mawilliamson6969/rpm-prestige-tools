@@ -257,6 +257,55 @@ export type ProcessAttachment = {
   createdAt: string;
 };
 
+export type AiSuggestionType =
+  | "follow_up"
+  | "escalate"
+  | "reassign"
+  | "auto_create"
+  | "reminder"
+  | "insight";
+
+export type AiSuggestionStatus = "pending" | "accepted" | "dismissed" | "expired";
+
+export type AiSuggestionActionType =
+  | "send_email"
+  | "send_text"
+  | "change_stage"
+  | "reassign"
+  | "create_process"
+  | null;
+
+export type AiSuggestion = {
+  id: number;
+  processId: number;
+  suggestionType: AiSuggestionType;
+  title: string;
+  description: string;
+  actionType: AiSuggestionActionType;
+  actionPayload: Record<string, unknown> | null;
+  status: AiSuggestionStatus;
+  confidence: number | null;
+  respondedBy: number | null;
+  respondedAt: string | null;
+  createdAt: string;
+  // Joined fields on the global feed
+  processName?: string;
+  propertyName?: string | null;
+  templateId?: number | null;
+  templateName?: string | null;
+  templateIcon?: string | null;
+  stageName?: string | null;
+  targetCompletion?: string | null;
+};
+
+export type AiSuggestionStats = {
+  pendingCount: number;
+  acceptedToday: number;
+  dismissedToday: number;
+  acceptRate: number | null;
+  topSuggestionTypes: Array<{ type: string; count: number }>;
+};
+
 export type AnalyticsKpis = {
   activeProcesses: number;
   overdueProcesses: number;

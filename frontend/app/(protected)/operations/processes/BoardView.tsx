@@ -168,6 +168,7 @@ export default function BoardView({
   const [dragCardId, setDragCardId] = useState<number | null>(null);
   const [hoverStage, setHoverStage] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [suggestionCounts, setSuggestionCounts] = useState<Record<number, number>>({});
 
   useEffect(() => {
     onBulkChange?.(Array.from(selectedIds));
@@ -195,6 +196,30 @@ export default function BoardView({
         setStages(incomingStages);
         setByStage(body.processes || {});
         onStagesLoaded?.(incomingStages);
+        // Fan out to AI suggestion counts so we can decorate cards.
+        const allIds: number[] = [];
+        const procs = body.processes || {};
+        for (const arr of Object.values(procs)) {
+          for (const c of arr as BoardCard[]) allIds.push(c.id);
+        }
+        if (allIds.length) {
+          try {
+            const cRes = await fetch(
+              apiUrl(
+                `/process-suggestions/counts?processIds=${allIds.join(",")}`
+              ),
+              { headers: { ...authHeaders() }, cache: "no-store" }
+            );
+            if (cRes.ok) {
+              const cBody = await cRes.json();
+              setSuggestionCounts(cBody.counts || {});
+            }
+          } catch {
+            /* ignore */
+          }
+        } else {
+          setSuggestionCounts({});
+        }
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Load failed");
       } finally {
@@ -348,6 +373,27 @@ export default function BoardView({
                             }
                           />
                         </span>
+                        {suggestionCounts[c.id] ? (
+                          <span
+                            title={`${suggestionCounts[c.id]} AI suggestion${
+                              suggestionCounts[c.id] === 1 ? "" : "s"
+                            }`}
+                            style={{
+                              position: "absolute",
+                              top: 8,
+                              right: 26,
+                              background: "rgba(108, 92, 246, 0.15)",
+                              color: "#6C5CE7",
+                              fontSize: "0.66rem",
+                              fontWeight: 700,
+                              padding: "0.1rem 0.4rem",
+                              borderRadius: 999,
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            ✨ {suggestionCounts[c.id]}
+                          </span>
+                        ) : null}
                         <h4 className={styles.processCardTitle} style={{ paddingRight: "1rem" }}>
                           {c.templateIcon ? `${c.templateIcon} ` : ""}
                           {c.title}

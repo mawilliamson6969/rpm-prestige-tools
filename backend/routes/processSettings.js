@@ -14,6 +14,11 @@ import {
   sendProcessEmail,
   sendProcessSMS,
 } from "../lib/process-messaging.js";
+import { executeSuggestion } from "../lib/ai-suggestion-executor.js";
+import {
+  getSuggestionStats,
+  runAIAnalysis,
+} from "../lib/ai-suggestions-engine.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1312,10 +1317,128 @@ export async function putProcessSuggestionAccept(req, res) {
       res.status(404).json({ error: "Suggestion not found." });
       return;
     }
-    res.json({ suggestion: mapSuggestion(row) });
+    let actionResult = { action: "no_action" };
+    try {
+      actionResult = await executeSuggestion(id, req.user?.id ?? null);
+    } catch (err) {
+      console.warn("[ai-suggestions] execute on accept failed:", err.message);
+      actionResult = { action: "error", error: err.message || String(err) };
+    }
+    res.json({ suggestion: mapSuggestion(row), ...actionResult });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not accept suggestion." });
+  }
+}
+
+/* ---------- AI suggestions: pending feed, stats, analyze-now ---------- */
+
+export async function getPendingSuggestionsFeed(req, res) {
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(req.query.limit, 10) || 30)
+  );
+  const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+  const type = typeof req.query.type === "string" ? req.query.type.trim() : "";
+  const sort = typeof req.query.sort === "string" ? req.query.sort : "newest";
+  try {
+    const pool = getPool();
+    const wheres = ["s.status = 'pending'"];
+    const params = [];
+    let n = 1;
+    if (type && type !== "all") {
+      wheres.push(`s.suggestion_type = $${n++}`);
+      params.push(type);
+    }
+    const orderBy =
+      sort === "confidence"
+        ? "s.confidence DESC NULLS LAST, s.created_at DESC"
+        : sort === "overdue"
+        ? "p.target_completion ASC NULLS LAST, s.created_at DESC"
+        : "s.created_at DESC";
+    params.push(limit, offset);
+    const limitIdx = n;
+    const offsetIdx = n + 1;
+    const { rows } = await pool.query(
+      `SELECT s.*, p.name AS process_name, p.property_name, p.target_completion,
+              p.template_id, t.name AS template_name, t.icon AS template_icon,
+              cs.name AS stage_name
+       FROM process_ai_suggestions s
+       JOIN processes p ON p.id = s.process_id
+       LEFT JOIN process_templates t ON t.id = p.template_id
+       LEFT JOIN process_template_stages cs ON cs.id = p.current_stage_id
+       WHERE ${wheres.join(" AND ")}
+       ORDER BY ${orderBy}
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params
+    );
+    res.json({
+      suggestions: rows.map((r) => ({
+        ...mapSuggestion(r),
+        processName: r.process_name,
+        propertyName: r.property_name,
+        templateId: r.template_id,
+        templateName: r.template_name,
+        templateIcon: r.template_icon,
+        stageName: r.stage_name,
+        targetCompletion: r.target_completion,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load pending suggestions." });
+  }
+}
+
+export async function getSuggestionsStats(_req, res) {
+  try {
+    const stats = await getSuggestionStats();
+    res.json(stats);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load suggestion stats." });
+  }
+}
+
+export async function postSuggestionsAnalyzeNow(_req, res) {
+  try {
+    const result = await runAIAnalysis({ force: true });
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Analysis failed." });
+  }
+}
+
+/**
+ * Returns the count of pending suggestions per process for a list of process
+ * ids. Used by the board view to draw the sparkle indicator without making
+ * one request per card.
+ */
+export async function getSuggestionCountsByProcess(req, res) {
+  const ids = (typeof req.query.processIds === "string" ? req.query.processIds : "")
+    .split(",")
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n));
+  if (!ids.length) {
+    res.json({ counts: {} });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT process_id, COUNT(*)::int AS c
+       FROM process_ai_suggestions
+       WHERE status = 'pending' AND process_id = ANY($1::int[])
+       GROUP BY process_id`,
+      [ids]
+    );
+    const counts = {};
+    for (const r of rows) counts[r.process_id] = r.c;
+    res.json({ counts });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load suggestion counts." });
   }
 }
 

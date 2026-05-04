@@ -421,6 +421,8 @@ import {
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
+import { runAIAnalysis } from "./lib/ai-suggestions-engine.js";
+import { sendDailyDigest } from "./lib/ai-daily-digest.js";
 import {
   deleteAutopilotRule,
   getAutopilotRuleLog,
@@ -523,7 +525,11 @@ import {
   postProcessSendText,
   postProcessTemplatePreview,
   postProcessTypeRole,
+  postSuggestionsAnalyzeNow,
   postTextTemplate,
+  getPendingSuggestionsFeed,
+  getSuggestionsStats,
+  getSuggestionCountsByProcess,
   processAttachmentMiddleware,
   putEmailTemplate,
   putProcessActivityPin,
@@ -1254,6 +1260,17 @@ app.get("/processes/:processId/suggestions", requireAuth, getProcessSuggestions)
 app.put("/processes/process-suggestions/:id/accept", requireAuth, putProcessSuggestionAccept);
 app.put("/processes/process-suggestions/:id/dismiss", requireAuth, putProcessSuggestionDismiss);
 
+/** AI Suggestions feed + stats + manual analysis (Phase 6) */
+app.get("/process-suggestions/pending", requireAuth, getPendingSuggestionsFeed);
+app.get("/process-suggestions/stats", requireAuth, getSuggestionsStats);
+app.get("/process-suggestions/counts", requireAuth, getSuggestionCountsByProcess);
+app.post(
+  "/process-suggestions/analyze-now",
+  requireAuth,
+  requireAdminRole,
+  postSuggestionsAnalyzeNow
+);
+
 app.get("/processes/:processId/available-recipients", requireAuth, getProcessAvailableRecipients);
 app.post("/processes/:processId/send-email", requireAuth, postProcessSendEmail);
 app.post("/processes/:processId/send-text", requireAuth, postProcessSendText);
@@ -1580,6 +1597,26 @@ async function start() {
       );
     });
     console.log("Scheduled step executor: */5 * * * * (every 5 minutes).");
+
+    // Phase 6: AI suggestions every 15 minutes (cost-aware skip when no recent activity).
+    cron.schedule("*/15 * * * *", () => {
+      runAIAnalysis().catch((e) =>
+        console.error("[ai-suggestions cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled AI suggestions analysis: */15 * * * * (every 15 minutes).");
+
+    // Phase 6: AI daily digest at 6:30 AM Central.
+    cron.schedule(
+      "30 6 * * *",
+      () => {
+        sendDailyDigest().catch((e) =>
+          console.error("[ai-digest cron]", e.message || e)
+        );
+      },
+      { timezone: "America/Chicago" }
+    );
+    console.log("Scheduled AI daily digest: 30 6 * * * America/Chicago.");
 
     cron.schedule("15 * * * *", () => {
       runTimeBasedConditions().catch((e) =>
