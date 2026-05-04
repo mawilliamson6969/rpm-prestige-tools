@@ -63,7 +63,9 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
   const [step, setStep] = useState<RecorderStep>("setup");
   const [mode, setMode] = useState<RecordingMode>("screen");
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [micId, setMicId] = useState<string>("");
+  const [cameraId, setCameraId] = useState<string>("");
   const [audioLevel, setAudioLevel] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -79,20 +81,40 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
   useEffect(() => {
     if (!open) return;
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({ audio: true, video: true })
       .then((stream) => {
         stream.getTracks().forEach((t) => t.stop());
         return navigator.mediaDevices.enumerateDevices();
       })
       .then((devices) => {
-        const inputs = devices.filter((d) => d.kind === "audioinput");
-        setMicrophones(inputs);
-        if (!micId && inputs.length > 0) setMicId(inputs[0].deviceId);
+        const audioInputs = devices.filter((d) => d.kind === "audioinput");
+        const videoInputs = devices.filter((d) => d.kind === "videoinput");
+        setMicrophones(audioInputs);
+        setCameras(videoInputs);
+        if (!micId && audioInputs.length > 0) setMicId(audioInputs[0].deviceId);
+        if (!cameraId && videoInputs.length > 0) setCameraId(videoInputs[0].deviceId);
       })
       .catch(() => {
-        setMicrophones([]);
+        navigator.mediaDevices
+          .getUserMedia({ audio: true })
+          .then((stream) => {
+            stream.getTracks().forEach((t) => t.stop());
+            return navigator.mediaDevices.enumerateDevices();
+          })
+          .then((devices) => {
+            const audioInputs = devices.filter((d) => d.kind === "audioinput");
+            const videoInputs = devices.filter((d) => d.kind === "videoinput");
+            setMicrophones(audioInputs);
+            setCameras(videoInputs);
+            if (!micId && audioInputs.length > 0) setMicId(audioInputs[0].deviceId);
+            if (!cameraId && videoInputs.length > 0) setCameraId(videoInputs[0].deviceId);
+          })
+          .catch(() => {
+            setMicrophones([]);
+            setCameras([]);
+          });
       });
-  }, [open, micId]);
+  }, [open, micId, cameraId]);
 
   const stopEverything = useCallback(() => {
     if (drawLoopRef.current != null) cancelAnimationFrame(drawLoopRef.current);
@@ -176,8 +198,10 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
   const buildRecordingStream = useCallback(async (): Promise<MediaStream> => {
     const micConstraints: MediaTrackConstraints | boolean =
       micId && micId.length > 0 ? { deviceId: { exact: micId }, echoCancellation: true, noiseSuppression: true } : true;
+    const cameraConstraints: MediaTrackConstraints | boolean =
+      cameraId && cameraId.length > 0 ? { deviceId: { exact: cameraId } } : true;
     if (mode === "webcam") {
-      const webcam = await navigator.mediaDevices.getUserMedia({ video: true, audio: micConstraints });
+      const webcam = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints, audio: micConstraints });
       rawStreamsRef.current = [webcam];
       return webcam;
     }
@@ -193,7 +217,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
       return new MediaStream(finalTracks);
     }
 
-    const webcam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const webcam = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints, audio: false });
     const canvas = document.createElement("canvas");
     canvas.width = 1280;
     canvas.height = 720;
@@ -229,7 +253,7 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
     if (mixedAudioTrack) tracks.push(mixedAudioTrack);
     rawStreamsRef.current = [screen, webcam, microphone];
     return new MediaStream(tracks);
-  }, [micId, mode]);
+  }, [cameraId, micId, mode]);
 
   const startRecording = useCallback(async () => {
     setError(null);
@@ -498,6 +522,20 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
                 </select>
               </label>
 
+              {mode !== "screen" ? (
+                <label className={styles.formStack}>
+                  <span>Camera</span>
+                  <select value={cameraId} onChange={(e) => setCameraId(e.target.value)}>
+                    {cameras.length === 0 ? <option value="">No camera found</option> : null}
+                    {cameras.map((camera) => (
+                      <option key={camera.deviceId} value={camera.deviceId}>
+                        {camera.label || "Camera"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
               <div className={styles.audioMeter}>
                 <div className={styles.audioMeterFill} style={{ width: `${audioLevel}%` }} />
               </div>
@@ -531,6 +569,12 @@ export default function VideoRecorderModal({ open, onClose, onUploaded, defaultF
                   <span>Microphone</span>
                   <strong>{microphones.find((mic) => mic.deviceId === micId)?.label || "Default mic"}</strong>
                 </div>
+                {mode !== "screen" ? (
+                  <div>
+                    <span>Camera</span>
+                    <strong>{cameras.find((camera) => camera.deviceId === cameraId)?.label || "Default camera"}</strong>
+                  </div>
+                ) : null}
               </div>
               <button type="button" className={styles.btnPrimary} onClick={startRecording}>
                 Start Recording
