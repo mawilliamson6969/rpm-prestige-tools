@@ -5,6 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import CustomFieldsPanel from "../../CustomFieldsPanel";
+import {
+  ProcessActivityPanel,
+  ProcessCommunicationsPanel,
+  ProcessRolesPanel,
+} from "./ProcessExtraPanels";
 import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
@@ -37,6 +42,7 @@ export default function ProcessDetailClient({ processId }: { processId: string }
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"steps" | "activity" | "communications">("steps");
   const [stepActivity, setStepActivity] = useState<
     Record<number, Array<{ id: number; comment: string; created_at: string; user_name: string | null }>>
   >({});
@@ -274,7 +280,38 @@ export default function ProcessDetailClient({ processId }: { processId: string }
               />
             </div>
 
-            {stages.length ? (
+            <div className={styles.tabBar} style={{ marginBottom: "1rem" }}>
+              <button
+                type="button"
+                className={`${styles.tabBtn} ${activeTab === "steps" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("steps")}
+              >
+                Steps & Stages
+              </button>
+              <button
+                type="button"
+                className={`${styles.tabBtn} ${activeTab === "activity" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("activity")}
+              >
+                Activity
+              </button>
+              <button
+                type="button"
+                className={`${styles.tabBtn} ${activeTab === "communications" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("communications")}
+              >
+                Communications
+              </button>
+            </div>
+
+            {activeTab === "activity" ? (
+              <ProcessActivityPanel processId={processData.id} />
+            ) : null}
+            {activeTab === "communications" ? (
+              <ProcessCommunicationsPanel processId={processData.id} />
+            ) : null}
+
+            {activeTab === "steps" && stages.length ? (
               <div style={{ marginBottom: "1.25rem" }}>
                 {stages.map((st) => {
                   const stageSteps = steps.filter((s) => s.stageId === st.id);
@@ -346,6 +383,7 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                 </ul>
               </div>
             ) : null}
+            {activeTab === "steps" ? (
             <div className={styles.timeline}>
               {steps.map((step) => {
                 const isCompleted = step.status === "completed";
@@ -510,9 +548,11 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                 );
               })}
             </div>
+            ) : null}
           </div>
 
           <aside>
+            <ProcessRolesPanel processId={processData.id} users={users} />
             {processData.propertyId || processData.propertyName ? (
               <div style={{ marginBottom: "1rem" }}>
                 <PropertyContextPanel

@@ -479,6 +479,36 @@ import {
   putFieldValuesBulk,
 } from "./routes/customFields.js";
 import {
+  deleteEmailTemplate,
+  deleteProcessAttachment,
+  deleteProcessTypeRole,
+  deleteTextTemplate,
+  getEmailTemplates,
+  getProcessActivity,
+  getProcessAttachments,
+  getProcessCommunications,
+  getProcessRoleAssignments,
+  getProcessStageHistory,
+  getProcessSuggestions,
+  getProcessTypeRoles,
+  getTextTemplates,
+  postEmailTemplate,
+  postProcessActivityNote,
+  postProcessAttachment,
+  postProcessCommunication,
+  postProcessTypeRole,
+  postTextTemplate,
+  processAttachmentMiddleware,
+  putEmailTemplate,
+  putProcessActivityPin,
+  putProcessRoleAssignments,
+  putProcessSuggestionAccept,
+  putProcessSuggestionDismiss,
+  putProcessTypeRole,
+  putProcessTypeRolesReorder,
+  putTextTemplate,
+} from "./routes/processSettings.js";
+import {
   deleteTask,
   getMyTasks,
   getTask,
@@ -1154,6 +1184,48 @@ app.put("/custom-fields/values/bulk", requireAuth, putFieldValuesBulk);
 app.put("/custom-fields/values", requireAuth, putFieldValue);
 app.delete("/custom-fields/values/:id", requireAuth, deleteFieldValue);
 app.post("/custom-fields/upload", requireAuth, customFieldUploadMiddleware, postFieldUpload);
+
+/** Process Settings — roles, role assignments, email/text templates, activity, comms, files */
+app.get("/processes/templates/:id/roles", requireAuth, getProcessTypeRoles);
+app.post("/processes/templates/:id/roles", requireAuth, requireAdminRole, postProcessTypeRole);
+app.put("/processes/templates/:id/roles/reorder", requireAuth, requireAdminRole, putProcessTypeRolesReorder);
+app.put("/processes/process-type-roles/:roleId", requireAuth, requireAdminRole, putProcessTypeRole);
+app.delete("/processes/process-type-roles/:roleId", requireAuth, requireAdminRole, deleteProcessTypeRole);
+
+app.get("/processes/:processId/role-assignments", requireAuth, getProcessRoleAssignments);
+app.put("/processes/:processId/role-assignments", requireAuth, putProcessRoleAssignments);
+
+app.get("/processes/templates/:id/email-templates", requireAuth, getEmailTemplates);
+app.post("/processes/templates/:id/email-templates", requireAuth, requireAdminRole, postEmailTemplate);
+app.put("/processes/email-templates/:id", requireAuth, requireAdminRole, putEmailTemplate);
+app.delete("/processes/email-templates/:id", requireAuth, requireAdminRole, deleteEmailTemplate);
+
+app.get("/processes/templates/:id/text-templates", requireAuth, getTextTemplates);
+app.post("/processes/templates/:id/text-templates", requireAuth, requireAdminRole, postTextTemplate);
+app.put("/processes/text-templates/:id", requireAuth, requireAdminRole, putTextTemplate);
+app.delete("/processes/text-templates/:id", requireAuth, requireAdminRole, deleteTextTemplate);
+
+app.get("/processes/:processId/activity", requireAuth, getProcessActivity);
+app.post("/processes/:processId/activity", requireAuth, postProcessActivityNote);
+app.put("/processes/process-activity/:id/pin", requireAuth, putProcessActivityPin);
+
+app.get("/processes/:processId/stage-history", requireAuth, getProcessStageHistory);
+
+app.get("/processes/:processId/communications", requireAuth, getProcessCommunications);
+app.post("/processes/:processId/communications", requireAuth, postProcessCommunication);
+
+app.get("/processes/:processId/attachments", requireAuth, getProcessAttachments);
+app.post(
+  "/processes/:processId/attachments",
+  requireAuth,
+  processAttachmentMiddleware,
+  postProcessAttachment
+);
+app.delete("/processes/process-attachments/:id", requireAuth, deleteProcessAttachment);
+
+app.get("/processes/:processId/suggestions", requireAuth, getProcessSuggestions);
+app.put("/processes/process-suggestions/:id/accept", requireAuth, putProcessSuggestionAccept);
+app.put("/processes/process-suggestions/:id/dismiss", requireAuth, putProcessSuggestionDismiss);
 
 /** Property context — aggregates cached AppFolio/Boom/LeadSimple/RentEngine data */
 app.get("/property-context/search", requireAuth, getPropertySearch);
