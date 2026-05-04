@@ -13,7 +13,15 @@ type BoardStage = {
   stageOrder: number;
   isFinal: boolean;
   autoAdvance: boolean;
+  category?: "backlog" | "active" | "completed" | "cancelled";
+  shortName?: string | null;
   virtual?: boolean;
+};
+
+type CustomFieldBadge = {
+  label: string;
+  value: unknown;
+  fieldType: string;
 };
 
 type BoardCard = {
@@ -44,6 +52,7 @@ type BoardCard = {
   agingGreenHours?: number;
   agingYellowHours?: number;
   cardBadgeField?: string;
+  customFields?: CustomFieldBadge[];
 };
 
 type Props = {
@@ -53,9 +62,11 @@ type Props = {
   priorityFilter: string;
   archived?: boolean;
   showStale?: boolean;
+  stageCategory?: "all" | "backlog" | "active" | "completed" | "cancelled" | "overdue";
   onOpenCard: (processId: number) => void;
   refreshKey: number;
   onBulkChange?: (ids: number[]) => void;
+  onStagesLoaded?: (stages: BoardStage[]) => void;
 };
 
 function agingClass(card: BoardCard): string {
@@ -105,6 +116,37 @@ function progressColor(pct: number): string {
   return "#10b981";
 }
 
+function badgeStyleFor(value: unknown): { bg: string; fg: string } {
+  const s = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (value === true || s === "yes" || s === "true" || s === "y" || s === "complete") {
+    return { bg: "#E8F5E9", fg: "#1B8A4E" };
+  }
+  if (value === false || s === "no" || s === "false" || s === "n" || s === "missing") {
+    return { bg: "#FFF3E0", fg: "#E5890A" };
+  }
+  return { bg: "#F3E8FF", fg: "#6C5CE7" };
+}
+
+function formatBadgeValue(b: CustomFieldBadge): string {
+  if (b.value === null || b.value === undefined || b.value === "") return "—";
+  if (typeof b.value === "boolean") return b.value ? "Yes" : "No";
+  if (b.fieldType === "date" && typeof b.value === "string") {
+    const d = new Date(b.value);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+  }
+  if (b.fieldType === "currency" && typeof b.value === "number") {
+    return `$${b.value.toLocaleString()}`;
+  }
+  if (Array.isArray(b.value)) return `${b.value.length} item${b.value.length === 1 ? "" : "s"}`;
+  return String(b.value);
+}
+
+function formatBadgeLabel(label: string): string {
+  return label.replace(/[?:]$/, "").trim();
+}
+
 export default function BoardView({
   templateId,
   assigneeId,
@@ -112,9 +154,11 @@ export default function BoardView({
   priorityFilter,
   archived,
   showStale,
+  stageCategory = "all",
   onOpenCard,
   refreshKey,
   onBulkChange,
+  onStagesLoaded,
 }: Props) {
   const { authHeaders, token } = useAuth();
   const [stages, setStages] = useState<BoardStage[]>([]);
@@ -136,6 +180,7 @@ export default function BoardView({
     if (assigneeId) params.set("assignee", String(assigneeId));
     if (priorityFilter) params.set("priority", priorityFilter);
     if (archived) params.set("archived", "true");
+    params.set("includeCustomFields", "true");
     setLoading(true);
     setErr(null);
     (async () => {
@@ -146,8 +191,10 @@ export default function BoardView({
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || "Load failed");
-        setStages(body.stages || []);
+        const incomingStages: BoardStage[] = body.stages || [];
+        setStages(incomingStages);
         setByStage(body.processes || {});
+        onStagesLoaded?.(incomingStages);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Load failed");
       } finally {
@@ -159,6 +206,7 @@ export default function BoardView({
   const filtered = (cards: BoardCard[]) => {
     let arr = cards;
     if (showStale) arr = arr.filter(isStale);
+    if (stageCategory === "overdue") arr = arr.filter((c) => c.overdue);
     if (!search.trim()) return arr;
     const q = search.trim().toLowerCase();
     return arr.filter(
@@ -169,6 +217,11 @@ export default function BoardView({
         c.templateName?.toLowerCase().includes(q)
     );
   };
+
+  const visibleStages =
+    stageCategory === "all" || stageCategory === "overdue"
+      ? stages
+      : stages.filter((s) => (s.category ?? "active") === stageCategory);
 
   const toggleSelect = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -219,7 +272,7 @@ export default function BoardView({
     <>
       {err ? <div className={styles.errorBanner}>{err}</div> : null}
       <div className={styles.boardContainer}>
-        {stages.map((st) => {
+        {visibleStages.map((st) => {
           const cards = filtered(byStage[String(st.id)] || []);
           const isOver = hoverStage === st.id;
           return (
@@ -318,6 +371,54 @@ export default function BoardView({
                             style={{ width: `${pct}%`, background: barColor }}
                           />
                         </div>
+                        {c.customFields && c.customFields.length ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "0.25rem",
+                              margin: "0.4rem 0 0.1rem",
+                            }}
+                          >
+                            {c.customFields.slice(0, 3).map((b, i) => {
+                              const tone = badgeStyleFor(b.value);
+                              return (
+                                <span
+                                  key={`${b.label}-${i}`}
+                                  title={`${b.label}: ${formatBadgeValue(b)}`}
+                                  style={{
+                                    background: tone.bg,
+                                    color: tone.fg,
+                                    fontSize: "0.66rem",
+                                    fontWeight: 600,
+                                    padding: "0.15rem 0.45rem",
+                                    borderRadius: 999,
+                                    maxWidth: "100%",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {formatBadgeLabel(b.label)}: {formatBadgeValue(b)}
+                                </span>
+                              );
+                            })}
+                            {c.customFields.length > 3 ? (
+                              <span
+                                style={{
+                                  background: "rgba(27, 40, 86, 0.06)",
+                                  color: "#6a737b",
+                                  fontSize: "0.66rem",
+                                  fontWeight: 600,
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: 999,
+                                }}
+                              >
+                                +{c.customFields.length - 3} more
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className={styles.processCardFootRow}>
                           <span className={styles.processCardAvatar}>{initials(c.contactName)}</span>
                           {badge ? (

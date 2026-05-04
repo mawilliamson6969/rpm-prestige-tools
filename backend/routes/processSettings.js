@@ -954,6 +954,100 @@ export async function deleteProcessAttachment(req, res) {
   }
 }
 
+/* ---------- Custom field summary (all values across process + steps) ---------- */
+
+function pickValueRow(r) {
+  const t = r.field_type;
+  if (t === "boolean") return r.value_boolean;
+  if (t === "date") return r.value_date;
+  if (t === "datetime") return r.value_datetime;
+  if (
+    t === "number" ||
+    t === "currency" ||
+    t === "percentage" ||
+    t === "rating" ||
+    t === "user"
+  ) {
+    return r.value_number;
+  }
+  if (
+    t === "multiselect" ||
+    t === "file" ||
+    t === "property" ||
+    t === "address" ||
+    t === "checklist"
+  ) {
+    return r.value_json;
+  }
+  return r.value_text;
+}
+
+export async function getProcessCustomFieldSummary(req, res) {
+  const processId = Number.parseInt(req.params.processId, 10);
+  if (!Number.isFinite(processId)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    // Process-level values + step-level values, with the step they live on.
+    const { rows: procValues } = await pool.query(
+      `SELECT v.id, v.field_definition_id, v.entity_type, v.entity_id,
+              v.value_text, v.value_number, v.value_boolean, v.value_date,
+              v.value_datetime, v.value_json, v.updated_at,
+              d.field_label, d.field_type, d.field_config
+       FROM custom_field_values v
+       JOIN custom_field_definitions d ON d.id = v.field_definition_id
+       WHERE v.entity_type = 'process' AND v.entity_id = $1
+       ORDER BY d.sort_order, d.id`,
+      [processId]
+    );
+    const { rows: stepValues } = await pool.query(
+      `SELECT v.id, v.field_definition_id, v.entity_type, v.entity_id AS step_id,
+              v.value_text, v.value_number, v.value_boolean, v.value_date,
+              v.value_datetime, v.value_json, v.updated_at,
+              d.field_label, d.field_type, d.field_config,
+              s.name AS step_name, s.step_number, s.status AS step_status
+       FROM custom_field_values v
+       JOIN custom_field_definitions d ON d.id = v.field_definition_id
+       JOIN process_steps s ON s.id = v.entity_id
+       WHERE v.entity_type = 'process_step' AND s.process_id = $1
+       ORDER BY s.step_number, d.sort_order, d.id`,
+      [processId]
+    );
+    const fields = [
+      ...procValues.map((r) => ({
+        fieldDefinitionId: r.field_definition_id,
+        label: r.field_label,
+        fieldType: r.field_type,
+        value: pickValueRow(r),
+        scope: "process",
+        stepId: null,
+        stepName: null,
+        stepNumber: null,
+        stepStatus: null,
+        updatedAt: r.updated_at,
+      })),
+      ...stepValues.map((r) => ({
+        fieldDefinitionId: r.field_definition_id,
+        label: r.field_label,
+        fieldType: r.field_type,
+        value: pickValueRow(r),
+        scope: "process_step",
+        stepId: r.step_id,
+        stepName: r.step_name,
+        stepNumber: r.step_number,
+        stepStatus: r.step_status,
+        updatedAt: r.updated_at,
+      })),
+    ];
+    res.json({ fields });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load custom field summary." });
+  }
+}
+
 /* ---------- AI Suggestions ---------- */
 
 export async function getProcessSuggestions(req, res) {

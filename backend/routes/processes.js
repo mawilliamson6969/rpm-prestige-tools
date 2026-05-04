@@ -7,6 +7,36 @@ import { evaluateConditions } from "../lib/condition-engine.js";
 import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
 import { bumpActivity, logActivity, recordStageEntry } from "../lib/process-activity.js";
 
+/**
+ * Map a custom_field_values row to its single rendered value, picking the right
+ * typed column based on field_type. Mirrors valueColumnFor in routes/customFields.js.
+ */
+function pickValue(r) {
+  const t = r.field_type;
+  if (t === "boolean") return r.value_boolean;
+  if (t === "date") return r.value_date;
+  if (t === "datetime") return r.value_datetime;
+  if (
+    t === "number" ||
+    t === "currency" ||
+    t === "percentage" ||
+    t === "rating" ||
+    t === "user"
+  ) {
+    return r.value_number;
+  }
+  if (
+    t === "multiselect" ||
+    t === "file" ||
+    t === "property" ||
+    t === "address" ||
+    t === "checklist"
+  ) {
+    return r.value_json;
+  }
+  return r.value_text;
+}
+
 function mapProcess(r) {
   return {
     id: r.id,
@@ -31,6 +61,8 @@ function mapProcess(r) {
     totalSteps: r.total_steps != null ? Number(r.total_steps) : undefined,
     completedSteps: r.completed_steps != null ? Number(r.completed_steps) : undefined,
     currentStepName: r.current_step_name ?? undefined,
+    currentStageId: r.current_stage_id ?? null,
+    stageEnteredAt: r.stage_entered_at ?? null,
     lastActivityAt: r.last_activity_at ?? null,
     lastActivityType: r.last_activity_type ?? null,
     lastActivityBy: r.last_activity_by ?? null,
@@ -856,6 +888,8 @@ export async function getProcessesBoard(req, res) {
         stageOrder: r.stage_order,
         isFinal: r.is_final,
         autoAdvance: r.auto_advance,
+        category: r.category ?? "active",
+        shortName: r.short_name ?? null,
       }));
     } else {
       // Unified generic-stage board
@@ -919,6 +953,71 @@ export async function getProcessesBoard(req, res) {
       params
     );
 
+    // Optional: hydrate the top 3 most-recently-updated custom field values per
+    // process for inline rendering on board cards. Pulls both process-level and
+    // step-level values, label-keyed.
+    const includeCustomFields =
+      req.query.includeCustomFields === "true" || req.query.includeCustomFields === "1";
+    const fieldsByProcess = new Map();
+    if (includeCustomFields && procs.length) {
+      const ids = procs.map((p) => p.id);
+      const stepIdsByProcess = new Map();
+      const { rows: stepRows } = await pool.query(
+        `SELECT id, process_id FROM process_steps WHERE process_id = ANY($1::int[])`,
+        [ids]
+      );
+      for (const r of stepRows) {
+        if (!stepIdsByProcess.has(r.process_id)) stepIdsByProcess.set(r.process_id, []);
+        stepIdsByProcess.get(r.process_id).push(r.id);
+      }
+      const allStepIds = stepRows.map((r) => r.id);
+      const stepIdToProcess = new Map(stepRows.map((r) => [r.id, r.process_id]));
+
+      const valueRows = [];
+      // process-scoped values
+      const { rows: procValues } = await pool.query(
+        `SELECT v.entity_id AS process_id, v.value_text, v.value_number, v.value_boolean,
+                v.value_date, v.value_datetime, v.value_json, v.updated_at,
+                d.field_label, d.field_type
+         FROM custom_field_values v
+         JOIN custom_field_definitions d ON d.id = v.field_definition_id
+         WHERE v.entity_type = 'process' AND v.entity_id = ANY($1::int[])
+         ORDER BY v.updated_at DESC`,
+        [ids]
+      );
+      valueRows.push(...procValues);
+      // step-scoped values, mapped back to their process
+      if (allStepIds.length) {
+        const { rows: stepValues } = await pool.query(
+          `SELECT v.entity_id AS step_id, v.value_text, v.value_number, v.value_boolean,
+                  v.value_date, v.value_datetime, v.value_json, v.updated_at,
+                  d.field_label, d.field_type
+           FROM custom_field_values v
+           JOIN custom_field_definitions d ON d.id = v.field_definition_id
+           WHERE v.entity_type = 'process_step' AND v.entity_id = ANY($1::int[])
+           ORDER BY v.updated_at DESC`,
+          [allStepIds]
+        );
+        for (const r of stepValues) {
+          valueRows.push({ ...r, process_id: stepIdToProcess.get(r.step_id) });
+        }
+      }
+      // Pick the 3 most recent per process, by label (collapse duplicates).
+      valueRows.sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+      for (const r of valueRows) {
+        if (!Number.isFinite(r.process_id)) continue;
+        const value = pickValue(r);
+        if (value === null || value === "" || value === undefined) continue;
+        if (!fieldsByProcess.has(r.process_id)) fieldsByProcess.set(r.process_id, []);
+        const list = fieldsByProcess.get(r.process_id);
+        if (list.length >= 6) continue; // keep cheap; UI shows top 3 + "+N more"
+        if (list.some((x) => x.label === r.field_label)) continue;
+        list.push({ label: r.field_label, value, fieldType: r.field_type });
+      }
+    }
+
     const bucketByStage = {};
     for (const st of stages) bucketByStage[st.id] = [];
 
@@ -965,6 +1064,7 @@ export async function getProcessesBoard(req, res) {
         agingGreenHours: Number(p.aging_green_hours ?? 48),
         agingYellowHours: Number(p.aging_yellow_hours ?? 96),
         cardBadgeField: p.card_badge_field || "due_date",
+        customFields: includeCustomFields ? fieldsByProcess.get(p.id) ?? [] : undefined,
       };
 
       let stageKey;

@@ -10,6 +10,8 @@ import {
   ProcessCommunicationsPanel,
   ProcessRolesPanel,
 } from "./ProcessExtraPanels";
+import StageStepper from "./StageStepper";
+import ProcessFieldsGrid from "./ProcessFieldsGrid";
 import PropertyContextPanel from "../../../../../components/PropertyContextPanel";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
@@ -279,6 +281,15 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                 title="Process details"
               />
             </div>
+
+            {stages.length ? (
+              <StageStepper
+                stages={stages}
+                currentTemplateStageId={processData.currentStageId ?? null}
+              />
+            ) : null}
+
+            <ProcessFieldsGrid processId={processData.id} />
 
             <div className={styles.tabBar} style={{ marginBottom: "1rem" }}>
               <button

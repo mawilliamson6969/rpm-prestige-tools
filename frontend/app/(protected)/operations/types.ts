@@ -375,6 +375,8 @@ export type ProcessRecord = {
   totalSteps?: number;
   completedSteps?: number;
   currentStepName?: string;
+  currentStageId?: number | null;
+  stageEnteredAt?: string | null;
 };
 
 export type ProcessStep = {
