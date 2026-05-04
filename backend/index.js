@@ -487,6 +487,7 @@ import {
   getProcessActivity,
   getProcessAttachments,
   getProcessCommunications,
+  getProcessCustomFieldSummary,
   getProcessRoleAssignments,
   getProcessStageHistory,
   getProcessSuggestions,
@@ -1210,6 +1211,7 @@ app.post("/processes/:processId/activity", requireAuth, postProcessActivityNote)
 app.put("/processes/process-activity/:id/pin", requireAuth, putProcessActivityPin);
 
 app.get("/processes/:processId/stage-history", requireAuth, getProcessStageHistory);
+app.get("/processes/:processId/custom-field-summary", requireAuth, getProcessCustomFieldSummary);
 
 app.get("/processes/:processId/communications", requireAuth, getProcessCommunications);
 app.post("/processes/:processId/communications", requireAuth, postProcessCommunication);

@@ -13,7 +13,15 @@ import CalendarView from "./CalendarView";
 import BulkActionBar from "./BulkActionBar";
 import { apiUrl } from "../../../../lib/api";
 import { useAuth } from "../../../../context/AuthContext";
-import type { ProcessRecord, ProcessStatus, TeamUser, Template, TemplateStage } from "../types";
+import type {
+  ProcessRecord,
+  ProcessStatus,
+  StageCategory,
+  TeamUser,
+  Template,
+  TemplateStage,
+} from "../types";
+import { STAGE_CATEGORY_META, STAGE_CATEGORY_ORDER } from "../types";
 
 type DashboardTemplate = {
   templateId: number;
@@ -62,6 +70,9 @@ export default function ProcessesListClient() {
   const [detailOpen, setDetailOpen] = useState<number | null>(null);
   const [boardRefresh, setBoardRefresh] = useState(0);
   const [filterPill, setFilterPill] = useState<"all" | "stale" | "archived">("all");
+  const [stageCategoryFilter, setStageCategoryFilter] = useState<
+    StageCategory | "all" | "overdue"
+  >("all");
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [boardStages, setBoardStages] = useState<TemplateStage[]>([]);
@@ -277,6 +288,46 @@ export default function ProcessesListClient() {
           </div>
         </div>
 
+        {view === "board" && templateFilter ? (
+          <div className={styles.viewToggle} style={{ marginBottom: "0.75rem" }}>
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${stageCategoryFilter === "all" ? styles.viewToggleActive : ""}`}
+              onClick={() => setStageCategoryFilter("all")}
+            >
+              All stages
+            </button>
+            {STAGE_CATEGORY_ORDER.map((cat) => {
+              const meta = STAGE_CATEGORY_META[cat];
+              const count = boardStages.filter(
+                (s) => ((s as unknown as { category?: StageCategory }).category ?? "active") === cat
+              ).length;
+              if (count === 0 && cat !== "active") return null;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  className={`${styles.viewToggleBtn} ${stageCategoryFilter === cat ? styles.viewToggleActive : ""}`}
+                  onClick={() => setStageCategoryFilter(cat)}
+                  title={meta.description}
+                >
+                  {meta.label} ({count})
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className={`${styles.viewToggleBtn} ${stageCategoryFilter === "overdue" ? styles.viewToggleActive : ""}`}
+              onClick={() =>
+                setStageCategoryFilter(stageCategoryFilter === "overdue" ? "all" : "overdue")
+              }
+              title="Active processes past their target date"
+            >
+              Overdue
+            </button>
+          </div>
+        ) : null}
+
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
 
         {view === "board" ? (
@@ -287,9 +338,17 @@ export default function ProcessesListClient() {
             priorityFilter=""
             archived={filterPill === "archived"}
             showStale={filterPill === "stale"}
+            stageCategory={stageCategoryFilter}
             onOpenCard={(id) => setDetailOpen(id)}
             refreshKey={boardRefresh}
             onBulkChange={setSelectedCardIds}
+            onStagesLoaded={(s) =>
+              setBoardStages(
+                s.map((b) => ({
+                  ...(b as unknown as TemplateStage),
+                }))
+              )
+            }
           />
         ) : view === "calendar" ? (
           loading ? (
