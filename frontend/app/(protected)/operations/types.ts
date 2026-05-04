@@ -257,6 +257,83 @@ export type ProcessAttachment = {
   createdAt: string;
 };
 
+export type AnalyticsKpis = {
+  activeProcesses: number;
+  overdueProcesses: number;
+  completedThisMonth: number;
+  completedLastMonth: number;
+  completionTrend: "up" | "down" | "flat";
+  avgCompletionDays: number | null;
+  avgCompletionDaysLastMonth: number | null;
+  onTimeRate: number | null;
+  totalProcessesCreated: number;
+  autopilotCreated: number;
+};
+
+export type AnalyticsBottleneckStage = {
+  stageId: number;
+  stageName: string;
+  stageColor: string | null;
+  avgDays: number | null;
+  medianDays: number | null;
+  maxDays: number | null;
+  minDays: number | null;
+  activeProcesses: number;
+  totalPasses: number;
+  isBottleneck: boolean;
+};
+
+export type AnalyticsBottlenecks = {
+  stages: AnalyticsBottleneckStage[];
+  worstBottleneck: { stageName: string; avgDays: number; suggestion: string } | null;
+};
+
+export type AnalyticsWorkloadMember = {
+  userId: number;
+  userName: string;
+  userRole: string | null;
+  activeTasks: number;
+  overdueTasks: number;
+  activeProcesses: number;
+  completedThisWeek: number;
+  avgCompletionDays: number | null;
+  capacity: "over" | "high" | "normal" | "low";
+  capacityScore: number;
+};
+
+export type AnalyticsWorkload = {
+  team: AnalyticsWorkloadMember[];
+  rebalanceNeeded: boolean;
+  suggestion: string | null;
+};
+
+export type AnalyticsTrendsMonth = {
+  month: string;
+  label: string;
+  completed: number;
+  avgDays: number | null;
+  created: number;
+};
+
+export type AnalyticsTrends = {
+  months: AnalyticsTrendsMonth[];
+  improving: boolean;
+  improvementPct: number;
+};
+
+export type AnalyticsTypeRow = {
+  templateId: number;
+  templateName: string;
+  icon: string | null;
+  color: string | null;
+  activeCount: number;
+  completedCount: number;
+  avgCompletionDays: number | null;
+  onTimeRate: number | null;
+  bottleneckStage: string | null;
+  bottleneckAvgDays: number | null;
+};
+
 export type AutopilotFrequency = "day" | "week" | "month";
 export type AutopilotEntity = "unit" | "property" | "owner" | "tenant" | "lease";
 export type AutopilotOperator =
