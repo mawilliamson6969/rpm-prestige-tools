@@ -76,11 +76,16 @@ export default function BulkActionBar({
     if (!confirm(`Delete ${selectedIds.length} process(es)? They can be restored within 30 days.`)) return;
     setBusy(true);
     try {
-      await fetch(apiUrl("/processes/bulk"), {
+      const res = await fetch(apiUrl("/processes/bulk"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ processIds: selectedIds }),
       });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(typeof body.error === "string" ? body.error : "Could not delete.");
+        return;
+      }
       onRefresh();
       onClear();
     } finally {

@@ -541,8 +541,12 @@ export async function putProcessStatus(req, res) {
     const fromStatus = before[0]?.status ?? null;
     const { rows } = await pool.query(
       `UPDATE processes
-       SET status = $1,
-           completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE NULL END,
+       SET status = $1::text,
+           completed_at = CASE
+             WHEN $1::text = 'completed' THEN COALESCE(completed_at, NOW())
+             WHEN $1::text = 'active' AND status = 'completed' THEN NULL
+             ELSE completed_at
+           END,
            updated_at = NOW()
        WHERE id = $2 RETURNING *`,
       [status, id]

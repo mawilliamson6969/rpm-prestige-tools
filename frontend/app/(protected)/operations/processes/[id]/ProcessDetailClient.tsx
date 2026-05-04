@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import styles from "../../operations.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
@@ -37,6 +38,7 @@ function processStatusClass(s: ProcessStatus): string {
 
 export default function ProcessDetailClient({ processId }: { processId: string }) {
   const { authHeaders, token, isAdmin } = useAuth();
+  const router = useRouter();
   const [processData, setProcessData] = useState<ProcessRecord | null>(null);
   const [steps, setSteps] = useState<ProcessStep[]>([]);
   const [stages, setStages] = useState<ProcessStageRecord[]>([]);
@@ -184,16 +186,48 @@ export default function ProcessDetailClient({ processId }: { processId: string }
 
   const changeProcessStatus = async (status: ProcessStatus) => {
     if (!processData) return;
+    setErr(null);
     try {
       const res = await fetch(apiUrl(`/processes/${processData.id}/status`), {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error("Could not update status.");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof body.error === "string" ? body.error : "Could not update status."
+        );
+      }
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not update status.");
+    }
+  };
+
+  const moveProcessToTrash = async () => {
+    if (!processData) return;
+    if (
+      !confirm(
+        `Move "${processData.name}" to trash? It can be restored from the recycle bin within 30 days.`
+      )
+    )
+      return;
+    setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/processes/${processData.id}/soft-delete`), {
+        method: "PUT",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof body.error === "string" ? body.error : "Could not delete process."
+        );
+      }
+      router.push("/operations/processes");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not delete process.");
     }
   };
 
@@ -673,6 +707,15 @@ export default function ProcessDetailClient({ processId }: { processId: string }
                     }}
                   >
                     Cancel process
+                  </button>
+                ) : null}
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnDanger}`}
+                    onClick={moveProcessToTrash}
+                  >
+                    🗑 Move to trash
                   </button>
                 ) : null}
               </div>
