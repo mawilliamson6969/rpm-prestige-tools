@@ -257,6 +257,116 @@ export type ProcessAttachment = {
   createdAt: string;
 };
 
+export type AutopilotFrequency = "day" | "week" | "month";
+export type AutopilotEntity = "unit" | "property" | "owner" | "tenant" | "lease";
+export type AutopilotOperator =
+  | "is"
+  | "is_not"
+  | "contains"
+  | "greater_than"
+  | "less_than"
+  | "is_empty"
+  | "is_not_empty"
+  | "days_from_now_less_than"
+  | "days_from_now_greater_than";
+
+export type AutopilotCondition = {
+  field: string;
+  operator: AutopilotOperator;
+  value: string;
+};
+
+export type AutopilotRule = {
+  id: number;
+  templateId: number;
+  name: string;
+  description: string | null;
+  isEnabled: boolean;
+  frequency: AutopilotFrequency;
+  dayOfPeriod: number;
+  timeOfDay: string;
+  timezone: string;
+  startingStageId: number | null;
+  conditionEntity: AutopilotEntity;
+  conditions: AutopilotCondition[];
+  processNameTemplate: string | null;
+  preventDuplicate: boolean;
+  duplicateCheckField: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  totalRuns: number;
+  totalProcessesCreated: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutopilotRunLog = {
+  id: number;
+  ruleId: number;
+  runAt: string;
+  status: "success" | "partial" | "failed" | "dry_run";
+  entitiesMatched: number;
+  processesCreated: number;
+  duplicatesSkipped: number;
+  errors: unknown;
+  details: unknown;
+};
+
+export type AutopilotDryRunResult = {
+  matched: number;
+  created: number;
+  skipped: number;
+  errors: number;
+  preview: Array<{
+    propertyName: string | null;
+    propertyId: number | null;
+    contactName: string | null;
+  }>;
+};
+
+export const AUTOPILOT_OPERATOR_LABELS: Record<AutopilotOperator, string> = {
+  is: "is",
+  is_not: "is not",
+  contains: "contains",
+  greater_than: "greater than",
+  less_than: "less than",
+  is_empty: "is empty",
+  is_not_empty: "is not empty",
+  days_from_now_less_than: "days from now less than",
+  days_from_now_greater_than: "days from now greater than",
+};
+
+export const AUTOPILOT_ENTITY_FIELDS: Record<AutopilotEntity, string[]> = {
+  unit: [
+    "status",
+    "property_name",
+    "property_type",
+    "tenant",
+    "rent",
+    "market_rent",
+    "lease_from",
+    "lease_to",
+    "move_in",
+    "past_due",
+    "deposit",
+    "sqft",
+    "bd_ba",
+  ],
+  property: [
+    "property_name",
+    "property_type",
+    "city",
+    "state",
+    "zip_code",
+    "management_start_date",
+    "management_fee_percent",
+    "portfolio",
+  ],
+  owner: ["name", "email", "phone", "owner_id", "portfolio"],
+  tenant: ["status", "tenant", "lease_to", "primary_tenant_email"],
+  lease: ["lease_to", "lease_from", "status", "tenant", "property_name"],
+};
+
 export const STAGE_CATEGORY_META: Record<
   StageCategory,
   { label: string; color: string; description: string }
