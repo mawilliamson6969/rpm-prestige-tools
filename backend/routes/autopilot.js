@@ -255,7 +255,7 @@ export async function deleteAutopilotRule(req, res) {
   }
 }
 
-export async function putAutopilotRuleEnabled(enabled) {
+export function putAutopilotRuleEnabled(enabled) {
   return async (req, res) => {
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) {
