@@ -7,6 +7,7 @@ import OperationsTopBar from "../OperationsTopBar";
 import LaunchProcessModal from "../LaunchProcessModal";
 import ProcessCardDetailPanel from "../ProcessCardDetailPanel";
 import BoardView from "./BoardView";
+import PerformancePills from "./PerformancePills";
 import TableView from "./TableView";
 import TimelineView from "./TimelineView";
 import CalendarView from "./CalendarView";
@@ -331,7 +332,9 @@ export default function ProcessesListClient() {
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
 
         {view === "board" ? (
-          <BoardView
+          <>
+            <PerformancePills templateId={templateFilter ? Number(templateFilter) : null} />
+            <BoardView
             templateId={templateFilter ? Number(templateFilter) : null}
             assigneeId={null}
             search={search}
@@ -350,6 +353,7 @@ export default function ProcessesListClient() {
               )
             }
           />
+          </>
         ) : view === "calendar" ? (
           loading ? (
             <div className={styles.loading}>Loading…</div>

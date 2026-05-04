@@ -14,6 +14,7 @@ export default function OperationsTopBar({ actions }: { actions?: ReactNode }) {
     { href: "/operations/my-tasks", label: "My Tasks" },
     { href: "/operations/projects", label: "Projects" },
     { href: "/operations/processes", label: "Processes" },
+    { href: "/operations/analytics", label: "Analytics" },
     ...(isAdmin ? [{ href: "/operations/templates", label: "Templates" }] : []),
   ];
   return (

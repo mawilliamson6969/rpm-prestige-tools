@@ -433,6 +433,14 @@ import {
   putAutopilotRuleEnabled,
 } from "./routes/autopilot.js";
 import {
+  getAnalyticsBottlenecks,
+  getAnalyticsByType,
+  getAnalyticsHeatmap,
+  getAnalyticsKpis,
+  getAnalyticsTrends,
+  getAnalyticsWorkload,
+} from "./routes/processAnalytics.js";
+import {
   getPropertyContextById,
   getPropertyContextByName,
   getPropertySearch,
@@ -1267,6 +1275,14 @@ app.put("/autopilot-rules/:id/disable", requireAuth, requireAdminRole, putAutopi
 app.post("/autopilot-rules/:id/test", requireAuth, postAutopilotRuleTest);
 app.post("/autopilot-rules/:id/run-now", requireAuth, requireAdminRole, postAutopilotRuleRunNow);
 app.get("/autopilot-rules/:id/log", requireAuth, getAutopilotRuleLog);
+
+/** Process analytics (Phase 5) */
+app.get("/process-analytics/kpis", requireAuth, getAnalyticsKpis);
+app.get("/process-analytics/bottlenecks", requireAuth, getAnalyticsBottlenecks);
+app.get("/process-analytics/workload", requireAuth, getAnalyticsWorkload);
+app.get("/process-analytics/trends", requireAuth, getAnalyticsTrends);
+app.get("/process-analytics/by-type", requireAuth, getAnalyticsByType);
+app.get("/process-analytics/activity-heatmap", requireAuth, getAnalyticsHeatmap);
 
 /** Property context — aggregates cached AppFolio/Boom/LeadSimple/RentEngine data */
 app.get("/property-context/search", requireAuth, getPropertySearch);
