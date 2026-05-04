@@ -67,6 +67,16 @@ export type AutoActionType =
 
 export type AutoActionConfig = Record<string, unknown> | null;
 
+export type StepTaskType = "todo" | "email" | "sms" | "call";
+export type StepRecipientType =
+  | "tenant"
+  | "owner"
+  | "custom_email"
+  | "custom_phone"
+  | "assigned_role";
+export type StepSendTiming = "immediately" | "delay";
+export type StepDelayUnit = "minutes" | "hours" | "days";
+
 export type TemplateStep = {
   id: number;
   templateId: number;
@@ -84,7 +94,32 @@ export type TemplateStep = {
   dueDateType?: DueDateType;
   dueDateConfig?: Record<string, unknown>;
   instructions?: string | null;
+  taskType?: StepTaskType;
+  emailTemplateId?: number | null;
+  textTemplateId?: number | null;
+  recipientType?: StepRecipientType;
+  recipientValue?: string | null;
+  sendTiming?: StepSendTiming;
+  delayAmount?: number;
+  delayUnit?: StepDelayUnit;
   createdAt: string;
+};
+
+export type AvailableRecipientPerson = {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+};
+export type AvailableRecipientRole = {
+  role: string;
+  userId: number | null;
+  name: string | null;
+  email: string | null;
+};
+export type AvailableRecipients = {
+  tenant: AvailableRecipientPerson | null;
+  owner: AvailableRecipientPerson | null;
+  roles: AvailableRecipientRole[];
 };
 
 export type DueDateType =

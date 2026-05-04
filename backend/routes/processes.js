@@ -6,6 +6,7 @@ import {
 import { evaluateConditions } from "../lib/condition-engine.js";
 import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
 import { bumpActivity, logActivity, recordStageEntry } from "../lib/process-activity.js";
+import { executeImmediateSendsForStage } from "../lib/process-messaging.js";
 
 /**
  * Map a custom_field_values row to its single rendered value, picking the right
@@ -353,8 +354,10 @@ export async function postProcess(req, res) {
         `INSERT INTO process_steps
            (process_id, template_step_id, step_number, name, description, status,
             assigned_user_id, assigned_role, due_date, notes, auto_action, auto_action_config,
-            stage_id, due_date_type, due_date_config, instructions)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15::jsonb, $16)
+            stage_id, due_date_type, due_date_config, instructions, task_type,
+            email_template_id, text_template_id, recipient_type, recipient_value, send_timing)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15::jsonb, $16,
+                 $17, $18, $19, $20, $21, $22)
          RETURNING id`,
         [
           processRow.id,
@@ -373,6 +376,12 @@ export async function postProcess(req, res) {
           ts.due_date_type || "offset_from_start",
           JSON.stringify(ts.due_date_config ?? {}),
           ts.instructions || null,
+          ts.task_type || "todo",
+          ts.email_template_id ?? null,
+          ts.text_template_id ?? null,
+          ts.recipient_type || "tenant",
+          ts.recipient_value || null,
+          ts.send_timing || "immediately",
         ]
       );
       idByTemplateStepId.set(ts.step_number, stepIns[0].id);
@@ -415,6 +424,9 @@ export async function postProcess(req, res) {
         if (processRow.current_stage_id) {
           await recordStageEntry(processRow.id, processRow.current_stage_id, {
             userId: req.user?.id,
+          });
+          await executeImmediateSendsForStage(processRow.id, processRow.current_stage_id, {
+            actorUserId: req.user?.id ?? null,
           });
         }
         runAutomationForProcessLaunch(processRow.id).catch((err) =>
@@ -721,6 +733,11 @@ async function completeOrSkipStep(req, res, kind) {
             actorType: "system",
             actor: req.user,
           });
+          if (advance.newStageId) {
+            await executeImmediateSendsForStage(step.process_id, advance.newStageId, {
+              actorUserId: req.user?.id ?? null,
+            });
+          }
         }
       } catch (err) {
         console.warn("[process] post-complete tasks failed:", err.message);
@@ -1164,6 +1181,11 @@ export async function putProcessStage(req, res) {
             },
             actor: req.user,
           });
+          if (Number.isFinite(stageId)) {
+            await executeImmediateSendsForStage(id, stageId, {
+              actorUserId: req.user?.id ?? null,
+            });
+          }
         } catch (err) {
           console.warn("[process] stage-change log failed:", err.message);
         }

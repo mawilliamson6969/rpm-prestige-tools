@@ -762,6 +762,26 @@ export async function ensureOperationsSchema() {
     CREATE INDEX IF NOT EXISTS idx_pas_pending ON process_ai_suggestions(process_id) WHERE status = 'pending';
   `);
 
+  // Phase 3: link email/text templates to workflow steps + route messages.
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS task_type VARCHAR(20) DEFAULT 'todo'`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS email_template_id INTEGER REFERENCES process_email_templates(id) ON DELETE SET NULL`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS text_template_id INTEGER REFERENCES process_text_templates(id) ON DELETE SET NULL`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS recipient_type VARCHAR(30) DEFAULT 'tenant'`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS recipient_value VARCHAR(255)`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS send_timing VARCHAR(20) DEFAULT 'immediately'`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS delay_amount INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE process_template_steps ADD COLUMN IF NOT EXISTS delay_unit VARCHAR(10) DEFAULT 'days'`);
+
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS email_template_id INTEGER REFERENCES process_email_templates(id) ON DELETE SET NULL`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS text_template_id INTEGER REFERENCES process_text_templates(id) ON DELETE SET NULL`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS recipient_type VARCHAR(30) DEFAULT 'tenant'`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS recipient_value VARCHAR(255)`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS send_timing VARCHAR(20) DEFAULT 'immediately'`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS scheduled_send_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS sent_communication_id INTEGER`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_process_steps_scheduled_send ON process_steps(scheduled_send_at) WHERE scheduled_send_at IS NOT NULL AND sent_at IS NULL`);
+
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS category VARCHAR(20) DEFAULT 'active'`);
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS exit_rule VARCHAR(50) DEFAULT 'manual'`);
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS short_name VARCHAR(50)`);

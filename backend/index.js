@@ -486,6 +486,7 @@ import {
   getEmailTemplates,
   getProcessActivity,
   getProcessAttachments,
+  getProcessAvailableRecipients,
   getProcessCommunications,
   getProcessCustomFieldSummary,
   getProcessRoleAssignments,
@@ -497,6 +498,9 @@ import {
   postProcessActivityNote,
   postProcessAttachment,
   postProcessCommunication,
+  postProcessSendEmail,
+  postProcessSendText,
+  postProcessTemplatePreview,
   postProcessTypeRole,
   postTextTemplate,
   processAttachmentMiddleware,
@@ -1228,6 +1232,11 @@ app.delete("/processes/process-attachments/:id", requireAuth, deleteProcessAttac
 app.get("/processes/:processId/suggestions", requireAuth, getProcessSuggestions);
 app.put("/processes/process-suggestions/:id/accept", requireAuth, putProcessSuggestionAccept);
 app.put("/processes/process-suggestions/:id/dismiss", requireAuth, putProcessSuggestionDismiss);
+
+app.get("/processes/:processId/available-recipients", requireAuth, getProcessAvailableRecipients);
+app.post("/processes/:processId/send-email", requireAuth, postProcessSendEmail);
+app.post("/processes/:processId/send-text", requireAuth, postProcessSendText);
+app.post("/processes/:processId/send-template-preview", requireAuth, postProcessTemplatePreview);
 
 /** Property context — aggregates cached AppFolio/Boom/LeadSimple/RentEngine data */
 app.get("/property-context/search", requireAuth, getPropertySearch);

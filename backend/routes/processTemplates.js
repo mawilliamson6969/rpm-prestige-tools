@@ -41,6 +41,14 @@ function mapTemplateStep(r) {
     dueDateType: r.due_date_type ?? "offset_from_start",
     dueDateConfig: r.due_date_config ?? {},
     instructions: r.instructions ?? null,
+    taskType: r.task_type ?? "todo",
+    emailTemplateId: r.email_template_id ?? null,
+    textTemplateId: r.text_template_id ?? null,
+    recipientType: r.recipient_type ?? "tenant",
+    recipientValue: r.recipient_value ?? null,
+    sendTiming: r.send_timing ?? "immediately",
+    delayAmount: r.delay_amount ?? 0,
+    delayUnit: r.delay_unit ?? "days",
     createdAt: r.created_at,
   };
 }
@@ -489,6 +497,57 @@ export async function putTemplateStep(req, res) {
       "instructions",
       "instructions",
       (v) => (typeof v === "string" ? v.trim() || null : undefined),
+    ],
+    [
+      "taskType",
+      "task_type",
+      (v) =>
+        typeof v === "string" && ["todo", "email", "sms", "call"].includes(v.trim())
+          ? v.trim()
+          : undefined,
+    ],
+    [
+      "emailTemplateId",
+      "email_template_id",
+      (v) => (v === null ? null : Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined),
+    ],
+    [
+      "textTemplateId",
+      "text_template_id",
+      (v) => (v === null ? null : Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined),
+    ],
+    [
+      "recipientType",
+      "recipient_type",
+      (v) =>
+        typeof v === "string" &&
+        ["tenant", "owner", "custom_email", "custom_phone", "assigned_role"].includes(v.trim())
+          ? v.trim()
+          : undefined,
+    ],
+    [
+      "recipientValue",
+      "recipient_value",
+      (v) => (v === null ? null : typeof v === "string" ? v.trim() || null : undefined),
+    ],
+    [
+      "sendTiming",
+      "send_timing",
+      (v) =>
+        typeof v === "string" && ["immediately", "delay"].includes(v.trim()) ? v.trim() : undefined,
+    ],
+    [
+      "delayAmount",
+      "delay_amount",
+      (v) => (Number.isFinite(Number.parseInt(v, 10)) ? Number.parseInt(v, 10) : undefined),
+    ],
+    [
+      "delayUnit",
+      "delay_unit",
+      (v) =>
+        typeof v === "string" && ["minutes", "hours", "days"].includes(v.trim())
+          ? v.trim()
+          : undefined,
     ],
   ];
   for (const [key, col, parse] of fields) {

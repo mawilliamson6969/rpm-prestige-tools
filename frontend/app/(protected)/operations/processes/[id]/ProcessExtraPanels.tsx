@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import styles from "../../operations.module.css";
+import SendComposer from "./SendComposer";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth } from "../../../../../context/AuthContext";
 import type {
@@ -310,7 +311,13 @@ export function ProcessActivityPanel({ processId }: { processId: number }) {
 
 /* ---------- Communications log ---------- */
 
-export function ProcessCommunicationsPanel({ processId }: { processId: number }) {
+export function ProcessCommunicationsPanel({
+  processId,
+  templateId,
+}: {
+  processId: number;
+  templateId: number | null;
+}) {
   const { authHeaders, token } = useAuth();
   const [items, setItems] = useState<ProcessCommunication[]>([]);
   const [draft, setDraft] = useState<{
@@ -383,12 +390,14 @@ export function ProcessCommunicationsPanel({ processId }: { processId: number })
         </h3>
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
+          className={`${styles.btn} ${styles.btnGhost}`}
           onClick={() => setOpen((v) => !v)}
         >
-          {open ? "Cancel" : "+ Log communication"}
+          {open ? "Cancel" : "+ Log call/note"}
         </button>
       </div>
+
+      <SendComposer processId={processId} templateId={templateId} onSent={load} />
 
       {open ? (
         <div

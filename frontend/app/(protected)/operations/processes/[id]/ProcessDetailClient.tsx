@@ -319,7 +319,10 @@ export default function ProcessDetailClient({ processId }: { processId: string }
               <ProcessActivityPanel processId={processData.id} />
             ) : null}
             {activeTab === "communications" ? (
-              <ProcessCommunicationsPanel processId={processData.id} />
+              <ProcessCommunicationsPanel
+                processId={processData.id}
+                templateId={processData.templateId ?? null}
+              />
             ) : null}
 
             {activeTab === "steps" && stages.length ? (
