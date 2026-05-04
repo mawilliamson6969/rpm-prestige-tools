@@ -7,6 +7,8 @@ import { formatDuration, timestampLabel, type VideoCommentRow, type VideoRow } f
 import { useAuth } from "../../../../context/AuthContext";
 import styles from "../videos.module.css";
 
+type DetailTab = "transcript" | "comments" | "details";
+
 function parseTranscript(transcript: string) {
   return transcript.split(/\n+/).filter(Boolean);
 }
@@ -15,6 +17,24 @@ function parseTimestampFromText(text: string): number | null {
   const match = text.match(/\[(\d{2}):(\d{2})\]/);
   if (!match) return null;
   return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function statusLabel(video: VideoRow) {
+  if (video.processingStatus === "error") return "Processing failed";
+  if (video.processingStatus === "ffmpeg") return "Processing";
+  if (video.transcriptStatus === "processing" || video.transcriptStatus === "pending") return "Transcribing";
+  if (video.transcriptStatus === "completed") return "Transcript ready";
+  if (video.visibility === "shared") return "Shared";
+  return "Private";
+}
+
+function statusTone(video: VideoRow) {
+  if (video.processingStatus === "error" || video.transcriptStatus === "failed") return "danger";
+  if (video.processingStatus === "ffmpeg" || video.transcriptStatus === "processing" || video.transcriptStatus === "pending") {
+    return "warning";
+  }
+  if (video.transcriptStatus === "completed") return "success";
+  return "neutral";
 }
 
 export default function VideoDetailClient({ videoId }: { videoId: number }) {
@@ -30,6 +50,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<DetailTab>("transcript");
 
   const canManage = useMemo(() => {
     if (!video || !user) return false;
@@ -141,6 +162,7 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
     if (res.ok) {
       setCommentText("");
       loadComments();
+      setActiveTab("comments");
     }
   };
 
@@ -174,135 +196,230 @@ export default function VideoDetailClient({ videoId }: { videoId: number }) {
       <p>Transcribing...</p>
     ) : null;
 
+  const tone = statusTone(video);
+  const toneClass = styles[`status${tone[0].toUpperCase()}${tone.slice(1)}`];
+
   return (
     <main className={styles.detailPage}>
-      <div className={styles.detailHeader}>
-        {canManage ? (
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className={styles.titleInput} maxLength={255} />
-        ) : (
-          <h1>{video.title}</h1>
-        )}
-        <p>
-          Recorded by {video.recordedByName} · {new Date(video.createdAt).toLocaleString()} · {formatDuration(video.durationSeconds)} ·{" "}
-          {video.viewsCount} views
-        </p>
+      <div className={styles.detailTopBar}>
+        <button type="button" className={styles.backLinkButton} onClick={() => router.push("/videos")}>
+          ← Back to videos
+        </button>
+        <div className={styles.detailTopActions}>
+          <span className={`${styles.statusBadge} ${toneClass}`}>{statusLabel(video)}</span>
+          {video.visibility === "shared" ? (
+            <button type="button" className={styles.btnSecondary} onClick={toggleShare} disabled={shareBusy}>
+              Revoke Link
+            </button>
+          ) : (
+            <button type="button" className={styles.btnShare} onClick={toggleShare} disabled={shareBusy}>
+              Create Share Link
+            </button>
+          )}
+        </div>
       </div>
 
-      <video
-        ref={videoRef}
-        controls
-        className={styles.player}
-        src={apiUrlWithAuthQuery(`/videos/${video.id}/stream`, token)}
-      />
+      <section className={styles.detailHero}>
+        <div className={styles.detailHeader}>
+          {canManage ? (
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={styles.titleInput} maxLength={255} />
+          ) : (
+            <h1>{video.title}</h1>
+          )}
+          <div className={styles.detailMetaChips}>
+            <span className={styles.toolbarChip}>Recorded by {video.recordedByName}</span>
+            <span className={styles.toolbarChip}>{new Date(video.createdAt).toLocaleString()}</span>
+            <span className={styles.toolbarChip}>{formatDuration(video.durationSeconds)}</span>
+            <span className={styles.toolbarChip}>{video.viewsCount} views</span>
+          </div>
+        </div>
+        <p className={styles.detailSummary}>
+          {video.description || "Use the details panel to add context, sharing notes, or a short summary for this video."}
+        </p>
+      </section>
 
-      <section className={styles.detailActions}>
-        {canManage ? (
-          <>
-            <textarea
-              className={styles.descriptionInput}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="Description"
+      <div className={styles.detailWorkspace}>
+        <section className={styles.detailMain}>
+          <div className={styles.playerCard}>
+            <video
+              ref={videoRef}
+              controls
+              className={styles.player}
+              src={apiUrlWithAuthQuery(`/videos/${video.id}/stream`, token)}
             />
-            <div className={styles.detailActionsRow}>
-              <button type="button" className={styles.btnPrimary} onClick={saveMetadata}>
-                Save Details
-              </button>
-              {video.visibility === "shared" ? (
-                <button type="button" className={styles.btnSecondary} onClick={toggleShare} disabled={shareBusy}>
-                  Revoke Link
-                </button>
-              ) : (
-                <button type="button" className={styles.btnShare} onClick={toggleShare} disabled={shareBusy}>
-                  Create Share Link
-                </button>
-              )}
-              <button type="button" className={styles.btnDanger} onClick={removeVideo}>
-                Delete Video
-              </button>
+          </div>
+
+          <div className={styles.quickCommentCard}>
+            <div className={styles.quickCommentHeader}>
+              <h2>Leave a response</h2>
+              <span className={styles.sectionSubtle}>Add timestamped feedback while the video is fresh.</span>
             </div>
-            {video.shareUrl ? (
-              <div className={styles.shareBox}>
-                <input value={video.shareUrl} readOnly />
-                <button type="button" className={styles.btnSecondary} onClick={copyShareLink}>
-                  Copy Link
+            <div className={styles.commentComposer}>
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment, handoff note, or follow-up..."
+                rows={3}
+              />
+              <div className={styles.commentComposerFooter}>
+                <label className={styles.inlineCheck}>
+                  <input
+                    type="checkbox"
+                    checked={commentAtCurrent}
+                    onChange={(e) => setCommentAtCurrent(e.target.checked)}
+                  />
+                  At current playback time
+                </label>
+                <button type="button" className={styles.btnPrimary} onClick={addComment}>
+                  Add Comment
                 </button>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className={styles.detailSidebar}>
+          <div className={styles.detailTabs}>
+            {([
+              ["transcript", `Transcript${video.transcriptStatus === "completed" ? ` (${transcriptLines.length})` : ""}`],
+              ["comments", `Comments (${comments.length})`],
+              ["details", "Details"],
+            ] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                className={`${styles.detailTab} ${activeTab === tab ? styles.detailTabActive : ""}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className={styles.detailPanel}>
+            {activeTab === "transcript" ? (
+              <section className={styles.detailSection}>
+                <div className={styles.detailSectionHeader}>
+                  <h2>Transcript</h2>
+                  <span className={styles.sectionSubtle}>Search and jump to key moments.</span>
+                </div>
+                {transcriptStatusMessage}
+                {video.transcript && video.transcriptStatus === "completed" ? (
+                  <>
+                    <input
+                      value={transcriptSearch}
+                      onChange={(e) => setTranscriptSearch(e.target.value)}
+                      placeholder="Search transcript"
+                      className={styles.transcriptSearch}
+                    />
+                    <div className={styles.transcriptBody}>
+                      {transcriptLines.map((line, index) => {
+                        const timestamp = parseTimestampFromText(line);
+                        return (
+                          <p key={`${index}-${line.slice(0, 20)}`} className={styles.transcriptLine}>
+                            {timestamp != null ? (
+                              <button type="button" onClick={() => jumpTo(timestamp)} className={styles.btnTimestamp}>
+                                {timestampLabel(timestamp)}
+                              </button>
+                            ) : null}{" "}
+                            {line}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+              </section>
             ) : null}
-          </>
-        ) : (
-          <p>{video.description || "No description provided."}</p>
-        )}
-      </section>
 
-      <section className={styles.transcriptSection}>
-        <h2>Transcript</h2>
-        {transcriptStatusMessage}
-        {video.transcript && video.transcriptStatus === "completed" ? (
-          <>
-            <input
-              value={transcriptSearch}
-              onChange={(e) => setTranscriptSearch(e.target.value)}
-              placeholder="Search transcript"
-              className={styles.transcriptSearch}
-            />
-            <div className={styles.transcriptBody}>
-              {transcriptLines.map((line, index) => {
-                const timestamp = parseTimestampFromText(line);
-                return (
-                  <p key={`${index}-${line.slice(0, 20)}`}>
-                    {timestamp != null ? (
-                      <button type="button" onClick={() => jumpTo(timestamp)} className={styles.btnTimestamp}>
-                        {timestampLabel(timestamp)}
-                      </button>
-                    ) : null}{" "}
-                    {line}
-                  </p>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-      </section>
+            {activeTab === "comments" ? (
+              <section className={styles.detailSection}>
+                <div className={styles.detailSectionHeader}>
+                  <h2>Comments</h2>
+                  <span className={styles.sectionSubtle}>Keep feedback tied to the exact moment it matters.</span>
+                </div>
+                <div className={styles.commentList}>
+                  {comments.length === 0 ? <p className={styles.sectionSubtle}>No comments yet.</p> : null}
+                  {comments.map((comment) => (
+                    <article key={comment.id} className={styles.commentItem}>
+                      <div className={styles.commentHeader}>
+                        <strong>{comment.displayName}</strong>
+                        <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                      </div>
+                      {comment.timestampSeconds != null ? (
+                        <button type="button" onClick={() => jumpTo(comment.timestampSeconds)} className={styles.btnTimestamp}>
+                          {timestampLabel(comment.timestampSeconds)}
+                        </button>
+                      ) : null}
+                      <p>{comment.comment}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
-      <section className={styles.commentsSection}>
-        <h2>Comments</h2>
-        <div className={styles.commentComposer}>
-          <textarea
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder="Add a comment"
-            rows={3}
-          />
-          <label className={styles.inlineCheck}>
-            <input
-              type="checkbox"
-              checked={commentAtCurrent}
-              onChange={(e) => setCommentAtCurrent(e.target.checked)}
-            />
-            At current playback time
-          </label>
-          <button type="button" className={styles.btnPrimary} onClick={addComment}>
-            Add Comment
-          </button>
-        </div>
-        <div className={styles.commentList}>
-          {comments.map((comment) => (
-            <article key={comment.id} className={styles.commentItem}>
-              <div>
-                <strong>{comment.displayName}</strong> · {new Date(comment.createdAt).toLocaleString()}
-              </div>
-              {comment.timestampSeconds != null ? (
-                <button type="button" onClick={() => jumpTo(comment.timestampSeconds)} className={styles.btnTimestamp}>
-                  {timestampLabel(comment.timestampSeconds)}
-                </button>
-              ) : null}
-              <p>{comment.comment}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+            {activeTab === "details" ? (
+              <section className={styles.detailSection}>
+                <div className={styles.detailSectionHeader}>
+                  <h2>Details</h2>
+                  <span className={styles.sectionSubtle}>Manage the summary, sharing, and lifecycle of this video.</span>
+                </div>
+                {canManage ? (
+                  <>
+                    <textarea
+                      className={styles.descriptionInput}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={5}
+                      placeholder="Description"
+                    />
+                    <div className={styles.detailActions}>
+                      <div className={styles.detailActionsRow}>
+                        <button type="button" className={styles.btnPrimary} onClick={saveMetadata}>
+                          Save Details
+                        </button>
+                        <button
+                          type="button"
+                          className={video.visibility === "shared" ? styles.btnSecondary : styles.btnShare}
+                          onClick={toggleShare}
+                          disabled={shareBusy}
+                        >
+                          {video.visibility === "shared" ? "Revoke Link" : "Create Share Link"}
+                        </button>
+                        <button type="button" className={styles.btnDanger} onClick={removeVideo}>
+                          Delete Video
+                        </button>
+                      </div>
+                      {video.shareUrl ? (
+                        <div className={styles.shareBox}>
+                          <input value={video.shareUrl} readOnly />
+                          <button type="button" className={styles.btnSecondary} onClick={copyShareLink}>
+                            Copy Link
+                          </button>
+                        </div>
+                      ) : (
+                        <p className={styles.sectionSubtle}>Create a share link when you want to send this outside the app.</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p>{video.description || "No description provided."}</p>
+                    {video.shareUrl ? (
+                      <div className={styles.shareBox}>
+                        <input value={video.shareUrl} readOnly />
+                        <button type="button" className={styles.btnSecondary} onClick={copyShareLink}>
+                          Copy Link
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </section>
+            ) : null}
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

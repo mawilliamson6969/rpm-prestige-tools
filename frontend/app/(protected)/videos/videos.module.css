@@ -1008,6 +1008,152 @@
   gap: 0.6rem;
 }
 
+.detailTopBar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.backLinkButton {
+  border: none;
+  background: transparent;
+  color: var(--video-blue);
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detailTopActions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.detailHero {
+  background: linear-gradient(135deg, #fff 0%, #f6faff 100%);
+  border: 1px solid var(--video-soft-border);
+  border-radius: 20px;
+  padding: 1rem 1.1rem;
+}
+
+.detailMetaChips {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.55rem;
+}
+
+.detailSummary {
+  margin: 0.75rem 0 0;
+  color: var(--video-muted);
+  line-height: 1.45;
+}
+
+.detailWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.detailMain,
+.detailSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.playerCard,
+.quickCommentCard,
+.detailPanel {
+  background: #fff;
+  border: 1px solid var(--video-soft-border);
+  border-radius: 18px;
+  padding: 1rem;
+}
+
+.playerCard {
+  position: sticky;
+  top: 0.75rem;
+}
+
+.quickCommentHeader,
+.detailSectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.quickCommentHeader h2,
+.detailSectionHeader h2 {
+  margin: 0;
+  color: var(--video-navy);
+}
+
+.commentComposerFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.detailTabs {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.detailTab {
+  border: 1px solid #d8e0eb;
+  background: #fff;
+  color: var(--video-navy);
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detailTabActive {
+  background: var(--video-navy);
+  color: #fff;
+  border-color: var(--video-navy);
+}
+
+.detailSection {
+  min-height: 220px;
+}
+
+.transcriptLine {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  line-height: 1.45;
+}
+
+.commentHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  color: var(--video-muted);
+  font-size: 0.88rem;
+}
+
+.commentItem p {
+  margin: 0.55rem 0 0;
+}
+
+.sharedHeader {
+  margin-bottom: 1rem;
+}
+
 .descriptionInput {
   min-height: 80px;
 }
@@ -1072,6 +1218,7 @@
   .setupGrid,
   .reviewPane,
   .recorderStage,
+  .detailWorkspace,
   .libraryHero {
     grid-template-columns: 1fr;
   }
@@ -1107,7 +1254,9 @@
 
   .featuredFooter,
   .libraryTopRow,
-  .recorderHeader {
+  .recorderHeader,
+  .detailTopBar,
+  .commentComposerFooter {
     flex-direction: column;
     align-items: stretch;
   }
