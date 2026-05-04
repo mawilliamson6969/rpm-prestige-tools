@@ -11,6 +11,7 @@ import ConditionBuilder from "../../ConditionBuilder";
 import DueDateEditor from "../../DueDateEditor";
 import TaskTemplatesManager from "../../TaskTemplatesManager";
 import { EmailTemplatesPanel, RolesPanel, TextTemplatesPanel } from "./SettingsPanels";
+import StepMessagingConfig from "./StepMessagingConfig";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
@@ -18,6 +19,9 @@ import type {
   AutoActionType,
   CustomFieldDefinition,
   DueDateType,
+  ProcessEmailTemplate,
+  ProcessTextTemplate,
+  ProcessTypeRole,
   StageCategory,
   Template,
   TemplateStage,
@@ -260,6 +264,9 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   >("steps");
   const [stages, setStages] = useState<TemplateStage[]>([]);
   const [templateFields, setTemplateFields] = useState<CustomFieldDefinition[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<ProcessEmailTemplate[]>([]);
+  const [textTemplates, setTextTemplates] = useState<ProcessTextTemplate[]>([]);
+  const [roles, setRoles] = useState<ProcessTypeRole[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -356,6 +363,42 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   useEffect(() => {
     loadTemplateFields();
   }, [loadTemplateFields]);
+
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const [eRes, tRes, rRes] = await Promise.all([
+          fetch(apiUrl(`/processes/templates/${templateId}/email-templates`), {
+            headers: { ...authHeaders() },
+            cache: "no-store",
+          }),
+          fetch(apiUrl(`/processes/templates/${templateId}/text-templates`), {
+            headers: { ...authHeaders() },
+            cache: "no-store",
+          }),
+          fetch(apiUrl(`/processes/templates/${templateId}/roles`), {
+            headers: { ...authHeaders() },
+            cache: "no-store",
+          }),
+        ]);
+        if (eRes.ok) {
+          const body = await eRes.json();
+          setEmailTemplates(body.templates || []);
+        }
+        if (tRes.ok) {
+          const body = await tRes.json();
+          setTextTemplates(body.templates || []);
+        }
+        if (rRes.ok) {
+          const body = await rRes.json();
+          setRoles(body.roles || []);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [authHeaders, token, templateId, activeTab]);
 
   const addStage = async () => {
     try {
@@ -1004,6 +1047,13 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                     Delete
                   </button>
                 </div>
+                <StepMessagingConfig
+                  step={step}
+                  emailTemplates={emailTemplates}
+                  textTemplates={textTemplates}
+                  roles={roles}
+                  onChange={(patch) => updateStep(step, patch)}
+                />
                 <AutomationConfigEditor
                   step={step}
                   users={users}

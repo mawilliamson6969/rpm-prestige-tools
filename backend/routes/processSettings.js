@@ -5,6 +5,15 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { getPool } from "../lib/db.js";
 import { bumpActivity, logActivity } from "../lib/process-activity.js";
+import {
+  applyMergeContext,
+  buildMergeContext,
+} from "../lib/process-merge-fields.js";
+import {
+  resolveRecipient,
+  sendProcessEmail,
+  sendProcessSMS,
+} from "../lib/process-messaging.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1045,6 +1054,213 @@ export async function getProcessCustomFieldSummary(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load custom field summary." });
+  }
+}
+
+/* ---------- Send / preview / recipients (Phase 3) ---------- */
+
+export async function getProcessAvailableRecipients(req, res) {
+  const processId = Number.parseInt(req.params.processId, 10);
+  if (!Number.isFinite(processId)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const ctx = await buildMergeContext(processId, req.user?.id ?? null, pool);
+    const tenant = ctx.tenant
+      ? {
+          name: ctx.tenant.tenant || ctx.tenant.name || null,
+          email:
+            ctx.tenant.primary_tenant_email || ctx.tenant.email || null,
+          phone:
+            ctx.tenant.primary_tenant_phone_number ||
+            ctx.tenant.phone_numbers ||
+            ctx.tenant.phone ||
+            null,
+        }
+      : null;
+    const owner = ctx.owner
+      ? {
+          name:
+            ctx.owner.owner_name ||
+            ctx.owner.name ||
+            ctx.process?.contact_name ||
+            null,
+          email: ctx.owner.email || ctx.process?.contact_email || null,
+          phone:
+            ctx.owner.phone || ctx.owner.phone_number || ctx.process?.contact_phone || null,
+        }
+      : ctx.process?.contact_name
+      ? {
+          name: ctx.process.contact_name,
+          email: ctx.process.contact_email || null,
+          phone: ctx.process.contact_phone || null,
+        }
+      : null;
+
+    const { rows: roles } = await pool.query(
+      `SELECT a.role_name, u.id AS user_id, u.display_name, u.username,
+              ec.mailbox_email
+       FROM process_role_assignments a
+       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN email_connections ec ON ec.user_id = a.user_id AND ec.is_active = true
+       WHERE a.process_id = $1
+       ORDER BY a.role_name`,
+      [processId]
+    );
+
+    res.json({
+      tenant,
+      owner,
+      roles: roles.map((r) => ({
+        role: r.role_name,
+        userId: r.user_id,
+        name: r.display_name || r.username || null,
+        email: r.mailbox_email || null,
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load recipients." });
+  }
+}
+
+export async function postProcessSendEmail(req, res) {
+  const processId = Number.parseInt(req.params.processId, 10);
+  if (!Number.isFinite(processId)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  const templateId =
+    req.body?.templateId == null ? null : Number.parseInt(req.body.templateId, 10);
+  const recipientType =
+    typeof req.body?.recipientType === "string" ? req.body.recipientType : null;
+  let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+  if (!to && recipientType) {
+    const r = await resolveRecipient({
+      processId,
+      recipientType,
+      recipientValue:
+        typeof req.body?.recipientValue === "string" ? req.body.recipientValue : null,
+    });
+    to = r.email || "";
+  }
+  if (!to) {
+    res.status(400).json({ error: "Recipient email is required." });
+    return;
+  }
+  try {
+    const result = await sendProcessEmail({
+      processId,
+      templateId: Number.isFinite(templateId) ? templateId : null,
+      to,
+      toName: typeof req.body?.toName === "string" ? req.body.toName : null,
+      subject: typeof req.body?.subject === "string" ? req.body.subject : "",
+      body: typeof req.body?.body === "string" ? req.body.body : "",
+      senderId: req.user?.id ?? null,
+    });
+    res.status(201).json({
+      success: true,
+      communicationId: result.communication.id,
+      resolvedSubject: result.resolvedSubject,
+    });
+  } catch (e) {
+    const status = e.code === "NO_EMAIL_CONNECTION" ? 503 : 500;
+    console.error("[send-email]", e.message);
+    res.status(status).json({ error: e.message || "Could not send email." });
+  }
+}
+
+export async function postProcessSendText(req, res) {
+  const processId = Number.parseInt(req.params.processId, 10);
+  if (!Number.isFinite(processId)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  const templateId =
+    req.body?.templateId == null ? null : Number.parseInt(req.body.templateId, 10);
+  const recipientType =
+    typeof req.body?.recipientType === "string" ? req.body.recipientType : null;
+  let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+  if (!to && recipientType) {
+    const r = await resolveRecipient({
+      processId,
+      recipientType,
+      recipientValue:
+        typeof req.body?.recipientValue === "string" ? req.body.recipientValue : null,
+    });
+    to = r.phone || "";
+  }
+  if (!to) {
+    res.status(400).json({ error: "Recipient phone is required." });
+    return;
+  }
+  try {
+    const result = await sendProcessSMS({
+      processId,
+      templateId: Number.isFinite(templateId) ? templateId : null,
+      to,
+      body: typeof req.body?.body === "string" ? req.body.body : "",
+      senderId: req.user?.id ?? null,
+    });
+    res.status(201).json({
+      success: true,
+      communicationId: result.communication.id,
+      resolvedBody: result.resolvedBody,
+    });
+  } catch (e) {
+    const status = e.code === "OPENPHONE_NOT_CONFIGURED" ? 503 : 500;
+    console.error("[send-text]", e.message);
+    res.status(status).json({ error: e.message || "Could not send text." });
+  }
+}
+
+export async function postProcessTemplatePreview(req, res) {
+  const processId = Number.parseInt(req.params.processId, 10);
+  const templateId =
+    req.body?.templateId == null ? null : Number.parseInt(req.body.templateId, 10);
+  const templateType = req.body?.templateType === "text" ? "text" : "email";
+  if (!Number.isFinite(processId)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    let subject = typeof req.body?.subject === "string" ? req.body.subject : "";
+    let body = typeof req.body?.body === "string" ? req.body.body : "";
+    if (Number.isFinite(templateId)) {
+      if (templateType === "email") {
+        const { rows } = await pool.query(
+          `SELECT subject, body_html FROM process_email_templates WHERE id = $1`,
+          [templateId]
+        );
+        if (!rows.length) {
+          res.status(404).json({ error: "Template not found." });
+          return;
+        }
+        subject = rows[0].subject || "";
+        body = rows[0].body_html || "";
+      } else {
+        const { rows } = await pool.query(
+          `SELECT body FROM process_text_templates WHERE id = $1`,
+          [templateId]
+        );
+        if (!rows.length) {
+          res.status(404).json({ error: "Template not found." });
+          return;
+        }
+        body = rows[0].body || "";
+      }
+    }
+    const ctx = await buildMergeContext(processId, req.user?.id ?? null, pool);
+    res.json({
+      resolvedSubject: applyMergeContext(subject, ctx),
+      resolvedBody: applyMergeContext(body, ctx),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not render preview." });
   }
 }
 
