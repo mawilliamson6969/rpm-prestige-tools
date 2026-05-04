@@ -10,6 +10,7 @@ import CustomFieldManager from "../../CustomFieldManager";
 import ConditionBuilder from "../../ConditionBuilder";
 import DueDateEditor from "../../DueDateEditor";
 import TaskTemplatesManager from "../../TaskTemplatesManager";
+import { EmailTemplatesPanel, RolesPanel, TextTemplatesPanel } from "./SettingsPanels";
 import { apiUrl } from "../../../../../lib/api";
 import { useAuth, RequireAdmin } from "../../../../../context/AuthContext";
 import type {
@@ -17,12 +18,13 @@ import type {
   AutoActionType,
   CustomFieldDefinition,
   DueDateType,
+  StageCategory,
   Template,
   TemplateStage,
   TemplateStep,
   TeamUser,
 } from "../../types";
-import { AUTO_ACTION_LABELS, ROLES } from "../../types";
+import { AUTO_ACTION_LABELS, ROLES, STAGE_CATEGORY_META, STAGE_CATEGORY_ORDER } from "../../types";
 
 type BoardTemplateExtras = Template & {
   agingGreenHours?: number;
@@ -247,7 +249,14 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
   const [dragStepId, setDragStepId] = useState<number | null>(null);
   const [collapsedStages, setCollapsedStages] = useState<Set<number>>(new Set());
   const [activeTab, setActiveTab] = useState<
-    "steps" | "custom_fields" | "automations" | "task_templates" | "board_settings"
+    | "steps"
+    | "custom_fields"
+    | "automations"
+    | "task_templates"
+    | "board_settings"
+    | "roles"
+    | "email_templates"
+    | "text_templates"
   >("steps");
   const [stages, setStages] = useState<TemplateStage[]>([]);
   const [templateFields, setTemplateFields] = useState<CustomFieldDefinition[]>([]);
@@ -664,12 +673,37 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
           </button>
           <button
             type="button"
+            className={`${styles.tabBtn} ${activeTab === "roles" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("roles")}
+          >
+            Roles
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "email_templates" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("email_templates")}
+          >
+            Email Templates
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabBtn} ${activeTab === "text_templates" ? styles.tabBtnActive : ""}`}
+            onClick={() => setActiveTab("text_templates")}
+          >
+            Text Templates
+          </button>
+          <button
+            type="button"
             className={`${styles.tabBtn} ${activeTab === "board_settings" ? styles.tabBtnActive : ""}`}
             onClick={() => setActiveTab("board_settings")}
           >
             Board Settings
           </button>
         </div>
+
+        {activeTab === "roles" ? <RolesPanel templateId={template.id} users={users} /> : null}
+        {activeTab === "email_templates" ? <EmailTemplatesPanel templateId={template.id} /> : null}
+        {activeTab === "text_templates" ? <TextTemplatesPanel templateId={template.id} /> : null}
 
         {activeTab === "task_templates" ? (
           <TaskTemplatesManager processTemplateId={template.id} users={users} />
@@ -981,55 +1015,32 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
             </div>
           );
 
-          return (
-            <>
+          const renderStage = (stage: TemplateStage) => {
+            const stageSteps = stepsByStage.get(stage.id) ?? [];
+            const isCollapsed = collapsedStages.has(stage.id);
+            const isFinal =
+              (stage as unknown as { isFinal?: boolean }).isFinal ?? false;
+            const autoAdvance =
+              (stage as unknown as { autoAdvance?: boolean }).autoAdvance ?? true;
+            const textColor =
+              (stage as unknown as { textColor?: string }).textColor ?? "#042C53";
+            const category =
+              ((stage as unknown as { category?: StageCategory }).category as StageCategory) ??
+              "active";
+            return (
               <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  margin: "1rem 0 0.5rem",
+                key={stage.id}
+                className={styles.stageBlock}
+                style={{ borderLeftColor: stage.color || undefined }}
+                onDragOver={(e) => {
+                  if (dragStepId !== null) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  if (dragStepId === null) return;
+                  e.preventDefault();
+                  handleStepDrop(stage.id, null);
                 }}
               >
-                <h3 style={{ color: "#1b2856", margin: 0, fontSize: "1rem" }}>
-                  Stages ({stages.length}) · {steps.length} total step
-                  {steps.length === 1 ? "" : "s"}
-                </h3>
-                <button type="button" className={styles.smallBtn} onClick={addStage}>
-                  + Add Stage
-                </button>
-              </div>
-
-              {stages.length === 0 ? (
-                <div className={styles.emptyState}>
-                  <h3>No stages yet</h3>
-                  <p>Add a stage to start organizing steps.</p>
-                </div>
-              ) : null}
-
-              {stages.map((stage) => {
-                const stageSteps = stepsByStage.get(stage.id) ?? [];
-                const isCollapsed = collapsedStages.has(stage.id);
-                const isFinal =
-                  (stage as unknown as { isFinal?: boolean }).isFinal ?? false;
-                const autoAdvance =
-                  (stage as unknown as { autoAdvance?: boolean }).autoAdvance ?? true;
-                const textColor =
-                  (stage as unknown as { textColor?: string }).textColor ?? "#042C53";
-                return (
-                  <div
-                    key={stage.id}
-                    className={styles.stageBlock}
-                    style={{ borderLeftColor: stage.color || undefined }}
-                    onDragOver={(e) => {
-                      if (dragStepId !== null) e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      if (dragStepId === null) return;
-                      e.preventDefault();
-                      handleStepDrop(stage.id, null);
-                    }}
-                  >
                     <div
                       style={{
                         display: "flex",
@@ -1129,6 +1140,23 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                         />
                         Auto-advance
                       </label>
+                      <select
+                        value={category}
+                        onChange={(e) =>
+                          updateStage(stage, {
+                            category: e.target.value as StageCategory,
+                          } as Partial<typeof stage>)
+                        }
+                        className={styles.select}
+                        title="Stage category"
+                        style={{ fontSize: "0.78rem" }}
+                      >
+                        {STAGE_CATEGORY_ORDER.map((c) => (
+                          <option key={c} value={c}>
+                            {STAGE_CATEGORY_META[c].label}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         type="color"
                         value={stage.color || "#0098D0"}
@@ -1186,6 +1214,107 @@ function TemplateEditorInner({ templateId }: { templateId: string }) {
                         </button>
                       </div>
                     ) : null}
+                  </div>
+                );
+              };
+
+              const stagesByCategory = new Map<StageCategory, TemplateStage[]>();
+              for (const cat of STAGE_CATEGORY_ORDER) stagesByCategory.set(cat, []);
+              for (const s of stages) {
+                const cat =
+                  ((s as unknown as { category?: StageCategory }).category as StageCategory) ??
+                  "active";
+                const bucket = stagesByCategory.get(cat) ?? stagesByCategory.get("active")!;
+                bucket.push(s);
+              }
+
+              const addStageInCategory = async (cat: StageCategory) => {
+                try {
+                  const res = await fetch(
+                    apiUrl(`/processes/templates/${templateId}/stages`),
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...authHeaders() },
+                      body: JSON.stringify({ name: "New stage", category: cat }),
+                    }
+                  );
+                  if (!res.ok) throw new Error("Add failed");
+                  await loadStages();
+                } catch (e) {
+                  setErr(e instanceof Error ? e.message : "Add stage failed");
+                }
+              };
+
+              return (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  margin: "1rem 0 0.5rem",
+                }}
+              >
+                <h3 style={{ color: "#1b2856", margin: 0, fontSize: "1rem" }}>
+                  Stages ({stages.length}) · {steps.length} total step
+                  {steps.length === 1 ? "" : "s"}
+                </h3>
+                <button type="button" className={styles.smallBtn} onClick={addStage}>
+                  + Add Stage
+                </button>
+              </div>
+
+              {stages.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <h3>No stages yet</h3>
+                  <p>Add a stage to start organizing steps.</p>
+                </div>
+              ) : null}
+
+              {STAGE_CATEGORY_ORDER.map((cat) => {
+                const list = stagesByCategory.get(cat) ?? [];
+                if (list.length === 0 && cat !== "active") return null;
+                const meta = STAGE_CATEGORY_META[cat];
+                return (
+                  <div key={cat} style={{ marginTop: "0.75rem" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "0.5rem",
+                        padding: "0.4rem 0.6rem",
+                        background: `${meta.color}1a`,
+                        borderLeft: `4px solid ${meta.color}`,
+                        borderRadius: 6,
+                        marginBottom: "0.5rem",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: "0.85rem",
+                            color: "#1b2856",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {meta.label} · {list.length}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#6a737b" }}>
+                          {meta.description}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.smallBtn}
+                        onClick={() => addStageInCategory(cat)}
+                      >
+                        + Add stage
+                      </button>
+                    </div>
+                    {list.map((stage) => renderStage(stage))}
                   </div>
                 );
               })}

@@ -5,7 +5,7 @@ import {
 } from "../lib/process-automation.js";
 import { evaluateConditions } from "../lib/condition-engine.js";
 import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
-import { bumpActivity } from "../lib/process-activity.js";
+import { bumpActivity, logActivity, recordStageEntry } from "../lib/process-activity.js";
 
 function mapProcess(r) {
   return {
@@ -374,6 +374,17 @@ export async function postProcess(req, res) {
     res.status(201).json({ process: mapProcess(finalRows[0]), steps: steps.map(mapStep) });
     setImmediate(async () => {
       try {
+        await logActivity(processRow.id, {
+          actionType: "process_created",
+          description: `Process started from template: ${template.name}`,
+          metadata: { templateId, templateName: template.name },
+          actor: req.user,
+        });
+        if (processRow.current_stage_id) {
+          await recordStageEntry(processRow.id, processRow.current_stage_id, {
+            userId: req.user?.id,
+          });
+        }
         runAutomationForProcessLaunch(processRow.id).catch((err) =>
           console.warn("[automation] launch failed:", err.message)
         );
@@ -648,6 +659,12 @@ async function completeOrSkipStep(req, res, kind) {
           type: "step_completed",
           userId: req.user?.id,
         });
+        await logActivity(step.process_id, {
+          actionType: kind === "skip" ? "step_skipped" : "step_completed",
+          description: `${kind === "skip" ? "Skipped" : "Completed"} step: ${step.name}`,
+          metadata: { stepId: step.id, templateStepId: step.template_step_id },
+          actor: req.user,
+        });
         await evaluateConditions(step.process_id, "step_completed", {
           templateStepId: step.template_step_id,
           stepName: step.name,
@@ -660,7 +677,19 @@ async function completeOrSkipStep(req, res, kind) {
         await checkAndCompleteStage(step.process_id, step.stage_id);
         // Board-level auto-advance: move processes.current_stage_id forward if the
         // current template stage is fully complete and has auto_advance=true.
-        await recalcCurrentStage(step.process_id);
+        const advance = await recalcCurrentStage(step.process_id);
+        if (advance?.advanced) {
+          await recordStageEntry(step.process_id, advance.newStageId, {
+            userId: req.user?.id,
+          });
+          await logActivity(step.process_id, {
+            actionType: "stage_changed",
+            description: `Auto-advanced to next stage`,
+            metadata: { fromStageId: advance.oldStageId, toStageId: advance.newStageId },
+            actorType: "system",
+            actor: req.user,
+          });
+        }
       } catch (err) {
         console.warn("[process] post-complete tasks failed:", err.message);
       }
@@ -979,13 +1008,20 @@ export async function putProcessStage(req, res) {
   try {
     const pool = getPool();
     let isFinal = false;
+    let stageName = null;
     if (Number.isFinite(stageId)) {
       const { rows } = await pool.query(
-        `SELECT is_final FROM process_template_stages WHERE id = $1`,
+        `SELECT is_final, name FROM process_template_stages WHERE id = $1`,
         [stageId]
       );
       isFinal = rows[0]?.is_final ?? false;
+      stageName = rows[0]?.name ?? null;
     }
+    const { rows: prevRows } = await pool.query(
+      `SELECT current_stage_id FROM processes WHERE id = $1`,
+      [id]
+    );
+    const prevStageId = prevRows[0]?.current_stage_id ?? null;
     const { rows } = await pool.query(
       `UPDATE processes SET
          current_stage_id = $1,
@@ -1010,6 +1046,29 @@ export async function putProcessStage(req, res) {
       return;
     }
     res.json({ process: mapProcess(rows[0]) });
+
+    if (prevStageId !== (Number.isFinite(stageId) ? stageId : null)) {
+      setImmediate(async () => {
+        try {
+          await recordStageEntry(id, Number.isFinite(stageId) ? stageId : null, {
+            userId: req.user?.id,
+          });
+          await logActivity(id, {
+            actionType: "stage_changed",
+            description: stageName
+              ? `Moved to stage: ${stageName}`
+              : "Stage cleared",
+            metadata: {
+              fromStageId: prevStageId,
+              toStageId: Number.isFinite(stageId) ? stageId : null,
+            },
+            actor: req.user,
+          });
+        } catch (err) {
+          console.warn("[process] stage-change log failed:", err.message);
+        }
+      });
+    }
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not move process." });

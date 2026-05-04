@@ -14,9 +14,16 @@ function mapStage(r) {
     isFinal: r.is_final ?? false,
     autoAdvance: r.auto_advance ?? true,
     gateCondition: r.gate_condition,
+    category: r.category ?? "active",
+    exitRule: r.exit_rule ?? "manual",
+    shortName: r.short_name ?? null,
+    defaultDays: r.default_days ?? 0,
     createdAt: r.created_at,
   };
 }
+
+const VALID_STAGE_CATEGORIES = new Set(["backlog", "active", "completed", "cancelled"]);
+const VALID_EXIT_RULES = new Set(["manual", "all_tasks_complete", "any_task_complete"]);
 
 export async function getTemplateStages(req, res) {
   const templateId = Number.parseInt(req.params.id, 10);
@@ -53,8 +60,9 @@ export async function postTemplateStage(req, res) {
     );
     const { rows } = await pool.query(
       `INSERT INTO process_template_stages
-         (template_id, name, description, stage_order, color, text_color, icon, is_gate, is_final, auto_advance)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+         (template_id, name, description, stage_order, color, text_color, icon,
+          is_gate, is_final, auto_advance, category, exit_rule, short_name, default_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
       [
         templateId,
         name,
@@ -72,6 +80,16 @@ export async function postTemplateStage(req, res) {
         req.body?.isGate === true,
         req.body?.isFinal === true,
         req.body?.autoAdvance !== false,
+        typeof req.body?.category === "string" && VALID_STAGE_CATEGORIES.has(req.body.category)
+          ? req.body.category
+          : "active",
+        typeof req.body?.exitRule === "string" && VALID_EXIT_RULES.has(req.body.exitRule)
+          ? req.body.exitRule
+          : "manual",
+        typeof req.body?.shortName === "string" ? req.body.shortName.trim() || null : null,
+        Number.isFinite(Number.parseInt(req.body?.defaultDays, 10))
+          ? Number.parseInt(req.body.defaultDays, 10)
+          : 0,
       ]
     );
     res.status(201).json({ stage: mapStage(rows[0]) });
@@ -124,6 +142,22 @@ export async function putTemplateStage(req, res) {
   if (Number.isFinite(Number.parseInt(req.body?.stageOrder, 10))) {
     sets.push(`stage_order = $${n++}`);
     vals.push(Number.parseInt(req.body.stageOrder, 10));
+  }
+  if (typeof req.body?.category === "string" && VALID_STAGE_CATEGORIES.has(req.body.category)) {
+    sets.push(`category = $${n++}`);
+    vals.push(req.body.category);
+  }
+  if (typeof req.body?.exitRule === "string" && VALID_EXIT_RULES.has(req.body.exitRule)) {
+    sets.push(`exit_rule = $${n++}`);
+    vals.push(req.body.exitRule);
+  }
+  if (typeof req.body?.shortName === "string") {
+    sets.push(`short_name = $${n++}`);
+    vals.push(req.body.shortName.trim() || null);
+  }
+  if (Number.isFinite(Number.parseInt(req.body?.defaultDays, 10))) {
+    sets.push(`default_days = $${n++}`);
+    vals.push(Number.parseInt(req.body.defaultDays, 10));
   }
   if (!sets.length) {
     res.status(400).json({ error: "No valid fields to update." });

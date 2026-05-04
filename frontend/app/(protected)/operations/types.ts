@@ -96,6 +96,9 @@ export type DueDateType =
   | "same_day_as_step"
   | "no_due_date";
 
+export type StageCategory = "backlog" | "active" | "completed" | "cancelled";
+export type StageExitRule = "manual" | "all_tasks_complete" | "any_task_complete";
+
 export type TemplateStage = {
   id: number;
   templateId: number;
@@ -109,8 +112,132 @@ export type TemplateStage = {
   isFinal?: boolean;
   autoAdvance?: boolean;
   gateCondition: unknown;
+  category?: StageCategory;
+  exitRule?: StageExitRule;
+  shortName?: string | null;
+  defaultDays?: number;
   createdAt: string;
 };
+
+export type ProcessTypeRole = {
+  id: number;
+  templateId: number;
+  roleName: string;
+  isRequired: boolean;
+  sortOrder: number;
+  createdAt: string;
+};
+
+export type ProcessRoleAssignment = {
+  id: number;
+  processId: number;
+  roleName: string;
+  userId: number | null;
+  userName: string | null;
+  assignedBy: number | null;
+  assignedAt: string;
+};
+
+export type ProcessEmailTemplate = {
+  id: number;
+  templateId: number | null;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  bodyText: string | null;
+  totalSends: number;
+  totalOpens: number;
+  totalClicks: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProcessTextTemplate = {
+  id: number;
+  templateId: number | null;
+  name: string;
+  body: string;
+  totalSends: number;
+  totalDelivered: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProcessActivityItem = {
+  id: number;
+  processId: number;
+  actionType: string;
+  description: string;
+  metadata: Record<string, unknown> | null;
+  actorType: string;
+  actorId: number | null;
+  actorName: string | null;
+  isPinned: boolean;
+  pinnedBy: number | null;
+  pinnedAt: string | null;
+  createdAt: string;
+};
+
+export type ProcessCommunication = {
+  id: number;
+  processId: number;
+  channel: "email" | "sms" | "call" | "note";
+  direction: "inbound" | "outbound" | null;
+  subject: string | null;
+  body: string | null;
+  fromAddress: string | null;
+  toAddress: string | null;
+  status: string;
+  openedAt: string | null;
+  clickedAt: string | null;
+  emailTemplateId: number | null;
+  textTemplateId: number | null;
+  externalId: string | null;
+  sentBy: number | null;
+  sentByName: string | null;
+  createdAt: string;
+};
+
+export type ProcessStageHistoryItem = {
+  id: number;
+  processId: number;
+  stageId: number | null;
+  stageName: string | null;
+  stageColor: string | null;
+  enteredAt: string;
+  exitedAt: string | null;
+  durationHours: number | null;
+  changedBy: number | null;
+};
+
+export type ProcessAttachment = {
+  id: number;
+  processId: number;
+  filename: string;
+  filePath: string;
+  fileSize: number | null;
+  mimeType: string | null;
+  uploadedBy: number | null;
+  uploadedByName: string | null;
+  createdAt: string;
+};
+
+export const STAGE_CATEGORY_META: Record<
+  StageCategory,
+  { label: string; color: string; description: string }
+> = {
+  backlog: { label: "Backlog", color: "#0098D0", description: "Waiting / not started" },
+  active: { label: "Active", color: "#FAC775", description: "In progress" },
+  completed: { label: "Completed", color: "#10b981", description: "Finished successfully" },
+  cancelled: { label: "Cancelled", color: "#B32317", description: "Stopped / lost" },
+};
+
+export const STAGE_CATEGORY_ORDER: StageCategory[] = [
+  "backlog",
+  "active",
+  "completed",
+  "cancelled",
+];
 
 export type ProcessStageRecord = {
   id: number;
