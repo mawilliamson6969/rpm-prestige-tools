@@ -179,17 +179,25 @@ export default function ScorecardClient() {
       if (metric.frequency === "weekly") body.weekOf = periodKey;
       else body.monthOf = periodKey;
       if (existing?.entryId) {
-        await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
+        const res = await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ value: num }),
         });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(typeof j.error === "string" ? j.error : "Could not update entry");
+        }
       } else {
-        await fetch(apiUrl("/eos/scorecard/entries"), {
+        const res = await fetch(apiUrl("/eos/scorecard/entries"), {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify(body),
         });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(typeof j.error === "string" ? j.error : "Could not create entry");
+        }
       }
       await loadReport();
     },
@@ -216,6 +224,10 @@ export default function ScorecardClient() {
         const resolvedNext = next ?? pendingNextEditRef.current;
         pendingNextEditRef.current = null;
         if (resolvedNext) setEditing(resolvedNext);
+      } catch (e) {
+        pendingNextEditRef.current = null;
+        alert(e instanceof Error ? e.message : "Could not save scorecard entry");
+        setEditing(current);
       } finally {
         commitInFlightRef.current = false;
       }
