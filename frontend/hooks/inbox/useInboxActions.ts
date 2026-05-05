@@ -143,16 +143,23 @@ export default function useInboxActions({
 
   const send = useCallback(async () => {
     if (selectedId == null) return;
-    const wasReply = compose.mode === "reply";
-    const r = await compose.send();
-    if (!r.ok) {
-      toast.push({ variant: "error", message: `Couldn't send — ${r.error}` });
-      return;
-    }
-    if (wasReply) aiDraft.hideBanner();
-    void detail.refetch();
-    void list.refetch();
-    void stats.refetch();
+    const attempt = async (): Promise<void> => {
+      const wasReply = compose.mode === "reply";
+      const r = await compose.send();
+      if (!r.ok) {
+        toast.push({
+          variant: "error",
+          message: `Couldn't send — ${r.error}`,
+          retry: () => void attempt(),
+        });
+        return;
+      }
+      if (wasReply) aiDraft.hideBanner();
+      void detail.refetch();
+      void list.refetch();
+      void stats.refetch();
+    };
+    await attempt();
   }, [aiDraft, compose, detail, list, selectedId, stats, toast]);
 
   const draftAllUnread = useCallback(async () => {

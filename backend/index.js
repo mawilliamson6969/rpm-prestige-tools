@@ -126,7 +126,7 @@ import {
 import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
 import { getMaintenanceDashboardV2, getTechnicianConfig, putTechnicianConfig } from "./routes/maintenance-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
-import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
+import { runEmailSyncOnce } from "./lib/inbox/email-delta-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
 import {
   getMe,
@@ -252,6 +252,7 @@ import {
   postInboxAiDraftBatch,
   postInboxConnectionGrantTeam,
   postInboxConnectionPermission,
+  postInboxConnectionSync,
   postInboxSyncTrigger,
   postInboxTicketAiDraft,
   postInboxTicketAssign,
@@ -917,6 +918,7 @@ app.get("/inbox/tickets/:id/sla", requireAuth, getInboxTicketSla);
 app.post("/inbox/ai-draft/batch", requireAuth, requireAdminRole, postInboxAiDraftBatch);
 app.get("/inbox/stats", requireAuth, getInboxStats);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
+app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
 
 app.get("/inbox/signatures", requireAuth, getInboxSignatures);

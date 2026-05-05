@@ -99,6 +99,13 @@ export type MailboxConnection = {
   last_sync_at: string | null;
   my_permission: string | null;
   unread_count: number | null;
+  /** Per-mailbox delta-sync state. Populated once mailbox_sync_state has rows. */
+  delta_last_synced_at?: string | null;
+  delta_last_success_at?: string | null;
+  delta_last_error?: string | null;
+  delta_last_error_at?: string | null;
+  delta_messages_processed?: number | null;
+  delta_full_sync_in_progress?: boolean | null;
 };
 
 export type ComposeMode = "reply" | "note";

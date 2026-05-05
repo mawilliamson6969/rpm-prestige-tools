@@ -450,7 +450,41 @@ export async function ensureInboxSchema() {
 
   await migrateInboxMultiMailbox(p);
 
+  await migrateInboxDeltaSync(p);
+
   await seedEmailSignatures(p);
+}
+
+async function migrateInboxDeltaSync(p) {
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_sync_state (
+      connection_id          INTEGER PRIMARY KEY REFERENCES email_connections(id) ON DELETE CASCADE,
+      delta_link             TEXT,
+      last_synced_at         TIMESTAMPTZ,
+      last_success_at        TIMESTAMPTZ,
+      last_error             TEXT,
+      last_error_at          TIMESTAMPTZ,
+      messages_processed     BIGINT NOT NULL DEFAULT 0,
+      full_sync_in_progress  BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
+  await p.query(`ALTER TABLE ticket_responses ADD COLUMN IF NOT EXISTS graph_id TEXT`);
+  await p.query(`ALTER TABLE ticket_responses ADD COLUMN IF NOT EXISTS send_status TEXT NOT NULL DEFAULT 'sent'`);
+  await p.query(`ALTER TABLE ticket_responses ADD COLUMN IF NOT EXISTS send_error TEXT`);
+  await p.query(`ALTER TABLE ticket_responses ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
+  await p.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_ticket_responses_graph_id
+      ON ticket_responses(graph_id) WHERE graph_id IS NOT NULL
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_ticket_responses_failed
+      ON ticket_responses(send_status) WHERE send_status = 'failed'
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_tickets_deleted
+      ON tickets(deleted_at) WHERE deleted_at IS NOT NULL
+  `);
 }
 
 async function migrateInboxMultiMailbox(p) {
