@@ -1,5 +1,12 @@
 import bcrypt from "bcryptjs";
 import { getPool } from "../lib/db.js";
+import { getUserPermissions } from "../lib/auth.js";
+
+/** Roles known to the permission model; new ones get added in role_permissions. */
+const KNOWN_ROLES = new Set(["owner", "admin", "csm", "maintenance", "operations", "staff"]);
+
+const USER_COLUMNS = `id, username, display_name, role, email, avatar_url, active,
+                     created_at, deactivated_at, last_login_at`;
 
 function mapRow(r) {
   return {
@@ -8,22 +15,62 @@ function mapRow(r) {
     displayName: r.display_name,
     role: r.role,
     email: r.email,
+    avatarUrl: r.avatar_url ?? null,
+    active: r.active !== false,
     created_at: r.created_at,
+    deactivatedAt: r.deactivated_at ?? null,
+    lastLoginAt: r.last_login_at ?? null,
   };
 }
 
-export async function listUsers(_req, res) {
+function isValidRole(role) {
+  return typeof role === "string" && KNOWN_ROLES.has(role);
+}
+
+/**
+ * GET /users — list users.
+ *
+ * Default: only active users (used by assignee pickers).
+ * Admin can pass `?include=inactive` to see deactivated rows for management.
+ */
+export async function listUsers(req, res) {
+  const includeInactive =
+    req.query?.include === "inactive" || req.query?.include === "all";
+  const isAdminRole = req.user?.role === "admin" || req.user?.role === "owner";
+
   try {
     const pool = getPool();
+    const filter = includeInactive && isAdminRole ? "" : "WHERE active = TRUE";
     const { rows } = await pool.query(
-      `SELECT id, username, display_name, role, email, created_at
+      `SELECT ${USER_COLUMNS}
        FROM users
-       ORDER BY lower(username) ASC`
+       ${filter}
+       ORDER BY active DESC, lower(username) ASC`
     );
     res.json({ users: rows.map(mapRow) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load users." });
+  }
+}
+
+/** GET /users/me — current user's profile + computed permissions array. */
+export async function getMyProfile(req, res) {
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+    const permissions = await getUserPermissions(req.user.id);
+    res.json({ user: { ...mapRow(rows[0]), permissions } });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not load profile." });
   }
 }
 
@@ -52,8 +99,10 @@ export async function createUser(req, res) {
     res.status(400).json({ error: "password must be at least 8 characters." });
     return;
   }
-  if (role !== "admin" && role !== "viewer") {
-    res.status(400).json({ error: "role must be admin or viewer." });
+  if (!isValidRole(role)) {
+    res.status(400).json({
+      error: `role must be one of: ${Array.from(KNOWN_ROLES).join(", ")}.`,
+    });
     return;
   }
 
@@ -68,9 +117,9 @@ export async function createUser(req, res) {
   try {
     const hash = await bcrypt.hash(password, 12);
     const { rows } = await pool.query(
-      `INSERT INTO users (username, password_hash, display_name, role, email)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, username, display_name, role, email, created_at`,
+      `INSERT INTO users (username, password_hash, display_name, role, email, active)
+       VALUES ($1, $2, $3, $4, $5, TRUE)
+       RETURNING ${USER_COLUMNS}`,
       [usernameRaw, hash, displayName, role, email]
     );
     res.status(201).json({ user: mapRow(rows[0]) });
@@ -84,6 +133,11 @@ export async function createUser(req, res) {
   }
 }
 
+/**
+ * PATCH/PUT /users/:id — update display_name, email, role, active, password,
+ * avatar_url. Used by both the legacy "edit user" modal and the new "deactivate"
+ * button.
+ */
 export async function updateUser(req, res) {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -102,7 +156,7 @@ export async function updateUser(req, res) {
 
   try {
     const { rows: existing } = await pool.query(
-      `SELECT id, username, display_name, role, email, created_at FROM users WHERE id = $1`,
+      `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
       [id]
     );
     if (!existing.length) {
@@ -111,8 +165,19 @@ export async function updateUser(req, res) {
     }
     const current = existing[0];
 
-    if (id === req.user.id && body.role === "viewer" && current.role === "admin") {
+    if (
+      id === req.user.id &&
+      typeof body.role === "string" &&
+      body.role !== "admin" &&
+      body.role !== "owner" &&
+      (current.role === "admin" || current.role === "owner")
+    ) {
       res.status(403).json({ error: "Cannot demote yourself from admin." });
+      return;
+    }
+
+    if (id === req.user.id && body.active === false) {
+      res.status(403).json({ error: "Cannot deactivate your own account." });
       return;
     }
 
@@ -131,8 +196,10 @@ export async function updateUser(req, res) {
     }
 
     if (body.role !== undefined && body.role !== null) {
-      if (body.role !== "admin" && body.role !== "viewer") {
-        res.status(400).json({ error: "role must be admin or viewer." });
+      if (!isValidRole(body.role)) {
+        res.status(400).json({
+          error: `role must be one of: ${Array.from(KNOWN_ROLES).join(", ")}.`,
+        });
         return;
       }
       sets.push(`role = $${n++}`);
@@ -142,6 +209,18 @@ export async function updateUser(req, res) {
     if (typeof body.email === "string") {
       sets.push(`email = $${n++}`);
       vals.push(body.email.trim() || null);
+    }
+
+    if (typeof body.avatarUrl === "string") {
+      sets.push(`avatar_url = $${n++}`);
+      vals.push(body.avatarUrl.trim() || null);
+    }
+
+    if (typeof body.active === "boolean") {
+      sets.push(`active = $${n++}`);
+      vals.push(body.active);
+      sets.push(`deactivated_at = $${n++}`);
+      vals.push(body.active ? null : new Date());
     }
 
     if (typeof body.password === "string" && body.password.length > 0) {
@@ -162,7 +241,7 @@ export async function updateUser(req, res) {
     vals.push(id);
     const { rows } = await pool.query(
       `UPDATE users SET ${sets.join(", ")} WHERE id = $${n}
-       RETURNING id, username, display_name, role, email, created_at`,
+       RETURNING ${USER_COLUMNS}`,
       vals
     );
     res.json({ user: mapRow(rows[0]) });
@@ -172,6 +251,10 @@ export async function updateUser(req, res) {
   }
 }
 
+/**
+ * DELETE /users/:id — hard delete. Prefer PATCH with { active: false } to
+ * preserve audit/history. Kept for back-compat with the existing admin UI.
+ */
 export async function deleteUser(req, res) {
   const id = Number.parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) {

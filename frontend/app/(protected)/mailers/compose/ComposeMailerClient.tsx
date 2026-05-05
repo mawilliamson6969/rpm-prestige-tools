@@ -191,7 +191,7 @@ export default function ComposeMailerClient() {
           tenant_name: tenantName.trim() || undefined,
           letter_category: letterCategory || undefined,
           notes: notes.trim() || undefined,
-          sent_by: user?.displayName || user?.username || "Mike",
+          sent_by: user?.displayName || user?.username || "Unknown",
         }),
       });
       const createData = await createResp.json();

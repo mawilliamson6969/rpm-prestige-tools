@@ -1,12 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { apiUrl } from "../../lib/api";
-import { parseApiError } from "../../lib/apiResult";
+import { useMemo } from "react";
+import useTeam from "../useTeam";
 import type { TeamUser } from "./types";
-
-const ALLOWLIST = new Set(["mike", "lori", "leslie", "amanda", "amelia"]);
 
 export type UseTeamUsers = {
   teamUsers: TeamUser[];
@@ -14,39 +10,27 @@ export type UseTeamUsers = {
   error: string | null;
 };
 
+/**
+ * Inbox-shaped wrapper over the platform-wide `useTeam` hook. Filters to active
+ * team members (excludes external/staff role only — keeps owner/admin/csm/
+ * maintenance/operations) so the assignee dropdown matches the people who
+ * actually triage tickets.
+ */
+const TRIAGE_ROLES = new Set(["owner", "admin", "csm", "maintenance", "operations"]);
+
 export default function useTeamUsers(): UseTeamUsers {
-  const { authHeaders } = useAuth();
-  const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(apiUrl("/eos/team-users"), { headers: { ...authHeaders() } });
-        const body = await res.json().catch(() => ({}));
-        if (cancelled) return;
-        if (!res.ok) {
-          setError(parseApiError(body, res.status));
-          return;
-        }
-        if (Array.isArray(body.users)) {
-          setTeamUsers(
-            (body.users as TeamUser[]).filter((u) => ALLOWLIST.has(u.username.toLowerCase()))
-          );
-        }
-        setError(null);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load team.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authHeaders]);
-
+  const { team, loading, error } = useTeam();
+  const teamUsers = useMemo<TeamUser[]>(
+    () =>
+      team
+        .filter((m) => m.active && TRIAGE_ROLES.has(m.role))
+        .map((m) => ({
+          id: m.id,
+          username: m.username,
+          displayName: m.displayName,
+          email: m.email,
+        })),
+    [team]
+  );
   return { teamUsers, loading, error };
 }

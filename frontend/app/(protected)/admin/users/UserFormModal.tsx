@@ -1,16 +1,31 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import type { AuthRole } from "../../../../context/AuthContext";
 import styles from "./users-admin.module.css";
 
 export type ManagedUser = {
   id: number;
   username: string;
   displayName: string;
-  role: "admin" | "viewer";
+  role: AuthRole;
   email: string | null;
+  active?: boolean;
   created_at: string;
+  deactivatedAt?: string | null;
+  lastLoginAt?: string | null;
 };
+
+export type EditableRole = "owner" | "admin" | "csm" | "maintenance" | "operations" | "staff";
+
+export const ROLE_OPTIONS: { value: EditableRole; label: string; description: string }[] = [
+  { value: "owner", label: "Owner", description: "Full access; reserved for company leadership." },
+  { value: "admin", label: "Admin", description: "Full access; for trusted operators." },
+  { value: "csm", label: "Client Success", description: "Inbox + leasing + reports." },
+  { value: "maintenance", label: "Maintenance", description: "Inbox + work orders." },
+  { value: "operations", label: "Operations", description: "Inbox + processes." },
+  { value: "staff", label: "Staff", description: "Read-only inbox; default for new hires." },
+];
 
 type Props = {
   open: boolean;
@@ -23,17 +38,24 @@ type Props = {
     password: string;
     displayName: string;
     email: string;
-    role: "admin" | "viewer";
+    role: EditableRole;
   }) => Promise<void>;
   onSubmitEdit: (data: {
     displayName: string;
     email: string;
-    role: "admin" | "viewer";
+    role: EditableRole;
     password?: string;
   }) => Promise<void>;
   /** Shown as toast alongside inline form error (optional). */
   onApiError?: (message: string) => void;
 };
+
+function coerceRole(role: string | undefined | null): EditableRole {
+  if (!role) return "staff";
+  if (ROLE_OPTIONS.some((r) => r.value === role)) return role as EditableRole;
+  // Legacy values: 'viewer' had no triage permissions, fold into staff.
+  return "staff";
+}
 
 export default function UserFormModal({
   open,
@@ -49,7 +71,7 @@ export default function UserFormModal({
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "viewer">("viewer");
+  const [role, setRole] = useState<EditableRole>("staff");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +83,7 @@ export default function UserFormModal({
       setPassword("");
       setDisplayName("");
       setEmail("");
-      setRole("viewer");
+      setRole("staff");
       return;
     }
     if (initial) {
@@ -69,7 +91,7 @@ export default function UserFormModal({
       setPassword("");
       setDisplayName(initial.displayName);
       setEmail(initial.email ?? "");
-      setRole(initial.role);
+      setRole(coerceRole(initial.role));
     }
   }, [open, mode, initial]);
 
@@ -125,7 +147,7 @@ export default function UserFormModal({
       const payload: {
         displayName: string;
         email: string;
-        role: "admin" | "viewer";
+        role: EditableRole;
         password?: string;
       } = {
         displayName: d,
@@ -146,7 +168,8 @@ export default function UserFormModal({
     }
   };
 
-  const title = mode === "create" ? "Add user" : "Edit user";
+  const title = mode === "create" ? "Add team member" : "Edit team member";
+  const selectedDescription = ROLE_OPTIONS.find((r) => r.value === role)?.description ?? "";
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="user-form-title" onClick={onClose}>
@@ -189,11 +212,19 @@ export default function UserFormModal({
           </label>
           <label className={styles.field}>
             <span>Role</span>
-            <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "viewer")} disabled={roleDisabled}>
-              <option value="viewer">Viewer</option>
-              <option value="admin">Admin</option>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as EditableRole)}
+              disabled={roleDisabled}
+            >
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
             </select>
           </label>
+          {selectedDescription ? <p className={styles.hint}>{selectedDescription}</p> : null}
           {roleDisabled ? (
             <p className={styles.hint}>You cannot change your own role here.</p>
           ) : null}
@@ -203,7 +234,7 @@ export default function UserFormModal({
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === "create" ? "new-password" : "new-password"}
+              autoComplete="new-password"
               minLength={mode === "create" ? 8 : undefined}
               required={mode === "create"}
             />

@@ -12,11 +12,22 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiUrl, AUTH_TOKEN_STORAGE_KEY } from "../lib/api";
 
+export type AuthRole =
+  | "owner"
+  | "admin"
+  | "csm"
+  | "maintenance"
+  | "operations"
+  | "staff"
+  /** Legacy values; tolerated until all rows are migrated. */
+  | "viewer";
+
 export type AuthUser = {
   id: number;
   username: string;
   displayName: string;
-  role: "admin" | "viewer";
+  role: AuthRole;
+  permissions: string[];
 };
 
 type AuthContextValue = {
@@ -27,7 +38,10 @@ type AuthContextValue = {
   logout: () => void;
   refreshUser: () => Promise<void>;
   authHeaders: () => Record<string, string>;
+  /** True for the legacy admin gate — owner and admin roles, or any role granted 'all'. */
   isAdmin: boolean;
+  /** Permission check: returns true if the user has the perm or has 'all'. */
+  can: (permission: string) => boolean;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -53,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: u.username,
       displayName: u.displayName,
       role: u.role,
+      permissions: Array.isArray(u.permissions) ? u.permissions : [],
     });
   }, []);
 
@@ -93,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: u.username,
       displayName: u.displayName,
       role: u.role,
+      permissions: Array.isArray(u.permissions) ? u.permissions : [],
     });
   }, []);
 
@@ -108,20 +124,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({
-      token,
-      user,
-      loading,
-      login,
-      logout,
-      refreshUser: async () => {
-        const t = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-        if (!t) return;
-        await refreshUser(t);
-      },
-      authHeaders,
-      isAdmin: user?.role === "admin",
-    }),
+    () => {
+      const perms = user?.permissions ?? [];
+      const hasAll = perms.includes("all");
+      const can = (permission: string) =>
+        hasAll || perms.includes(permission);
+      return {
+        token,
+        user,
+        loading,
+        login,
+        logout,
+        refreshUser: async () => {
+          const t = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+          if (!t) return;
+          await refreshUser(t);
+        },
+        authHeaders,
+        isAdmin: user?.role === "admin" || user?.role === "owner" || hasAll,
+        can,
+      };
+    },
     [token, user, loading, login, logout, refreshUser, authHeaders]
   );
 
@@ -180,7 +203,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (user?.role !== "admin") {
+  if (user?.role !== "admin" && user?.role !== "owner") {
     return (
       <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: 560, margin: "0 auto" }}>
         <h1 style={{ color: "#1b2856" }}>Access denied</h1>
@@ -198,7 +221,7 @@ export function RequireAdminRedirect({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (loading || !token) return;
-    if (user?.role !== "admin") {
+    if (user?.role !== "admin" && user?.role !== "owner") {
       router.replace("/dashboard");
     }
   }, [loading, token, user, router]);
@@ -219,7 +242,7 @@ export function RequireAdminRedirect({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (user?.role !== "admin") {
+  if (user?.role !== "admin" && user?.role !== "owner") {
     return null;
   }
   return <>{children}</>;

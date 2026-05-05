@@ -181,14 +181,19 @@ export default function InboxSettingsClient() {
     try {
       const [pRes, tRes] = await Promise.all([
         fetch(apiUrl(`/inbox/connections/${c.id}/permissions`), { headers: { ...authHeaders() } }),
-        fetch(apiUrl("/eos/team-users"), { headers: { ...authHeaders() } }),
+        fetch(apiUrl("/users"), { headers: { ...authHeaders() } }),
       ]);
       const pBody = await pRes.json().catch(() => ({}));
       const tBody = await tRes.json().catch(() => ({}));
-      const want = new Set(["mike", "lori", "leslie", "amanda", "amelia"]);
-      const team = (Array.isArray(tBody.users) ? tBody.users : []).filter((u: TeamUser) =>
-        want.has(u.username.toLowerCase())
-      ) as TeamUser[];
+      const triageRoles = new Set(["owner", "admin", "csm", "maintenance", "operations"]);
+      const team = (Array.isArray(tBody.users) ? tBody.users : [])
+        .filter((u: { active?: boolean; role?: string }) => u.active !== false && triageRoles.has(u.role ?? ""))
+        .map((u: { id: number; username: string; displayName: string; email: string | null }) => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.displayName,
+          email: u.email,
+        })) as TeamUser[];
       setTeamUsers(team);
       const existing = (Array.isArray(pBody.permissions) ? pBody.permissions : []) as Array<{
         user_id: number;

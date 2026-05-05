@@ -163,6 +163,7 @@ import {
 import {
   createUser,
   deleteUser,
+  getMyProfile,
   listUsers,
   updateUser,
 } from "./routes/users.js";
@@ -752,9 +753,13 @@ app.post("/auth/change-password", requireAuth, postChangePassword);
 app.get("/auth/microsoft/callback", getMicrosoftCallback);
 app.get("/auth/microsoft/connect", requireAuth, getMicrosoftConnect);
 
-app.get("/users", requireAuth, requireAdminRole, listUsers);
+// Any authenticated user can read the team list (drives assignee pickers).
+app.get("/users", requireAuth, listUsers);
+app.get("/users/me", requireAuth, getMyProfile);
+// Mutations stay admin-gated.
 app.post("/users", requireAuth, requireAdminRole, createUser);
 app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
+app.patch("/users/:id", requireAuth, requireAdminRole, updateUser);
 app.delete("/users/:id", requireAuth, requireAdminRole, deleteUser);
 
 app.get("/user-preferences/layout", requireAuth, getLayoutPrefs);
