@@ -229,24 +229,98 @@ export async function ensureUsersSchema() {
       username VARCHAR(64) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
       display_name VARCHAR(255) NOT NULL,
-      role VARCHAR(16) NOT NULL CHECK (role IN ('admin', 'viewer')),
+      role TEXT NOT NULL,
       email VARCHAR(255),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_html TEXT`);
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`);
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`);
+  await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
+
+  // Drop any leftover CHECK constraint on `role` from the legacy schema so we
+  // can store the new role values (owner/admin/csm/maintenance/operations/staff).
+  await p.query(`
+    DO $$
+    DECLARE
+      constraint_name TEXT;
+    BEGIN
+      FOR constraint_name IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'users'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) ILIKE '%role%'
+      LOOP
+        EXECUTE format('ALTER TABLE users DROP CONSTRAINT %I', constraint_name);
+      END LOOP;
+    END $$;
+  `);
+  await p.query(`ALTER TABLE users ALTER COLUMN role TYPE TEXT`);
+
+  // Migrate legacy roles for the seeded team. Idempotent — only triggers when
+  // a row is still on the old value.
+  await p.query(`UPDATE users SET role = 'owner'       WHERE LOWER(username) = 'mike'    AND role = 'admin'`);
+  await p.query(`UPDATE users SET role = 'csm'         WHERE LOWER(username) = 'lori'    AND role IN ('admin', 'viewer')`);
+  await p.query(`UPDATE users SET role = 'csm'         WHERE LOWER(username) = 'leslie'  AND role = 'viewer'`);
+  await p.query(`UPDATE users SET role = 'maintenance' WHERE LOWER(username) = 'amanda'  AND role = 'viewer'`);
+  await p.query(`UPDATE users SET role = 'operations'  WHERE LOWER(username) = 'amelia'  AND role = 'viewer'`);
+  await p.query(`UPDATE users SET role = 'staff'       WHERE role = 'viewer'`);
+
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_users_active ON users(active) WHERE active = TRUE`);
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role        TEXT NOT NULL,
+      permission  TEXT NOT NULL,
+      PRIMARY KEY (role, permission)
+    )
+  `);
+
+  await p.query(`
+    INSERT INTO role_permissions (role, permission) VALUES
+      ('owner',       'all'),
+      ('admin',       'all'),
+      ('csm',         'inbox.read'),
+      ('csm',         'inbox.reply'),
+      ('csm',         'inbox.assign'),
+      ('csm',         'leasing.manage'),
+      ('csm',         'reports.view'),
+      ('maintenance', 'inbox.read'),
+      ('maintenance', 'inbox.reply'),
+      ('maintenance', 'workorders.manage'),
+      ('operations',  'inbox.read'),
+      ('operations',  'inbox.reply'),
+      ('operations',  'process.manage'),
+      ('staff',       'inbox.read')
+    ON CONFLICT DO NOTHING
+  `);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION user_has_permission(p_user_id INTEGER, p_permission TEXT)
+    RETURNS BOOLEAN AS $$
+      SELECT EXISTS (
+        SELECT 1 FROM users u
+        JOIN role_permissions rp ON rp.role = u.role
+        WHERE u.id = p_user_id
+          AND u.active = TRUE
+          AND (rp.permission = p_permission OR rp.permission = 'all')
+      );
+    $$ LANGUAGE SQL STABLE
+  `);
 
   const { rows } = await p.query(`SELECT COUNT(*)::int AS c FROM users`);
   if (rows[0].c > 0) return;
 
   const password_hash = await bcrypt.hash("RpmPrestige2026!", 12);
   const seeds = [
-    ["mike", "Mike Williamson", "admin", "mike@rpmhouston.com"],
-    ["lori", "Lori", "admin", "lori@rpmhouston.com"],
-    ["leslie", "Leslie", "viewer", "leslie@rpmhouston.com"],
-    ["amanda", "Amanda", "viewer", "amanda@rpmhouston.com"],
-    ["amelia", "Amelia", "viewer", "amelia@rpmhouston.com"],
+    ["mike", "Mike Williamson", "owner", "mike@rpmhouston.com"],
+    ["lori", "Lori", "csm", "lori@rpmhouston.com"],
+    ["leslie", "Leslie", "csm", "leslie@rpmhouston.com"],
+    ["amanda", "Amanda", "maintenance", "amanda@rpmhouston.com"],
+    ["amelia", "Amelia", "operations", "amelia@rpmhouston.com"],
   ];
   for (const [username, display_name, role, email] of seeds) {
     await p.query(
@@ -443,12 +517,15 @@ async function migrateInboxMultiMailbox(p) {
       AND NOT EXISTS (SELECT 1 FROM inbox_permissions ip WHERE ip.connection_id = ec.id AND ip.user_id = ec.user_id)
   `);
 
+  // Grant admin inbox permissions to anyone whose role grants 'all' (owner/admin).
   await p.query(`
     INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
     SELECT ec.id, u.id, 'admin', u.id
     FROM email_connections ec
     CROSS JOIN users u
-    WHERE ec.is_active = true AND lower(u.username) = 'mike'
+    WHERE ec.is_active = true
+      AND u.active = TRUE
+      AND user_has_permission(u.id, 'all')
     ON CONFLICT (connection_id, user_id) DO NOTHING
   `);
 }
@@ -816,7 +893,7 @@ export async function ensureDocumentsSchema() {
       content TEXT DEFAULT '',
       folder TEXT DEFAULT 'General',
       tags TEXT[] DEFAULT '{}',
-      owner TEXT DEFAULT 'Mike',
+      owner TEXT,
       pinned BOOLEAN DEFAULT false,
       archived BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW(),

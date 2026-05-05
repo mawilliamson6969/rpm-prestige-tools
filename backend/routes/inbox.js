@@ -184,9 +184,13 @@ export async function getMicrosoftCallback(req, res) {
          ON CONFLICT (connection_id, user_id) DO UPDATE SET permission = 'admin'`,
         [connectionId, userId]
       );
+      // Grant admin inbox permission to anyone whose role grants 'all' (owner/admin),
+      // so the connection is manageable by every administrator from day one.
       await pool.query(
         `INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
-         SELECT $1, u.id, 'admin', $2 FROM users u WHERE lower(u.username) = 'mike'
+         SELECT $1, u.id, 'admin', $2
+         FROM users u
+         WHERE u.active = TRUE AND user_has_permission(u.id, 'all')
          ON CONFLICT (connection_id, user_id) DO NOTHING`,
         [connectionId, userId]
       );
@@ -955,11 +959,13 @@ export async function postInboxConnectionGrantTeam(req, res) {
     const pool = getPool();
     await assertInboxAdminOnConnection(pool, req.user.id, id);
     const permission = normalizeInboxPermission(req.body?.permission) || "read";
+    // "Grant team" = every active user whose role participates in inbox triage.
     await pool.query(
       `INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
        SELECT $1::int, u.id, $2::varchar, $3::int
        FROM users u
-       WHERE lower(u.username) = ANY(ARRAY['mike','lori','leslie','amanda','amelia']::text[])
+       WHERE u.active = TRUE
+         AND u.role IN ('owner', 'admin', 'csm', 'maintenance', 'operations')
        ON CONFLICT (connection_id, user_id) DO NOTHING`,
       [id, permission, req.user.id]
     );

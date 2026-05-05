@@ -14,6 +14,7 @@ import { renderWidget } from "../components/widgets/Widgets";
 import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
 import { useLayoutPrefs } from "../hooks/useLayoutPrefs";
+import useTeam from "../hooks/useTeam";
 import {
   DEFAULT_HUB_CARDS,
   DEFAULT_HUB_LAYOUT,
@@ -36,12 +37,28 @@ const QUICK_LINKS = [
   { label: "BoomScreen", href: "https://www.boompay.app/", icon: "🔍" },
 ] as const;
 
-const TEAM = [
-  { name: "Mike Williamson", role: "Owner/Operator", initials: "MW", color: "#0098D0" },
-  { name: "Lori", role: "Client Success Manager", initials: "Lo", color: "#B32317" },
-  { name: "Leslie", role: "Business Development / Leasing", initials: "Le", color: "#1B2856" },
-  { name: "Amanda", role: "Maintenance Coordinator", initials: "AM", color: "#2E7D6B" },
-] as const;
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner/Operator",
+  admin: "Administrator",
+  csm: "Client Success Manager",
+  maintenance: "Maintenance Coordinator",
+  operations: "Operations",
+  staff: "Team Member",
+};
+
+const DIRECTORY_COLOR_PALETTE = ["#0098D0", "#B32317", "#1B2856", "#2E7D6B", "#6a1b9a", "#287840", "#9a5f00"];
+
+function directoryColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  return DIRECTORY_COLOR_PALETTE[Math.abs(hash) % DIRECTORY_COLOR_PALETTE.length];
+}
+
+function directoryInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase() || "?";
+}
 
 const USEFUL_LINKS = [
   { label: "Texas Property Code Ch. 92", href: "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.92.htm" },
@@ -198,6 +215,7 @@ function renderHubCardContent(def: HubCardDef, interactive: boolean) {
 export default function IntranetHub() {
   const { authHeaders, isAdmin, token } = useAuth();
   const { prefs, loaded, saveNow, update, reset } = useLayoutPrefs();
+  const { team: directoryTeam } = useTeam();
   const [occupancy, setOccupancy] = useState<OccupancyData | null>(null);
   const [occLoading, setOccLoading] = useState(true);
   const [occError, setOccError] = useState<string | null>(null);
@@ -785,17 +803,22 @@ export default function IntranetHub() {
                 Team Directory
               </h2>
               <div className={styles.directoryGrid}>
-                {TEAM.map((m) => (
-                  <div key={m.name} className={styles.dirCard}>
-                    <div className={styles.avatar} style={{ background: m.color }}>
-                      {m.initials}
-                    </div>
-                    <div>
-                      <p className={styles.dirName}>{m.name}</p>
-                      <p className={styles.dirRole}>{m.role}</p>
-                    </div>
-                  </div>
-                ))}
+                {directoryTeam
+                  .filter((m) => m.active && m.role !== "staff")
+                  .map((m) => {
+                    const name = m.displayName?.trim() || m.username;
+                    return (
+                      <div key={m.id} className={styles.dirCard}>
+                        <div className={styles.avatar} style={{ background: directoryColor(m.username) }}>
+                          {directoryInitials(name)}
+                        </div>
+                        <div>
+                          <p className={styles.dirName}>{name}</p>
+                          <p className={styles.dirRole}>{ROLE_LABELS[m.role] ?? m.role}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </section>
 

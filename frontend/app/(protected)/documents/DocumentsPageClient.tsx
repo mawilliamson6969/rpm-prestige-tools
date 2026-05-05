@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./documents.module.css";
 import { useAuth } from "../../../context/AuthContext";
+import useTeam from "../../../hooks/useTeam";
 import { apiUrl } from "../../../lib/api";
 
 type DocumentRecord = {
@@ -29,14 +30,22 @@ const FOLDERS: FolderDef[] = [
   { name: "General", color: "#0098D0" },
 ];
 
-const TEAM_MEMBERS = ["Mike", "Lori", "Amanda", "Amelia"] as const;
+const AVATAR_COLOR_PALETTE = [
+  "#1B2856",
+  "#287840",
+  "#9a5f00",
+  "#a32020",
+  "#0098D0",
+  "#6A737B",
+  "#5b21b6",
+  "#0e7490",
+];
 
-const TEAM_COLORS: Record<string, string> = {
-  Mike: "#1B2856",
-  Lori: "#287840",
-  Amanda: "#9a5f00",
-  Amelia: "#a32020",
-};
+function colorForName(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLOR_PALETTE[Math.abs(hash) % AVATAR_COLOR_PALETTE.length];
+}
 
 type NavView = "all" | "mine" | "shared" | "recent" | "starred" | "archived";
 
@@ -189,7 +198,12 @@ function writeJsonArray(key: string, value: number[]) {
 
 export default function DocumentsPageClient() {
   const { user, authHeaders } = useAuth();
-  const meName = user?.displayName?.trim() || user?.username || "Mike";
+  const { team } = useTeam();
+  const meName = user?.displayName?.trim() || user?.username || "";
+  const teamMemberNames = useMemo(
+    () => team.filter((m) => m.active).map((m) => m.displayName).filter(Boolean),
+    [team]
+  );
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -811,7 +825,7 @@ export default function DocumentsPageClient() {
             <div className={styles.propGroup}>
               <div className={styles.propLabel}>Owner</div>
               <select className={styles.propSelect} value={draftOwner} onChange={(e) => onOwnerChange(e.target.value)}>
-                {Array.from(new Set([draftOwner, ...TEAM_MEMBERS])).map((name) => (
+                {Array.from(new Set([draftOwner, ...teamMemberNames].filter(Boolean))).map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
@@ -820,11 +834,11 @@ export default function DocumentsPageClient() {
             <div className={styles.propGroup}>
               <div className={styles.propLabel}>Shared With</div>
               <div className={styles.sharedAvatars}>
-                {TEAM_MEMBERS.map((name) => (
+                {teamMemberNames.map((name) => (
                   <span
                     key={name}
                     className={styles.sharedAvatar}
-                    style={{ background: TEAM_COLORS[name] || "#1B2856" }}
+                    style={{ background: colorForName(name) }}
                     title={name}
                   >
                     {avatarInitial(name)}
@@ -1041,7 +1055,7 @@ export default function DocumentsPageClient() {
                   <div>
                     <span
                       className={styles.ownerAvatar}
-                      style={{ background: TEAM_COLORS[doc.owner] || "#1B2856" }}
+                      style={{ background: colorForName(doc.owner || "") }}
                       title={doc.owner}
                     >
                       {avatarInitial(doc.owner)}
