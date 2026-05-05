@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -82,6 +82,7 @@ export default function ScorecardClient() {
   const [askLoading, setAskLoading] = useState(false);
   const [askAnalysis, setAskAnalysis] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
+  const commitInFlightRef = useRef(false);
 
   const { start, end } = useMemo(() => {
     if (preset === "last_13_weeks" && frequency === "monthly") {
@@ -146,54 +147,101 @@ export default function ScorecardClient() {
     if (manageOpen && isAdmin) loadAllMetrics();
   }, [manageOpen, isAdmin, loadAllMetrics]);
 
-  const saveCell = async (metricId: number, periodKey: string, raw: string) => {
-    const trimmed = String(raw).trim();
-    const metric = report?.metrics.find((m) => m.id === metricId);
-    if (!metric) return;
-    const existing = report?.cells[metricId]?.[periodKey];
-    if (!trimmed) {
-      if (existing?.entryId) {
-        const res = await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
-          method: "DELETE",
-          headers: { ...authHeaders() },
-        });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          alert(typeof j.error === "string" ? j.error : "Could not delete entry");
-          return;
+  const saveCell = useCallback(
+    async (metricId: number, periodKey: string, raw: string) => {
+      const trimmed = String(raw).trim();
+      const metric = report?.metrics.find((m) => m.id === metricId);
+      if (!metric) return;
+      const existing = report?.cells[metricId]?.[periodKey];
+      if (!trimmed) {
+        if (existing?.entryId) {
+          const res = await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
+            method: "DELETE",
+            headers: { ...authHeaders() },
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            alert(typeof j.error === "string" ? j.error : "Could not delete entry");
+            return;
+          }
+          await loadReport();
         }
-        await loadReport();
+        return;
       }
-      return;
-    }
-    const num = parseFloat(trimmed.replace(/[$,%]/g, ""));
-    if (Number.isNaN(num)) return;
-    const body: Record<string, unknown> = { metricId, value: num };
-    if (metric.frequency === "weekly") body.weekOf = periodKey;
-    else body.monthOf = periodKey;
-    if (existing?.entryId) {
-      await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ value: num }),
-      });
-    } else {
-      await fetch(apiUrl("/eos/scorecard/entries"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(body),
-      });
-    }
-    await loadReport();
-  };
+      const num = parseFloat(trimmed.replace(/[$,%]/g, ""));
+      if (Number.isNaN(num)) return;
+      const body: Record<string, unknown> = { metricId, value: num };
+      if (metric.frequency === "weekly") body.weekOf = periodKey;
+      else body.monthOf = periodKey;
+      if (existing?.entryId) {
+        await fetch(apiUrl(`/eos/scorecard/entries/${existing.entryId}`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ value: num }),
+        });
+      } else {
+        await fetch(apiUrl("/eos/scorecard/entries"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(body),
+        });
+      }
+      await loadReport();
+    },
+    [authHeaders, loadReport, report]
+  );
+
+  const startEditing = useCallback((metricId: number, periodKey: string, value: string) => {
+    if (commitInFlightRef.current) return;
+    setEditing({ metricId, periodKey, value });
+  }, []);
+
+  const commitEditing = useCallback(
+    async (
+      current: { metricId: number; periodKey: string; value: string } | null,
+      next:
+        | {
+            metricId: number;
+            periodKey: string;
+            value: string;
+          }
+        | null = null
+    ) => {
+      if (!current || commitInFlightRef.current) return;
+      commitInFlightRef.current = true;
+      setEditing(null);
+      try {
+        await saveCell(current.metricId, current.periodKey, current.value);
+        if (next) setEditing(next);
+      } finally {
+        commitInFlightRef.current = false;
+      }
+    },
+    [saveCell]
+  );
 
   const onCellKeyDown = (
     e: React.KeyboardEvent,
     mi: number,
     pi: number,
-    metricId: number,
-    periodKey: string
+    current:
+      | {
+          metricId: number;
+          periodKey: string;
+          value: string;
+        }
+      | null
   ) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void commitEditing(current);
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setEditing(null);
+      return;
+    }
     if (e.key !== "Tab") return;
     e.preventDefault();
     const metrics = report?.metrics ?? [];
@@ -212,7 +260,7 @@ export default function ScorecardClient() {
     const nextPk = periods[npi]?.key;
     if (!nextPk) return;
     const cell = report?.cells[metrics[nmi].id]?.[nextPk];
-    setEditing({
+    void commitEditing(current, {
       metricId: metrics[nmi].id,
       periodKey: nextPk,
       value: cell ? String(cell.value) : "",
@@ -393,26 +441,14 @@ export default function ScorecardClient() {
                               autoFocus
                               value={editing.value}
                               onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                              onKeyDown={(e) => onCellKeyDown(e, mi, pi, m.id, p.key)}
-                              onBlur={() => {
-                                if (editing) void saveCell(m.id, p.key, editing.value);
-                                setEditing(null);
-                              }}
-                              onKeyUp={(e) => {
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                              }}
+                              onKeyDown={(e) => onCellKeyDown(e, mi, pi, editing)}
+                              onBlur={() => void commitEditing(editing)}
                             />
                           ) : (
                             <button
                               type="button"
                               className={styles.cellBtn}
-                              onClick={() =>
-                                setEditing({
-                                  metricId: m.id,
-                                  periodKey: p.key,
-                                  value: c ? String(c.value) : "",
-                                })
-                              }
+                              onClick={() => startEditing(m.id, p.key, c ? String(c.value) : "")}
                             >
                               {c ? formatValue(m.unit, c.value) : "—"}
                               {c ? (
