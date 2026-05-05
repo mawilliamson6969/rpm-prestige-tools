@@ -1,31 +1,116 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./forms.module.css";
 import { apiUrl } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { CATEGORIES, type FormStatus, type FormSummary } from "./types";
+import FormSidebar, { type SidebarNav } from "./FormSidebar";
+import FormListRow from "./FormListRow";
+import FormGridCard from "./FormGridCard";
+import { categoryTone } from "./categoryTone";
+
+function categoryStorageKey(cat: string | null | undefined) {
+  const t = typeof cat === "string" ? cat.trim() : "";
+  return t.length ? t : "__none__";
+}
+
+function categoryDisplayLabel(storageKey: string) {
+  return storageKey === "__none__" ? "(No category)" : storageKey;
+}
+
+type Toast = { variant: "ok" | "err"; message: string };
+
+const TONE_CLASSES: Record<
+  ReturnType<typeof categoryTone>,
+  typeof styles.catChipNavy
+> = {
+  navy: styles.catChipNavy,
+  red: styles.catChipRed,
+  teal: styles.catChipTeal,
+  blue: styles.catChipBlue,
+  neutral: styles.catChipNeutral,
+};
 
 export default function FormsListClient() {
-  const { authHeaders, token } = useAuth();
+  const { authHeaders, token, user } = useAuth();
   const router = useRouter();
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [status, setStatus] = useState<"all" | FormStatus>("all");
-  const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [sidebarNav, setSidebarNav] = useState<SidebarNav>({ kind: "all" });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", category: "Operations" });
   const [saving, setSaving] = useState(false);
   const [createStep, setCreateStep] = useState<"choose" | "blank" | "templates">("choose");
-  const [templates, setTemplates] = useState<Array<{
-    id: number; name: string; description: string | null;
-    category: string | null; icon: string; fieldCount: number; pageCount: number;
-  }>>([]);
+  const [templates, setTemplates] = useState<
+    Array<{
+      id: number;
+      name: string;
+      description: string | null;
+      category: string | null;
+      icon: string;
+      fieldCount: number;
+      pageCount: number;
+    }>
+  >([]);
   const [tmplCategory, setTmplCategory] = useState<string>("");
+  const [archiveTarget, setArchiveTarget] = useState<FormSummary | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 3800);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setCompact(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") return;
+    try {
+      const cKey = `rpm_forms_sidebar_collapsed:${user.id}`;
+      const vKey = `rpm_forms_view_mode:${user.id}`;
+      setSidebarCollapsed(localStorage.getItem(cKey) === "1");
+      setViewMode(localStorage.getItem(vKey) === "grid" ? "grid" : "list");
+    } catch {
+      /* ignore */
+    }
+    setPrefsHydrated(true);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!prefsHydrated || !user?.id || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(`rpm_forms_sidebar_collapsed:${user.id}`, sidebarCollapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [prefsHydrated, user?.id, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!prefsHydrated || !user?.id || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(`rpm_forms_view_mode:${user.id}`, viewMode);
+    } catch {
+      /* ignore */
+    }
+  }, [prefsHydrated, user?.id, viewMode]);
 
   const openCreate = () => {
     setCreateStep("choose");
@@ -37,13 +122,16 @@ export default function FormsListClient() {
     if (!token) return;
     try {
       const res = await fetch(apiUrl("/forms/templates"), {
-        headers: { ...authHeaders() }, cache: "no-store",
+        headers: { ...authHeaders() },
+        cache: "no-store",
       });
       if (res.ok) {
         const body = await res.json();
         setTemplates(body.templates || []);
       }
-    } catch {/* ignore */}
+    } catch {
+      /* ignore */
+    }
   }, [authHeaders, token]);
 
   const pickTemplate = async (templateId: number) => {
@@ -69,7 +157,6 @@ export default function FormsListClient() {
     try {
       const params = new URLSearchParams();
       if (status !== "all") params.set("status", status);
-      if (category) params.set("category", category);
       if (search) params.set("search", search);
       const res = await fetch(apiUrl(`/forms?${params.toString()}`), {
         headers: { ...authHeaders() },
@@ -83,9 +170,11 @@ export default function FormsListClient() {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, token, status, category, search]);
+  }, [authHeaders, token, status, search]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const createForm = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,9 +201,7 @@ export default function FormsListClient() {
     }
   };
 
-  const duplicate = async (id: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const duplicateOne = async (id: number) => {
     try {
       const res = await fetch(apiUrl(`/forms/${id}/duplicate`), {
         method: "POST",
@@ -127,18 +214,118 @@ export default function FormsListClient() {
     }
   };
 
-  const archive = async (id: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm("Archive this form?")) return;
+  const exportOne = async (f: FormSummary) => {
     try {
-      await fetch(apiUrl(`/forms/${id}`), { method: "DELETE", headers: { ...authHeaders() } });
-      await load();
-    } catch {/* ignore */}
+      const res = await fetch(apiUrl(`/forms/${f.id}/export`), {
+        headers: { ...authHeaders() },
+      });
+      if (!res.ok) throw new Error("Export failed.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${f.name.replace(/[^\w]+/g, "_")}_export.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "Export failed.");
+    }
   };
 
-  const statusClass = (s: FormStatus) =>
-    s === "published" ? styles.statusPublished : s === "archived" ? styles.statusArchived : styles.statusDraft;
+  const shareOne = async (f: FormSummary) => {
+    if (!f.slug) {
+      setToast({ variant: "err", message: "This form needs a slug (save in builder) before you can share." });
+      return;
+    }
+    const base = `${window.location.origin}/forms/${encodeURIComponent(f.slug)}`;
+    const href =
+      f.accessType === "private" && f.accessToken
+        ? `${base}?token=${encodeURIComponent(f.accessToken)}`
+        : base;
+    try {
+      await navigator.clipboard.writeText(href);
+      setToast({ variant: "ok", message: "Link copied to clipboard." });
+    } catch {
+      setToast({ variant: "err", message: "Could not copy link." });
+    }
+  };
+
+  const archiveOne = async (id: number) => {
+    try {
+      await fetch(apiUrl(`/forms/${id}`), { method: "DELETE", headers: { ...authHeaders() } });
+      setArchiveTarget(null);
+      await load();
+    } catch {
+      setToast({ variant: "err", message: "Could not archive." });
+    }
+  };
+
+  const toggleFavorite = async (f: FormSummary) => {
+    const prev = Boolean(f.favorited);
+    const next = !prev;
+    setForms((curr) =>
+      curr.map((x) => (x.id === f.id ? { ...x, favorited: next } : x)),
+    );
+    try {
+      const res = await fetch(apiUrl(`/forms/${f.id}/favorite`), {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Favorite failed.");
+      const fv = Boolean(body.favorited);
+      setForms((curr) =>
+        curr.map((x) => (x.id === f.id ? { ...x, favorited: fv } : x)),
+      );
+    } catch {
+      setForms((curr) =>
+        curr.map((x) => (x.id === f.id ? { ...x, favorited: prev } : x)),
+      );
+      setToast({ variant: "err", message: "Could not update favorites. Try again." });
+    }
+  };
+
+  const categoryRows = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const f of forms) {
+      const k = categoryStorageKey(f.category);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([value, count]) => ({
+        value,
+        label: categoryDisplayLabel(value),
+        count,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [forms]);
+
+  const favoritesSidebar = useMemo(() => {
+    return [...forms]
+      .filter((f) => f.favorited)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [forms]);
+
+  const filteredForms = useMemo(() => {
+    if (sidebarNav.kind === "all") return forms;
+    const cat = sidebarNav.value;
+    return forms.filter((f) => categoryStorageKey(f.category) === cat);
+  }, [forms, sidebarNav]);
+
+  const favoritesMain = useMemo(() => {
+    return filteredForms
+      .filter((f) => f.favorited)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [filteredForms]);
+
+  const restMain = useMemo(() => {
+    const ids = new Set(favoritesMain.map((f) => f.id));
+    return filteredForms.filter((f) => !ids.has(f.id));
+  }, [filteredForms, favoritesMain]);
+
+  const closeDrawer = () => setDrawerOpen(false);
 
   return (
     <div className={styles.page}>
@@ -151,7 +338,10 @@ export default function FormsListClient() {
           <Link href="/forms/approvals" className={`${styles.btn} ${styles.btnGhost}`}>
             My Approvals
           </Link>
-          <label className={`${styles.btn} ${styles.btnGhost}`} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+          <label
+            className={`${styles.btn} ${styles.btnGhost}`}
+            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
+          >
             Import
             <input
               type="file"
@@ -181,140 +371,247 @@ export default function FormsListClient() {
               }}
             />
           </label>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={openCreate}
-          >
+          <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={openCreate}>
             + Create Form
           </button>
         </div>
       </div>
-      <div className={styles.main}>
-        {err ? <div className={styles.errorBanner}>{err}</div> : null}
-        <div className={styles.toolbar}>
-          <input
-            type="search"
-            className={styles.searchInput}
-            placeholder="Search forms…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select className={styles.select} value={status} onChange={(e) => setStatus(e.target.value as "all" | FormStatus)}>
-            <option value="all">All statuses</option>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-            <option value="archived">Archived</option>
-          </select>
-          <select className={styles.select} value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
 
-        {loading ? (
-          <div className={styles.loading}>Loading forms…</div>
-        ) : forms.length === 0 ? (
-          <div className={styles.emptyState}>
-            <h3>No forms yet</h3>
-            <p>Create your first form to get started.</p>
+      <div className={styles.mainShell}>
+        {toast ? (
+          <div
+            className={`${styles.toastFloater} ${toast.variant === "ok" ? styles.toastFloaterOk : styles.toastFloaterErr}`}
+            role="alert"
+          >
+            {toast.message}
           </div>
-        ) : (
-          <div className={styles.formGrid}>
-            {forms.map((f) => {
-              const conversion = f.viewsCount > 0 ? Math.round((f.submissionsCount / f.viewsCount) * 1000) / 10 : 0;
-              return (
-                <Link key={f.id} href={`/forms/builder/${f.id}`} className={styles.formCard}>
-                  <div className={styles.formCardHead}>
-                    <h3 className={styles.formName}>{f.name}</h3>
-                    <span className={`${styles.statusBadge} ${statusClass(f.status)}`}>{f.status}</span>
-                  </div>
-                  {f.description ? <p className={styles.formDesc}>{f.description}</p> : null}
-                  {f.category ? <span className={styles.categoryTag}>{f.category}</span> : null}
-                  <div className={styles.formMeta}>
-                    <span>{f.submissionsCount} submissions</span>
-                    <span>{f.viewsCount} views</span>
-                    {f.viewsCount > 0 ? <span>{conversion}% conversion</span> : null}
-                  </div>
-                  <div className={styles.formFoot}>
-                    <span>{new Date(f.updatedAt).toLocaleDateString()}</span>
-                    <div className={styles.formActions}>
-                      <Link
-                        href={`/forms/${f.id}/submissions`}
-                        className={styles.smallBtn}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Submissions
-                      </Link>
-                      <button type="button" className={styles.smallBtn} onClick={(e) => duplicate(f.id, e)}>
-                        Duplicate
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.smallBtn}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          try {
-                            const res = await fetch(apiUrl(`/forms/${f.id}/export`), {
-                              headers: { ...authHeaders() },
-                            });
-                            if (!res.ok) throw new Error("Export failed.");
-                            const blob = await res.blob();
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = `${f.name.replace(/[^\w]+/g, "_")}_export.json`;
-                            document.body.appendChild(a); a.click(); a.remove();
-                            setTimeout(() => URL.revokeObjectURL(url), 1000);
-                          } catch (ex) {
-                            setErr(ex instanceof Error ? ex.message : "Export failed.");
-                          }
-                        }}
-                      >
-                        Export
-                      </button>
-                      <button type="button" className={styles.smallBtn} onClick={(e) => archive(f.id, e)}>
-                        Archive
-                      </button>
+        ) : null}
+        <div className={styles.formsLayout}>
+          {!compact ? (
+            <FormSidebar
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+              nav={sidebarNav}
+              onNav={(n) => {
+                setSidebarNav(n);
+                closeDrawer();
+              }}
+              totalForms={forms.length}
+              categories={categoryRows}
+              favorites={favoritesSidebar}
+              drawerOpen={drawerOpen}
+              onCloseDrawer={closeDrawer}
+              isCompact={false}
+            />
+          ) : null}
+          <div className={styles.formsMainColumn}>
+            {compact ? (
+              <FormSidebar
+                collapsed={false}
+                onToggleCollapse={() => {}}
+                nav={sidebarNav}
+                onNav={(n) => {
+                  setSidebarNav(n);
+                  closeDrawer();
+                }}
+                totalForms={forms.length}
+                categories={categoryRows}
+                favorites={favoritesSidebar}
+                drawerOpen={drawerOpen}
+                onCloseDrawer={closeDrawer}
+                isCompact={true}
+              />
+            ) : null}
+            {err ? <div className={styles.errorBanner}>{err}</div> : null}
+            <div className={styles.formsToolbarRow}>
+              {compact ? (
+                <button
+                  type="button"
+                  className={styles.hamburgerBtn}
+                  aria-label="Open forms menu"
+                  onClick={() => setDrawerOpen((o) => !o)}
+                >
+                  ☰
+                </button>
+              ) : null}
+              <input
+                type="search"
+                className={styles.searchInput}
+                placeholder="Search forms…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <div className={styles.toolbarControls}>
+                <select className={styles.select} value={status} onChange={(e) => setStatus(e.target.value as "all" | FormStatus)}>
+                  <option value="all">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="archived">Archived</option>
+                </select>
+                <div className={styles.viewToggle} role="group" aria-label="View mode">
+                  <button
+                    type="button"
+                    className={`${styles.viewToggleBtn} ${viewMode === "list" ? styles.viewToggleBtnActive : ""}`}
+                    onClick={() => setViewMode("list")}
+                  >
+                    ☰ List
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.viewToggleBtn} ${viewMode === "grid" ? styles.viewToggleBtnActive : ""}`}
+                    onClick={() => setViewMode("grid")}
+                  >
+                    ▦ Grid
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className={styles.loading}>Loading forms…</div>
+            ) : forms.length === 0 ? (
+              <div className={styles.emptyState}>
+                <h3>No forms yet</h3>
+                <p>Create your first form to get started.</p>
+              </div>
+            ) : filteredForms.length === 0 ? (
+              <div className={styles.emptyState}>
+                <h3>No forms match</h3>
+                <p>Try another category, status, or search.</p>
+              </div>
+            ) : viewMode === "grid" ? (
+              <div className={styles.formGridModern}>
+                {filteredForms.map((f) => (
+                  <FormGridCard
+                    key={f.id}
+                    form={f}
+                    toneClass={TONE_CLASSES}
+                    toggleFavorite={toggleFavorite}
+                    onOpenSubmissions={() => router.push(`/forms/${f.id}/submissions`)}
+                    onDuplicate={() => void duplicateOne(f.id)}
+                    onExport={() => void exportOne(f)}
+                    onArchive={() => setArchiveTarget(f)}
+                    onShare={() => void shareOne(f)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className={styles.listStack}>
+                {favoritesMain.length > 0 ? (
+                  <>
+                    <div className={`${styles.formsSectionHdr} ${styles.formsSectionHdrFirst}`}>Favorites</div>
+                    {favoritesMain.map((f) => (
+                      <FormListRow
+                        key={f.id}
+                        form={f}
+                        toneClass={TONE_CLASSES}
+                        toggleFavorite={toggleFavorite}
+                        onOpenSubmissions={() => router.push(`/forms/${f.id}/submissions`)}
+                        onDuplicate={() => void duplicateOne(f.id)}
+                        onExport={() => void exportOne(f)}
+                        onArchive={() => setArchiveTarget(f)}
+                        onShare={() => void shareOne(f)}
+                      />
+                    ))}
+                  </>
+                ) : null}
+                {restMain.length > 0 ? (
+                  <>
+                    <div
+                      className={
+                        favoritesMain.length === 0
+                          ? `${styles.formsSectionHdr} ${styles.formsSectionHdrFirst}`
+                          : styles.formsSectionHdr
+                      }
+                    >
+                      All forms
                     </div>
-                  </div>
-                </Link>
-              );
-            })}
+                    {restMain.map((f) => (
+                      <FormListRow
+                        key={f.id}
+                        form={f}
+                        toneClass={TONE_CLASSES}
+                        toggleFavorite={toggleFavorite}
+                        onOpenSubmissions={() => router.push(`/forms/${f.id}/submissions`)}
+                        onDuplicate={() => void duplicateOne(f.id)}
+                        onExport={() => void exportOne(f)}
+                        onArchive={() => setArchiveTarget(f)}
+                        onShare={() => void shareOne(f)}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {archiveTarget ? (
+        <div
+          className={styles.miniModalBackdrop}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="archiveHdr"
+          onClick={() => setArchiveTarget(null)}
+        >
+          <div className={styles.miniModal} onClick={(e) => e.stopPropagation()}>
+            <h3 id="archiveHdr" style={{ margin: "0 0 0.5rem", fontSize: "1.05rem", color: "var(--navy)", fontWeight: 700 }}>
+              Archive this form?
+            </h3>
+            <p style={{ margin: 0, color: "var(--grey)", fontSize: "0.9rem" }}>
+              Archived forms can be recovered from archived status filters. Submission history is kept.
+            </p>
+            <div className={styles.miniModalActions}>
+              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setArchiveTarget(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnDanger}`}
+                onClick={() => void archiveOne(archiveTarget.id)}
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {createOpen ? (
         <div className={styles.overlay} onClick={() => setCreateOpen(false)}>
-          <div className={styles.modal} style={{ maxWidth: createStep === "templates" ? 720 : 540 }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className={styles.modal}
+            style={{ maxWidth: createStep === "templates" ? 720 : 540 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className={styles.modalHeader}>
               <h2>
                 {createStep === "choose"
                   ? "Create Form"
                   : createStep === "blank"
-                  ? "New Blank Form"
-                  : "Choose a Template"}
+                    ? "New Blank Form"
+                    : "Choose a Template"}
               </h2>
-              <button type="button" className={styles.closeBtn} onClick={() => setCreateOpen(false)}>×</button>
+              <button type="button" className={styles.closeBtn} onClick={() => setCreateOpen(false)}>
+                ×
+              </button>
             </div>
 
             {createStep === "choose" ? (
               <div className={styles.form}>
                 <div className={styles.tmplChoice}>
-                  <button
-                    type="button"
-                    className={styles.tmplChoiceBtn}
-                    onClick={() => setCreateStep("blank")}
-                  >
+                  <button type="button" className={styles.tmplChoiceBtn} onClick={() => setCreateStep("blank")}>
                     <h3 className={styles.tmplChoiceTitle}>📄 Start from Blank</h3>
                     <p className={styles.tmplChoiceDesc}>Build a form from scratch.</p>
                   </button>
                   <button
                     type="button"
                     className={styles.tmplChoiceBtn}
-                    onClick={() => { setCreateStep("templates"); loadTemplates(); }}
+                    onClick={() => {
+                      setCreateStep("templates");
+                      loadTemplates();
+                    }}
                   >
                     <h3 className={styles.tmplChoiceTitle}>📋 Use a Template</h3>
                     <p className={styles.tmplChoiceDesc}>Pick from pre-built templates.</p>
@@ -348,7 +645,11 @@ export default function FormsListClient() {
                     value={form.category}
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
                   >
-                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className={styles.formActionsRow}>
@@ -372,7 +673,9 @@ export default function FormsListClient() {
                   >
                     <option value="">All categories</option>
                     {Array.from(new Set(templates.map((t) => t.category).filter(Boolean))).map((c) => (
-                      <option key={c!} value={c!}>{c}</option>
+                      <option key={c!} value={c!}>
+                        {c}
+                      </option>
                     ))}
                   </select>
                   <button
@@ -396,7 +699,9 @@ export default function FormsListClient() {
                         {t.description ? <p className={styles.tmplDesc}>{t.description}</p> : null}
                         <div className={styles.tmplFoot}>
                           <span>{t.category || "—"}</span>
-                          <span>{t.fieldCount} fields · {t.pageCount} page{t.pageCount === 1 ? "" : "s"}</span>
+                          <span>
+                            {t.fieldCount} fields · {t.pageCount} page{t.pageCount === 1 ? "" : "s"}
+                          </span>
                         </div>
                       </div>
                     ))}

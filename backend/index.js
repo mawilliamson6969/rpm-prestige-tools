@@ -106,6 +106,7 @@ import {
   getPublicForm,
   getPublicFormPrefill,
   postForm,
+  postFormFavorite,
   postFormAutomation,
   postFormDuplicate,
   postFormField,
@@ -1467,6 +1468,7 @@ app.get("/forms/:id/automation-log", requireAuth, getAutomationLog);
 app.put("/forms/:id/publish", requireAuth, putFormPublishWithVersion);
 app.put("/forms/:id/unpublish", requireAuth, putFormUnpublish);
 app.post("/forms/:id/duplicate", requireAuth, postFormDuplicate);
+app.post("/forms/:id/favorite", requireAuth, postFormFavorite);
 
 // Phase 4: form-scoped
 app.get("/forms/:id/versions", requireAuth, getVersions);
