@@ -807,6 +807,45 @@ export async function ensureWalkthruSchema() {
   await p.query(`CREATE INDEX IF NOT EXISTS walkthru_items_room_idx ON walkthru_items (room_id, item_order ASC)`);
 }
 
+export async function ensureDocumentsSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT 'Untitled Document',
+      content TEXT DEFAULT '',
+      folder TEXT DEFAULT 'General',
+      tags TEXT[] DEFAULT '{}',
+      owner TEXT DEFAULT 'Mike',
+      pinned BOOLEAN DEFAULT false,
+      archived BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await p.query(`CREATE INDEX IF NOT EXISTS documents_folder_idx ON documents (folder)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS documents_owner_idx ON documents (owner)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS documents_archived_idx ON documents (archived)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS documents_updated_idx ON documents (updated_at DESC)`);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION documents_set_updated_at() RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+  await p.query(`DROP TRIGGER IF EXISTS documents_updated_at_trigger ON documents`);
+  await p.query(`
+    CREATE TRIGGER documents_updated_at_trigger
+      BEFORE UPDATE ON documents
+      FOR EACH ROW
+      EXECUTE FUNCTION documents_set_updated_at();
+  `);
+}
+
 const TEAM_SIGNATURE_HTML = {
   mike: `<p>Best regards,</p>
 <p><strong>Mike Williamson</strong><br>Owner/Operator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,

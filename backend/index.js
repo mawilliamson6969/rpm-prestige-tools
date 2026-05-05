@@ -21,6 +21,7 @@ import {
   ensureWikiSchema,
   ensurePlaybookSchema,
   ensureMaintenanceDashboardSchema,
+  ensureDocumentsSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
@@ -302,6 +303,15 @@ import {
   putWikiPageReorder,
   wikiUploadMiddleware,
 } from "./routes/wiki.js";
+import {
+  deleteDocument,
+  getDocumentById,
+  getDocuments,
+  postDocument,
+  postDocumentAiAssist,
+  postDocumentDuplicate,
+  putDocument,
+} from "./routes/documents.js";
 import {
   deletePlaybookAttachment,
   deletePlaybookCategory,
@@ -959,6 +969,15 @@ app.post("/playbooks/pages", requireAuth, postPlaybookPage);
 app.get("/playbooks/attachments/:id", requireAuth, getPlaybookAttachment);
 app.delete("/playbooks/attachments/:id", requireAuth, deletePlaybookAttachment);
 
+/** Documents — standalone rich-text docs (notes, SOPs, owner letters, wikis) */
+app.post("/documents/ai-assist", requireAuth, postDocumentAiAssist);
+app.get("/documents", requireAuth, getDocuments);
+app.post("/documents", requireAuth, postDocument);
+app.get("/documents/:id", requireAuth, getDocumentById);
+app.put("/documents/:id", requireAuth, putDocument);
+app.delete("/documents/:id", requireAuth, deleteDocument);
+app.post("/documents/:id/duplicate", requireAuth, postDocumentDuplicate);
+
 /** Company file manager (JWT; public share routes below) */
 app.post("/files/upload", requireAuth, uploadFilesMiddleware.array("files"), postFilesUpload);
 app.get("/files/stats", requireAuth, getFilesStats);
@@ -1539,6 +1558,8 @@ async function start() {
       console.log("Database schema OK (reviews + templates + automations + leaderboard).");
       await ensureEsignSchema();
       console.log("Database schema OK (esign_requests).");
+      await ensureDocumentsSchema();
+      console.log("Database schema OK (documents).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
