@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "../../app/(protected)/inbox/inbox.module.css";
-import type { TicketRow } from "../../hooks/inbox/types";
+import type { ThreadRow } from "../../hooks/inbox/types";
 import type { UseAIDraft } from "../../hooks/inbox/useAIDraft";
 import type { UseCompose } from "../../hooks/inbox/useCompose";
 import type { SlaView } from "../../hooks/inbox/useSLA";
@@ -13,7 +13,7 @@ import InboxDetail from "./InboxDetail";
 import RetryState from "./RetryState";
 
 type Props = {
-  selectedId: number | null;
+  selectedThreadId: string | null;
   detail: UseThreadDetail;
   teamUsers: UseTeamUsers;
   slaView: SlaView;
@@ -22,7 +22,7 @@ type Props = {
   compose: UseCompose;
   aiDraft: UseAIDraft;
   onCloseMobile: () => void;
-  onToggleStar: (t: TicketRow) => void;
+  onToggleStar: (t: ThreadRow) => void;
   onUpdate: (patch: Record<string, unknown>) => void;
   onRunAiDraft: () => void;
   onDismissAiDraft: () => void;
@@ -30,7 +30,7 @@ type Props = {
 };
 
 export default function DetailPanelContainer({
-  selectedId,
+  selectedThreadId,
   detail,
   teamUsers,
   slaView,
@@ -45,7 +45,7 @@ export default function DetailPanelContainer({
   onDismissAiDraft,
   onSend,
 }: Props) {
-  const noSelection = selectedId == null;
+  const noSelection = !selectedThreadId;
   const showInitialEmpty = noSelection;
   const showRetry = !showInitialEmpty && detail.error && !detail.thread;
   const showLoading = !showInitialEmpty && !showRetry && !detail.thread;

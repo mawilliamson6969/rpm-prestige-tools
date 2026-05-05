@@ -1,26 +1,40 @@
 "use client";
 
 import styles from "../../app/(protected)/inbox/inbox.module.css";
-import type { TicketRow } from "../../hooks/inbox/types";
+import type { ThreadRow } from "../../hooks/inbox/types";
 import type { UseThreadList } from "../../hooks/inbox/useThreadList";
 import {
   CAT_STYLE,
   initials,
   mailboxColor,
-  mailboxShortLabel,
-  priorityBarColor,
   relativeTime,
 } from "./inboxConstants";
 import RetryState from "./RetryState";
 
-type Props = {
-  list: UseThreadList;
-  selectedId: number | null;
-  onSelect: (id: number) => void;
-  onToggleStar: (e: React.MouseEvent, ticket: TicketRow) => void;
+const PRIORITY_BAR: Record<string, string> = {
+  emergency: "#b32317",
+  high: "#e65100",
+  normal: "#9e9e9e",
+  low: "#cfd4dc",
 };
 
-export default function InboxList({ list, selectedId, onSelect, onToggleStar }: Props) {
+function priorityBarColor(priority: string) {
+  return PRIORITY_BAR[priority] ?? "#9e9e9e";
+}
+
+function senderLabelOf(t: ThreadRow): string {
+  const m = t.latest_message;
+  return (m?.sender_name?.trim() || m?.sender_email?.trim() || t.subject || "(no sender)").slice(0, 80);
+}
+
+type Props = {
+  list: UseThreadList;
+  selectedThreadId: string | null;
+  onSelect: (threadId: string) => void;
+  onToggleStar: (e: React.MouseEvent, thread: ThreadRow) => void;
+};
+
+export default function InboxList({ list, selectedThreadId, onSelect, onToggleStar }: Props) {
   const { threads, total, offset, loading, error, loadMore, refetch } = list;
   const empty = threads.length === 0;
 
@@ -36,69 +50,91 @@ export default function InboxList({ list, selectedId, onSelect, onToggleStar }: 
         />
       ) : null}
 
-      {threads.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          className={`${styles.ticketRow} ${selectedId === t.id ? styles.active : ""}`}
-          onClick={() => onSelect(t.id)}
-        >
-          <span className={styles.priBar} style={{ background: priorityBarColor(t.priority) }} />
-          {!t.is_read ? <span className={styles.unreadDot} aria-hidden /> : <span style={{ width: 8 }} />}
-          <div className={styles.ticketMain}>
-            <div className={styles.ticketTop}>
-              <p className={`${styles.sender} ${!t.is_read ? styles.unread : ""}`}>
-                {t.sender_name || t.sender_email}
-              </p>
-              <span className={styles.ticketTopRight}>
-                {t.has_ai_draft_ready ? (
-                  <span className={styles.draftReadyMark} title="Draft ready">
-                    ✨
+      {threads.map((t) => {
+        const unread = t.unread_count > 0;
+        const senderLabel = senderLabelOf(t);
+        return (
+          <button
+            key={t.thread_id}
+            type="button"
+            className={`${styles.ticketRow} ${selectedThreadId === t.thread_id ? styles.active : ""}`}
+            onClick={() => onSelect(t.thread_id)}
+          >
+            <span className={styles.priBar} style={{ background: priorityBarColor(t.priority) }} />
+            {unread ? <span className={styles.unreadDot} aria-hidden /> : <span style={{ width: 8 }} />}
+            <div className={styles.ticketMain}>
+              <div className={styles.ticketTop}>
+                <p className={`${styles.sender} ${unread ? styles.unread : ""}`}>{senderLabel}</p>
+                <span className={styles.ticketTopRight}>
+                  {t.has_ai_draft_ready ? (
+                    <span className={styles.draftReadyMark} title="Draft ready">
+                      ✨
+                    </span>
+                  ) : null}
+                  {t.has_attachments ? (
+                    <span title="Has attachments" aria-label="Has attachments">📎</span>
+                  ) : null}
+                  <span className={styles.time}>{relativeTime(t.last_message_at)}</span>
+                </span>
+              </div>
+              <p className={styles.subject}>
+                {t.subject || "(No subject)"}
+                {t.message_count > 1 ? (
+                  <span
+                    aria-label={`${t.message_count} messages`}
+                    style={{
+                      marginLeft: "0.4rem",
+                      color: "#6a737b",
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    · {t.message_count}
                   </span>
                 ) : null}
-                <span className={styles.time}>{relativeTime(t.received_at)}</span>
-              </span>
-            </div>
-            <p className={styles.subject}>{t.subject || "(No subject)"}</p>
-            <p className={styles.preview}>{t.body_preview || ""}</p>
-            {t.connection_id != null && mailboxShortLabel(t) ? (
-              <div className={styles.ticketMailboxTag}>
-                <span className={styles.mailboxDot} style={{ background: mailboxColor(t.connection_id) }} />
-                <span>📧 {mailboxShortLabel(t)}</span>
+              </p>
+              <p className={styles.preview}>{t.latest_message?.body_preview || ""}</p>
+              {t.connection_id != null && (t.mailbox_display_name || t.mailbox_email) ? (
+                <div className={styles.ticketMailboxTag}>
+                  <span className={styles.mailboxDot} style={{ background: mailboxColor(t.connection_id) }} />
+                  <span>📧 {(t.mailbox_display_name || t.mailbox_email || "").slice(0, 18)}</span>
+                </div>
+              ) : null}
+              <div className={styles.ticketMeta}>
+                {t.category ? (
+                  <span
+                    className={styles.catBadge}
+                    style={{
+                      background: (CAT_STYLE[t.category] || CAT_STYLE.other).bg,
+                      color: (CAT_STYLE[t.category] || CAT_STYLE.other).color,
+                    }}
+                  >
+                    {t.category}
+                  </span>
+                ) : null}
+                <span
+                  className={styles.assignAv}
+                  style={{ background: t.assignee_name ? "#1b2856" : "#9e9e9e" }}
+                  title={t.assignee_name || "Unassigned"}
+                >
+                  {t.assignee_name ? initials(t.assignee_name, null) : "?"}
+                </span>
+                <button
+                  type="button"
+                  className={styles.starBtn}
+                  aria-label={t.starred ? "Unstar" : "Star"}
+                  onClick={(e) => onToggleStar(e, t)}
+                >
+                  {t.starred ? "★" : "☆"}
+                </button>
               </div>
-            ) : null}
-            <div className={styles.ticketMeta}>
-              <span
-                className={styles.catBadge}
-                style={{
-                  background: (CAT_STYLE[t.category] || CAT_STYLE.other).bg,
-                  color: (CAT_STYLE[t.category] || CAT_STYLE.other).color,
-                }}
-              >
-                {t.category}
-              </span>
-              <span
-                className={styles.assignAv}
-                style={{ background: t.assignee_name ? "#1b2856" : "#9e9e9e" }}
-                title={t.assignee_name || "Unassigned"}
-              >
-                {t.assignee_name ? initials(t.assignee_name, null) : "?"}
-              </span>
-              <button
-                type="button"
-                className={styles.starBtn}
-                aria-label={t.is_starred ? "Unstar" : "Star"}
-                onClick={(e) => onToggleStar(e, t)}
-              >
-                {t.is_starred ? "★" : "☆"}
-              </button>
             </div>
-          </div>
-        </button>
-      ))}
+          </button>
+        );
+      })}
 
       {!loading && empty && !error ? (
-        <div className={styles.emptyDetail}>No tickets match.</div>
+        <div className={styles.emptyDetail}>No threads match.</div>
       ) : null}
 
       {offset < total ? (

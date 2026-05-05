@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiUrl } from "../../lib/api";
 import { parseApiError } from "../../lib/apiResult";
-import type { ListSort, TicketRow } from "./types";
+import type { ListSort, ThreadRow } from "./types";
 
 const PAGE_LIMIT = 40;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -20,7 +20,7 @@ export type ThreadListFilters = {
 };
 
 export type UseThreadList = {
-  threads: TicketRow[];
+  threads: ThreadRow[];
   total: number;
   offset: number;
   loading: boolean;
@@ -33,15 +33,14 @@ export type UseThreadList = {
   setTeamUserId: (id: number | null) => void;
   setSearch: (s: string) => void;
   setSort: (s: ListSort) => void;
-  /** Reset bucket + clear category/narrowStatus/teamUserId in one call. */
   applyPreset: (bucket: string) => void;
 
   refetch: () => Promise<void>;
   loadMore: () => Promise<void>;
-  /** Patch a single ticket in the list (used by detail/star/AI-draft mutations). */
-  patchTicket: (id: number, patch: Partial<TicketRow>) => void;
-  /** Patch multiple tickets at once (used by batch AI-draft). */
-  patchTickets: (ids: number[], patch: Partial<TicketRow>) => void;
+  /** Patch a single thread in the list (used by detail/star/AI-draft mutations). */
+  patchThread: (threadId: string, patch: Partial<ThreadRow>) => void;
+  /** Patch multiple threads at once (used by batch AI-draft). */
+  patchThreads: (threadIds: string[], patch: Partial<ThreadRow>) => void;
 };
 
 export default function useThreadList(connectionId: number | null): UseThreadList {
@@ -55,7 +54,7 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<ListSort>("newest");
 
-  const [threads, setThreads] = useState<TicketRow[]>([]);
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -92,7 +91,7 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
       try {
         const p = new URLSearchParams(queryString);
         p.set("offset", String(startOffset));
-        const res = await fetch(apiUrl(`/inbox/tickets?${p.toString()}`), {
+        const res = await fetch(apiUrl(`/inbox/threads?${p.toString()}`), {
           cache: "no-store",
           headers: { ...authHeaders() },
         });
@@ -102,13 +101,13 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
           if (!append) setThreads([]);
           return;
         }
-        const rows = (body.tickets as TicketRow[]) || [];
+        const rows = (body.threads as ThreadRow[]) || [];
         setTotal(body.total ?? 0);
         setOffset(startOffset + rows.length);
         setThreads((prev) => (append ? [...prev, ...rows] : rows));
         setError(null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load tickets.");
+        setError(e instanceof Error ? e.message : "Failed to load threads.");
         if (!append) setThreads([]);
       } finally {
         setLoading(false);
@@ -125,13 +124,13 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
   const refetch = useCallback(() => loadList(0, false), [loadList]);
   const loadMore = useCallback(() => loadList(offset, true), [loadList, offset]);
 
-  const patchTicket = useCallback((id: number, patch: Partial<TicketRow>) => {
-    setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const patchThread = useCallback((threadId: string, patch: Partial<ThreadRow>) => {
+    setThreads((prev) => prev.map((t) => (t.thread_id === threadId ? { ...t, ...patch } : t)));
   }, []);
 
-  const patchTickets = useCallback((ids: number[], patch: Partial<TicketRow>) => {
+  const patchThreads = useCallback((ids: string[], patch: Partial<ThreadRow>) => {
     const set = new Set(ids);
-    setThreads((prev) => prev.map((t) => (set.has(t.id) ? { ...t, ...patch } : t)));
+    setThreads((prev) => prev.map((t) => (set.has(t.thread_id) ? { ...t, ...patch } : t)));
   }, []);
 
   const applyPreset = useCallback((b: string) => {
@@ -162,7 +161,7 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
     applyPreset,
     refetch,
     loadMore,
-    patchTicket,
-    patchTickets,
+    patchThread,
+    patchThreads,
   };
 }

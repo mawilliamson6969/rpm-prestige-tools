@@ -45,7 +45,7 @@ function InboxOrchestrator() {
   const notifications = useNotificationCenter();
   const layout = useResponsiveLayout();
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
 
   const stats = useStats();
@@ -53,13 +53,12 @@ function InboxOrchestrator() {
   const mailboxes = useMailboxes();
   useSyncHealthReporter(mailboxes.mailboxes, notifications);
   const list = useThreadList(mailboxes.currentMailbox);
-  const aiDraft = useAIDraft({ ticketId: selectedId });
   const batch = useBatchAIDraft();
 
   const detail = useThreadDetail({
-    selectedId,
-    onTicketChanged: (id, patch) => {
-      list.patchTicket(id, patch);
+    selectedThreadId,
+    onThreadChanged: (threadId, patch) => {
+      list.patchThread(threadId, patch);
       void stats.refetch();
     },
     onAiDraftSeed: (ad) => {
@@ -70,19 +69,27 @@ function InboxOrchestrator() {
     },
   });
 
-  const readOnlyMailbox = detail.thread?.inbox_permission === "read";
-  const compose = useCompose({ ticketId: selectedId, readOnly: readOnlyMailbox });
-  const slaView = useSLA(detail.thread, detail.sla);
+  // useAIDraft is keyed on the seed ticket id (Graph-side reply target). When
+  // the active thread changes, the seed changes and the banner resets.
+  const aiDraft = useAIDraft({ ticketId: detail.seedTicketId });
+
+  const readOnlyMailbox = detail.thread?.my_permission === "read";
+  const compose = useCompose({
+    threadId: selectedThreadId,
+    seedTicketId: detail.seedTicketId,
+    readOnly: readOnlyMailbox,
+  });
+  const slaView = useSLA(detail.thread);
 
   const canMetaMailbox =
     !!detail.thread &&
-    (detail.thread.inbox_permission === "reply" ||
-      detail.thread.inbox_permission === "admin" ||
-      detail.thread.inbox_permission == null);
+    (detail.thread.my_permission === "reply" ||
+      detail.thread.my_permission === "admin" ||
+      detail.thread.my_permission == null);
 
   const actions = useInboxActions({
-    selectedId,
-    setSelectedId,
+    selectedThreadId,
+    setSelectedThreadId,
     authHeaders,
     toast,
     notifications,
@@ -157,8 +164,8 @@ function InboxOrchestrator() {
             />
             <InboxList
               list={list}
-              selectedId={selectedId}
-              onSelect={actions.openTicket}
+              selectedThreadId={selectedThreadId}
+              onSelect={actions.openThread}
               onToggleStar={(e, t) => {
                 e.stopPropagation();
                 void actions.toggleStar(t);
@@ -168,7 +175,7 @@ function InboxOrchestrator() {
         </div>
 
         <DetailPanelContainer
-          selectedId={selectedId}
+          selectedThreadId={selectedThreadId}
           detail={detail}
           teamUsers={teamUsers}
           slaView={slaView}

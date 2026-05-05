@@ -71,6 +71,10 @@ export type ResponseRow = {
   sent_via: string | null;
   created_at: string;
   responded_by_name: string | null;
+  graph_id?: string | null;
+  send_status?: "pending" | "sent" | "failed" | null;
+  send_error?: string | null;
+  sent_at?: string | null;
 };
 
 export type Stats = {
@@ -111,3 +115,75 @@ export type MailboxConnection = {
 export type ComposeMode = "reply" | "note";
 
 export type ListSort = "newest" | "oldest" | "priority" | "updated";
+
+export type ThreadStatus =
+  | "open"
+  | "waiting_on_tenant"
+  | "waiting_on_owner"
+  | "waiting_on_vendor"
+  | "snoozed"
+  | "closed";
+
+export type ThreadPriority = "emergency" | "high" | "normal" | "low";
+
+export type ThreadRow = {
+  thread_id: string;
+  subject: string | null;
+  connection_id: number | null;
+  status: ThreadStatus;
+  assignee_id: number | null;
+  assignee_username?: string | null;
+  assignee_name?: string | null;
+  category: string | null;
+  priority: ThreadPriority;
+  starred: boolean;
+  linked_property_name: string | null;
+  linked_tenant_name: string | null;
+  linked_owner_name: string | null;
+  message_count: number;
+  unread_count: number;
+  has_attachments: boolean;
+  first_message_at: string;
+  last_message_at: string;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  last_touched_by?: number | null;
+  last_touched_at?: string | null;
+  sla_due_at?: string | null;
+  sla_paused?: boolean | null;
+  ai_summary: string | null;
+  ai_confidence?: number | null;
+  mailbox_display_name?: string | null;
+  mailbox_email?: string | null;
+  mailbox_type?: string | null;
+  my_permission?: string | null;
+  has_ai_draft_ready?: boolean;
+  /** Latest inbound message id, used for AI draft generation/dismiss which
+   *  still hit /inbox/tickets/:id/ai-draft endpoints. */
+  seed_ticket_id?: number | null;
+  /** Latest message preview shown in the list — populated by the API. */
+  latest_message?: {
+    sender_name: string | null;
+    sender_email: string | null;
+    body_preview: string | null;
+  } | null;
+};
+
+/** A single message inside a thread (one row in the underlying tickets table). */
+export type ThreadMessage = {
+  id: number;
+  external_id: string | null;
+  direction: "inbound" | "outbound";
+  subject: string | null;
+  body_preview: string | null;
+  body_html: string | null;
+  sender_name: string | null;
+  sender_email: string | null;
+  recipient_emails: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  has_attachments: boolean;
+  ai_summary: string | null;
+  category: string | null;
+  priority: number;
+};

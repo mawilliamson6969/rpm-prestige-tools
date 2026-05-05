@@ -23,9 +23,11 @@ export function buildReplyEmailHtml(message: string, signatureHtml: string | nul
 export type SignatureSelection = number | "none" | null;
 
 export type UseComposeOptions = {
-  /** Resets compose state when this changes. */
-  ticketId: number | null;
-  /** When the open ticket is read-only, the hook clamps mode to `"note"`. */
+  /** Phase 1: thread is the canonical entity. Reset compose state when this changes. */
+  threadId: string | null;
+  /** Seed ticket id used by the legacy ticket-scoped note endpoint. */
+  seedTicketId: number | null;
+  /** When the active mailbox is read-only, the hook clamps mode to `"note"`. */
   readOnly: boolean;
 };
 
@@ -48,7 +50,11 @@ export type UseCompose = {
   reset: () => void;
 };
 
-export default function useCompose({ ticketId, readOnly }: UseComposeOptions): UseCompose {
+export default function useCompose({
+  threadId,
+  seedTicketId,
+  readOnly,
+}: UseComposeOptions): UseCompose {
   const { authHeaders } = useAuth();
 
   const [body, setBody] = useState("");
@@ -97,7 +103,7 @@ export default function useCompose({ ticketId, readOnly }: UseComposeOptions): U
   useEffect(() => {
     setBody("");
     setExpanded(false);
-  }, [ticketId]);
+  }, [threadId]);
 
   // Pick a default signature whenever the active ticket or the loaded signature list changes.
   useEffect(() => {
@@ -107,12 +113,12 @@ export default function useCompose({ ticketId, readOnly }: UseComposeOptions): U
     }
     const def = signatures.find((s) => s.isDefault);
     setSelectedSigId(def?.id ?? signatures[0].id);
-  }, [ticketId, signatures]);
+  }, [threadId, signatures]);
 
   // Read-only mailboxes can only post internal notes.
   useEffect(() => {
     if (readOnly) setModeRaw("note");
-  }, [readOnly, ticketId]);
+  }, [readOnly, threadId]);
 
   const setMode = useCallback(
     (m: ComposeMode) => {
@@ -124,23 +130,29 @@ export default function useCompose({ ticketId, readOnly }: UseComposeOptions): U
   );
 
   const send = useCallback(async (): Promise<ApiResult<void>> => {
-    if (ticketId == null) return { ok: false, error: "No ticket selected." };
     const trimmed = body.trim();
     if (!trimmed) return { ok: false, error: "Message is empty." };
+    if (mode === "reply" && !threadId) return { ok: false, error: "No thread selected." };
+    if (mode === "note" && seedTicketId == null) {
+      return { ok: false, error: "No message to attach a note to." };
+    }
     setSending(true);
     try {
-      const path = mode === "reply" ? "reply" : "note";
       let replySigHtml: string | null = null;
       if (mode === "reply" && selectedSigId !== "none" && selectedSigId !== null) {
         const row = signatures.find((s) => s.id === selectedSigId);
         const raw = row?.signatureHtml?.trim();
         replySigHtml = raw ? raw : null;
       }
+      const url =
+        mode === "reply"
+          ? apiUrl(`/inbox/threads/${encodeURIComponent(threadId as string)}/messages`)
+          : apiUrl(`/inbox/tickets/${seedTicketId}/note`);
       const payload =
         mode === "reply"
           ? { body: buildReplyEmailHtml(body, replySigHtml) }
           : { body: trimmed };
-      const res = await fetch(apiUrl(`/inbox/tickets/${ticketId}/${path}`), {
+      const res = await fetch(url, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -157,7 +169,7 @@ export default function useCompose({ ticketId, readOnly }: UseComposeOptions): U
     } finally {
       setSending(false);
     }
-  }, [authHeaders, body, mode, selectedSigId, signatures, ticketId]);
+  }, [authHeaders, body, mode, selectedSigId, signatures, threadId, seedTicketId]);
 
   return {
     body,
