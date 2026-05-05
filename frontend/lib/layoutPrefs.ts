@@ -99,6 +99,14 @@ export const DEFAULT_HUB_CARDS: HubCardDef[] = [
     icon: "📄",
   },
   {
+    id: "mailers",
+    title: "Mailers",
+    description: "Send certified, first class, and marketing mail via LetterStream with tracking",
+    href: "/mailers",
+    section: "Tools",
+    icon: "📬",
+  },
+  {
     id: "files",
     title: "Files",
     description: "Shared company file manager",
@@ -311,6 +319,7 @@ export const DEFAULT_SIDEBAR_ITEMS: SidebarNavItem[] = [
   { id: "wiki", type: "link", label: "Wiki", icon: "📚", href: "/wiki", section: "tools" },
   { id: "playbooks", type: "link", label: "Playbooks", icon: "📋", href: "/playbooks", section: "tools" },
   { id: "documents", type: "link", label: "Documents", icon: "📄", href: "/documents", section: "tools" },
+  { id: "mailers", type: "link", label: "Mailers", icon: "📬", href: "/mailers", section: "tools" },
   { id: "files", type: "link", label: "Files", icon: "📁", href: "/files", section: "tools" },
   { id: "forms", type: "link", label: "Forms", icon: "📋", href: "/forms", section: "tools" },
   { id: "marketing", type: "link", label: "Marketing", icon: "📅", href: "/marketing/calendar", section: "tools" },

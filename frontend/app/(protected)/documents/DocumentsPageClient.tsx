@@ -691,6 +691,13 @@ export default function DocumentsPageClient() {
               <button type="button" className={styles.aiBtn} onClick={() => { setAiPrompt(""); setAiOpen(true); }}>
                 ✨ AI Assist
               </button>
+              <a
+                href={`/mailers/compose?document_id=${openDocId}`}
+                className={styles.aiBtn}
+                style={{ textDecoration: "none", marginLeft: 4 }}
+              >
+                📬 Send as Mailer
+              </a>
             </div>
 
             <div className={styles.formatBar}>
