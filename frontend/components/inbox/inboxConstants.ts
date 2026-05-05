@@ -1,5 +1,3 @@
-import type { TicketRow } from "../../hooks/inbox/types";
-
 export const MAILBOX_COLORS = ["#1565c0", "#2e7d32", "#6a1b9a", "#e65100", "#00897b"];
 
 export function mailboxColor(connectionId: number | null | undefined) {
@@ -7,7 +5,7 @@ export function mailboxColor(connectionId: number | null | undefined) {
   return MAILBOX_COLORS[Math.abs(connectionId) % MAILBOX_COLORS.length];
 }
 
-export function mailboxShortLabel(t: TicketRow) {
+export function mailboxShortLabel(t: { mailbox_display_name?: string | null; mailbox_email?: string | null }) {
   const name = (t.mailbox_display_name || t.mailbox_email || "").trim();
   if (!name) return "";
   return name.length > 18 ? `${name.slice(0, 16)}…` : name;

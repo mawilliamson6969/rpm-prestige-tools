@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { apiUrl } from "../../lib/api";
 import { networkErrorMessage, parseApiError } from "../../lib/apiResult";
-import type { TicketRow } from "./types";
+import type { ThreadRow } from "./types";
 import type { UseAIDraft } from "./useAIDraft";
 import type { UseBatchAIDraft } from "./useBatchAIDraft";
 import type { UseCompose } from "./useCompose";
@@ -16,8 +16,8 @@ import type { UseThreadList } from "./useThreadList";
 import type { UseToastValue } from "./useToast";
 
 export type UseInboxActionsArgs = {
-  selectedId: number | null;
-  setSelectedId: (id: number | null) => void;
+  selectedThreadId: string | null;
+  setSelectedThreadId: (id: string | null) => void;
   authHeaders: () => Record<string, string>;
   toast: UseToastValue;
   notifications: UseNotificationCenterValue;
@@ -33,8 +33,8 @@ export type UseInboxActionsArgs = {
 };
 
 export type InboxActions = {
-  openTicket: (id: number) => void;
-  toggleStar: (ticket: TicketRow) => Promise<void>;
+  openThread: (threadId: string) => void;
+  toggleStar: (thread: ThreadRow) => Promise<void>;
   update: (patch: Record<string, unknown>) => Promise<void>;
   sync: () => Promise<void>;
   runAiDraft: () => Promise<void>;
@@ -44,8 +44,8 @@ export type InboxActions = {
 };
 
 export default function useInboxActions({
-  selectedId,
-  setSelectedId,
+  selectedThreadId,
+  setSelectedThreadId,
   authHeaders,
   toast,
   notifications,
@@ -59,20 +59,26 @@ export default function useInboxActions({
   layout,
   setSyncBusy,
 }: UseInboxActionsArgs): InboxActions {
-  const openTicket = useCallback(
-    (id: number) => {
-      setSelectedId(id);
+  const openThread = useCallback(
+    (threadId: string) => {
+      setSelectedThreadId(threadId);
       layout.showDetailIfMobile();
-      void detail.markAsRead(id).then((r) => {
-        if (!r.ok) toast.push({ variant: "error", message: `Couldn't mark read — ${r.error}` });
+      // Optimistically clear the unread badge in the list.
+      list.patchThread(threadId, { unread_count: 0 });
+      void detail.markAsRead(threadId).then((r) => {
+        if (!r.ok) {
+          toast.push({ variant: "error", message: `Couldn't mark read — ${r.error}` });
+        } else {
+          void stats.refetch();
+        }
       });
     },
-    [detail, layout, setSelectedId, toast]
+    [detail, layout, list, setSelectedThreadId, stats, toast]
   );
 
   const toggleStar = useCallback(
-    async (ticket: TicketRow) => {
-      const r = await detail.toggleStar(ticket);
+    async (thread: ThreadRow) => {
+      const r = await detail.toggleStar(thread);
       if (!r.ok) toast.push({ variant: "error", message: `Couldn't star this thread — ${r.error}` });
     },
     [detail, toast]
@@ -81,9 +87,15 @@ export default function useInboxActions({
   const update = useCallback(
     async (patch: Record<string, unknown>) => {
       const r = await detail.updateThread(patch);
-      if (!r.ok) toast.push({ variant: "error", message: `Couldn't update thread — ${r.error}` });
+      if (!r.ok) {
+        toast.push({ variant: "error", message: `Couldn't update thread — ${r.error}` });
+        return;
+      }
+      // Mirror the patched fields into the list row so the UI stays consistent.
+      if (selectedThreadId) list.patchThread(selectedThreadId, r.data);
+      void stats.refetch();
     },
-    [detail, toast]
+    [detail, list, selectedThreadId, stats, toast]
   );
 
   const sync = useCallback(async () => {
@@ -115,8 +127,12 @@ export default function useInboxActions({
   }, [authHeaders, list, mailboxes, notifications, setSyncBusy, stats]);
 
   const runAiDraft = useCallback(async () => {
-    if (selectedId == null) return;
-    const r = await aiDraft.generate(selectedId);
+    const seed = detail.seedTicketId;
+    if (seed == null) {
+      toast.push({ variant: "error", message: "No message to draft a reply to." });
+      return;
+    }
+    const r = await aiDraft.generate(seed);
     if (!r.ok) {
       toast.push({ variant: "error", message: `AI draft failed — ${r.error}` });
       return;
@@ -125,24 +141,25 @@ export default function useInboxActions({
     compose.setMode("reply");
     compose.setExpanded(true);
     aiDraft.showBanner(r.data.contextUsed);
-    list.patchTicket(selectedId, { has_ai_draft_ready: true });
+    if (selectedThreadId) list.patchThread(selectedThreadId, { has_ai_draft_ready: true });
     detail.patchThread({ has_ai_draft_ready: true });
-  }, [aiDraft, compose, detail, list, selectedId, toast]);
+  }, [aiDraft, compose, detail, list, selectedThreadId, toast]);
 
   const dismissAiDraft = useCallback(async () => {
-    if (selectedId == null) return;
-    const r = await aiDraft.dismiss(selectedId);
+    const seed = detail.seedTicketId;
+    if (seed == null) return;
+    const r = await aiDraft.dismiss(seed);
     if (!r.ok) {
       toast.push({ variant: "error", message: `Couldn't dismiss draft — ${r.error}` });
       return;
     }
     compose.setBody("");
-    list.patchTicket(selectedId, { has_ai_draft_ready: false });
+    if (selectedThreadId) list.patchThread(selectedThreadId, { has_ai_draft_ready: false });
     detail.patchThread({ has_ai_draft_ready: false });
-  }, [aiDraft, compose, detail, list, selectedId, toast]);
+  }, [aiDraft, compose, detail, list, selectedThreadId, toast]);
 
   const send = useCallback(async () => {
-    if (selectedId == null) return;
+    if (selectedThreadId == null) return;
     const attempt = async (): Promise<void> => {
       const wasReply = compose.mode === "reply";
       const r = await compose.send();
@@ -160,12 +177,15 @@ export default function useInboxActions({
       void stats.refetch();
     };
     await attempt();
-  }, [aiDraft, compose, detail, list, selectedId, stats, toast]);
+  }, [aiDraft, compose, detail, list, selectedThreadId, stats, toast]);
 
   const draftAllUnread = useCallback(async () => {
-    const ids = batch.selectEligible(list.threads);
-    if (!ids.length) return;
-    const r = await batch.run(ids);
+    const eligibleThreadIds = list.threads
+      .filter((t) => batch.selectEligible([t]).length > 0)
+      .map((t) => t.thread_id);
+    const seedIds = batch.selectEligible(list.threads);
+    if (!seedIds.length) return;
+    const r = await batch.run(seedIds);
     if (!r.ok) {
       notifications.push({
         level: "error",
@@ -174,7 +194,17 @@ export default function useInboxActions({
       });
       return;
     }
-    list.patchTickets(r.data.touched, { has_ai_draft_ready: true });
+    // Map touched ticket ids back to threads via seed_ticket_id.
+    const touchedTicketIds = new Set(r.data.touched);
+    const touchedThreadIds = list.threads
+      .filter((t) => t.seed_ticket_id != null && touchedTicketIds.has(t.seed_ticket_id))
+      .map((t) => t.thread_id);
+    if (touchedThreadIds.length) {
+      list.patchThreads(touchedThreadIds, { has_ai_draft_ready: true });
+    } else if (eligibleThreadIds.length) {
+      // Fallback if the API didn't return per-ticket results.
+      list.patchThreads(eligibleThreadIds, { has_ai_draft_ready: true });
+    }
     if (r.data.ok > 0) {
       notifications.push({
         level: "info",
@@ -184,5 +214,5 @@ export default function useInboxActions({
     }
   }, [batch, list, notifications]);
 
-  return { openTicket, toggleStar, update, sync, runAiDraft, dismissAiDraft, send, draftAllUnread };
+  return { openThread, toggleStar, update, sync, runAiDraft, dismissAiDraft, send, draftAllUnread };
 }

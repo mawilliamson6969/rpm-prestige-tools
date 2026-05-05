@@ -4,49 +4,60 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiUrl } from "../../lib/api";
 import { networkErrorMessage, parseApiError, type ApiResult } from "../../lib/apiResult";
-import type { AiDraftPayload, ResponseRow, SlaPayload, TicketRow } from "./types";
+import type {
+  AiDraftPayload,
+  ResponseRow,
+  ThreadMessage,
+  ThreadRow,
+} from "./types";
 
 export type UseThreadDetailOptions = {
-  selectedId: number | null;
-  onTicketChanged?: (id: number, patch: Partial<TicketRow>) => void;
-  onAiDraftSeed?: (draft: AiDraftPayload) => void;
+  selectedThreadId: string | null;
+  onThreadChanged?: (threadId: string, patch: Partial<ThreadRow>) => void;
+  onAiDraftSeed?: (draft: AiDraftPayload, seedTicketId: number | null) => void;
 };
 
 export type UseThreadDetail = {
-  thread: TicketRow | null;
-  messages: ResponseRow[];
-  sla: SlaPayload | null;
+  thread: ThreadRow | null;
+  messages: ThreadMessage[];
+  responses: ResponseRow[];
+  /** Seed ticket id used for downstream actions (AI draft generate/dismiss
+   *  still live on /inbox/tickets/:id/ai-draft). Null if the thread has no
+   *  inbound messages yet. */
+  seedTicketId: number | null;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
-  updateThread: (patch: Record<string, unknown>) => Promise<ApiResult<TicketRow>>;
-  toggleStar: (ticket: TicketRow) => Promise<ApiResult<TicketRow>>;
-  markAsRead: (id: number) => Promise<ApiResult<void>>;
-  patchThread: (patch: Partial<TicketRow>) => void;
+  /** Patch arbitrary thread fields (status, assignee_id, category, priority, starred). */
+  updateThread: (patch: Record<string, unknown>) => Promise<ApiResult<ThreadRow>>;
+  toggleStar: (thread: ThreadRow) => Promise<ApiResult<ThreadRow>>;
+  markAsRead: (threadId: string) => Promise<ApiResult<void>>;
+  patchThread: (patch: Partial<ThreadRow>) => void;
 };
 
 export default function useThreadDetail({
-  selectedId,
-  onTicketChanged,
+  selectedThreadId,
+  onThreadChanged,
   onAiDraftSeed,
 }: UseThreadDetailOptions): UseThreadDetail {
   const { authHeaders } = useAuth();
-  const [thread, setThread] = useState<TicketRow | null>(null);
-  const [messages, setMessages] = useState<ResponseRow[]>([]);
-  const [sla, setSla] = useState<SlaPayload | null>(null);
+  const [thread, setThread] = useState<ThreadRow | null>(null);
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [responses, setResponses] = useState<ResponseRow[]>([]);
+  const [seedTicketId, setSeedTicketId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onTicketChangedRef = useRef(onTicketChanged);
+  const onThreadChangedRef = useRef(onThreadChanged);
   const onAiDraftSeedRef = useRef(onAiDraftSeed);
-  onTicketChangedRef.current = onTicketChanged;
+  onThreadChangedRef.current = onThreadChanged;
   onAiDraftSeedRef.current = onAiDraftSeed;
 
   const loadDetail = useCallback(
-    async (id: number) => {
+    async (threadId: string) => {
       setLoading(true);
       try {
-        const res = await fetch(apiUrl(`/inbox/tickets/${id}`), {
+        const res = await fetch(apiUrl(`/inbox/threads/${encodeURIComponent(threadId)}`), {
           cache: "no-store",
           headers: { ...authHeaders() },
         });
@@ -55,10 +66,15 @@ export default function useThreadDetail({
           setError(parseApiError(body, res.status));
           return;
         }
-        setThread(body.ticket as TicketRow);
-        setMessages(Array.isArray(body.responses) ? body.responses : []);
+        setThread(body.thread as ThreadRow);
+        setMessages(Array.isArray(body.messages) ? (body.messages as ThreadMessage[]) : []);
+        setResponses(Array.isArray(body.responses) ? (body.responses as ResponseRow[]) : []);
+        const seed = Number(body.seed_ticket_id);
+        setSeedTicketId(Number.isFinite(seed) ? seed : null);
         const ad = body.ai_draft as AiDraftPayload | undefined;
-        if (ad?.draft_text) onAiDraftSeedRef.current?.(ad);
+        if (ad?.draft_text) {
+          onAiDraftSeedRef.current?.(ad, Number.isFinite(seed) ? seed : null);
+        }
         setError(null);
       } catch (e) {
         setError(networkErrorMessage(e));
@@ -70,91 +86,73 @@ export default function useThreadDetail({
   );
 
   useEffect(() => {
-    if (selectedId == null) {
+    if (!selectedThreadId) {
       setThread(null);
       setMessages([]);
-      setSla(null);
+      setResponses([]);
+      setSeedTicketId(null);
       setError(null);
       return;
     }
-    void loadDetail(selectedId);
-  }, [selectedId, loadDetail]);
-
-  const threadId = thread?.id ?? null;
-  useEffect(() => {
-    if (selectedId == null || threadId !== selectedId) {
-      setSla(null);
-      return;
-    }
-    let cancelled = false;
-    fetch(apiUrl(`/inbox/tickets/${selectedId}/sla`), {
-      cache: "no-store",
-      headers: { ...authHeaders() },
-    })
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok) setSla(body as SlaPayload);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, threadId, authHeaders]);
+    void loadDetail(selectedThreadId);
+  }, [selectedThreadId, loadDetail]);
 
   const refetch = useCallback(async () => {
-    if (selectedId != null) await loadDetail(selectedId);
-  }, [selectedId, loadDetail]);
+    if (selectedThreadId) await loadDetail(selectedThreadId);
+  }, [selectedThreadId, loadDetail]);
 
-  const patchThread = useCallback((patch: Partial<TicketRow>) => {
+  const patchThread = useCallback((patch: Partial<ThreadRow>) => {
     setThread((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
   const updateThread = useCallback(
-    async (patch: Record<string, unknown>): Promise<ApiResult<TicketRow>> => {
-      if (selectedId == null) return { ok: false, error: "No ticket selected." };
+    async (patch: Record<string, unknown>): Promise<ApiResult<ThreadRow>> => {
+      if (!selectedThreadId) return { ok: false, error: "No thread selected." };
       try {
-        const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}`), {
-          method: "PUT",
+        const res = await fetch(apiUrl(`/inbox/threads/${encodeURIComponent(selectedThreadId)}`), {
+          method: "PATCH",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify(patch),
         });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok || !body.ticket) {
+        if (!res.ok || !body.thread) {
           return { ok: false, error: parseApiError(body, res.status) };
         }
-        const updated = body.ticket as TicketRow;
+        const updated = body.thread as ThreadRow;
         setThread(updated);
-        onTicketChangedRef.current?.(updated.id, updated);
+        onThreadChangedRef.current?.(updated.thread_id, updated);
         return { ok: true, data: updated };
       } catch (e) {
         return { ok: false, error: networkErrorMessage(e) };
       }
     },
-    [authHeaders, selectedId]
+    [authHeaders, selectedThreadId]
   );
 
   const toggleStar = useCallback(
-    async (ticket: TicketRow): Promise<ApiResult<TicketRow>> => {
-      const next = !ticket.is_starred;
-      const setStarred = (val: boolean) => {
-        onTicketChangedRef.current?.(ticket.id, { is_starred: val });
-        setThread((prev) => (prev && prev.id === ticket.id ? { ...prev, is_starred: val } : prev));
+    async (target: ThreadRow): Promise<ApiResult<ThreadRow>> => {
+      const next = !target.starred;
+      const apply = (val: boolean) => {
+        onThreadChangedRef.current?.(target.thread_id, { starred: val });
+        setThread((prev) =>
+          prev && prev.thread_id === target.thread_id ? { ...prev, starred: val } : prev
+        );
       };
-      setStarred(next);
+      apply(next);
       try {
-        const res = await fetch(apiUrl(`/inbox/tickets/${ticket.id}`), {
-          method: "PUT",
+        const res = await fetch(apiUrl(`/inbox/threads/${encodeURIComponent(target.thread_id)}`), {
+          method: "PATCH",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({ isStarred: next }),
+          body: JSON.stringify({ starred: next }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          setStarred(ticket.is_starred);
+          apply(target.starred);
           return { ok: false, error: parseApiError(body, res.status) };
         }
-        return { ok: true, data: { ...ticket, is_starred: next } };
+        return { ok: true, data: { ...target, starred: next } };
       } catch (e) {
-        setStarred(ticket.is_starred);
+        apply(target.starred);
         return { ok: false, error: networkErrorMessage(e) };
       }
     },
@@ -162,18 +160,20 @@ export default function useThreadDetail({
   );
 
   const markAsRead = useCallback(
-    async (id: number): Promise<ApiResult<void>> => {
+    async (threadId: string): Promise<ApiResult<void>> => {
       try {
-        const res = await fetch(apiUrl(`/inbox/tickets/${id}`), {
-          method: "PUT",
-          headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({ isRead: true }),
-        });
+        const res = await fetch(
+          apiUrl(`/inbox/threads/${encodeURIComponent(threadId)}/read`),
+          {
+            method: "POST",
+            headers: { ...authHeaders() },
+          }
+        );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           return { ok: false, error: parseApiError(body, res.status) };
         }
-        onTicketChangedRef.current?.(id, { is_read: true });
+        onThreadChangedRef.current?.(threadId, { unread_count: 0 });
         return { ok: true, data: undefined };
       } catch (e) {
         return { ok: false, error: networkErrorMessage(e) };
@@ -185,7 +185,8 @@ export default function useThreadDetail({
   return {
     thread,
     messages,
-    sla,
+    responses,
+    seedTicketId,
     loading,
     error,
     refetch,

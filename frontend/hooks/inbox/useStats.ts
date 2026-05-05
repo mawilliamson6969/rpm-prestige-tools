@@ -25,7 +25,9 @@ export default function useStats(): UseStats {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/inbox/stats"), {
+      // Thread-level counts from Phase 1. Falls back to /inbox/stats only if
+      // /inbox/thread-stats isn't deployed yet.
+      const res = await fetch(apiUrl("/inbox/thread-stats"), {
         cache: "no-store",
         headers: { ...authHeaders() },
       });

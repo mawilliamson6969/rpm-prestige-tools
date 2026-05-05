@@ -192,9 +192,11 @@ export default function MailboxSidebar({
           [
             [null, "All active"],
             ["open", "Open"],
-            ["in_progress", "In progress"],
-            ["waiting", "Waiting"],
-            ["resolved", "Resolved"],
+            ["waiting_on_tenant", "Waiting on tenant"],
+            ["waiting_on_owner", "Waiting on owner"],
+            ["waiting_on_vendor", "Waiting on vendor"],
+            ["snoozed", "Snoozed"],
+            ["closed", "Closed"],
           ] as const
         ).map(([val, label]) => (
           <button

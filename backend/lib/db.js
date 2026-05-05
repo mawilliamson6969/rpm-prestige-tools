@@ -452,7 +452,265 @@ export async function ensureInboxSchema() {
 
   await migrateInboxDeltaSync(p);
 
+  await migrateThreadsFirst(p);
+
   await seedEmailSignatures(p);
+}
+
+/**
+ * Phase 1: thread is the canonical entity.
+ * Idempotent. Creates threads + triggers + helper functions and runs the
+ * one-time backfill. Subsequent runs are cheap because the backfill INSERT
+ * uses ON CONFLICT DO NOTHING.
+ */
+async function migrateThreadsFirst(p) {
+  await p.query(
+    `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'inbound'`
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS threads (
+      thread_id              TEXT PRIMARY KEY,
+      subject                TEXT,
+      connection_id          INTEGER REFERENCES email_connections(id) ON DELETE SET NULL,
+      status                 TEXT NOT NULL DEFAULT 'open',
+      assignee_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      category               TEXT,
+      priority               TEXT NOT NULL DEFAULT 'normal',
+      starred                BOOLEAN NOT NULL DEFAULT FALSE,
+      linked_property_name   TEXT,
+      linked_tenant_name     TEXT,
+      linked_owner_name      TEXT,
+      message_count          INTEGER NOT NULL DEFAULT 0,
+      unread_count           INTEGER NOT NULL DEFAULT 0,
+      has_attachments        BOOLEAN NOT NULL DEFAULT FALSE,
+      first_message_at       TIMESTAMPTZ NOT NULL,
+      last_message_at        TIMESTAMPTZ NOT NULL,
+      last_inbound_at        TIMESTAMPTZ,
+      last_outbound_at       TIMESTAMPTZ,
+      last_touched_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      last_touched_at        TIMESTAMPTZ,
+      sla_policy_id          INTEGER,
+      sla_due_at             TIMESTAMPTZ,
+      sla_paused             BOOLEAN NOT NULL DEFAULT FALSE,
+      ai_summary             TEXT,
+      ai_confidence          NUMERIC(3,2),
+      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_status_assignee ON threads(status, assignee_id)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_category_status ON threads(category, status)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_connection_last_message ON threads(connection_id, last_message_at DESC)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_sla_due ON threads(sla_due_at) WHERE status = 'open'`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_starred ON threads(starred) WHERE starred = TRUE`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_threads_unread ON threads(unread_count) WHERE unread_count > 0`);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION inbox_priority_int_to_text(p INTEGER)
+    RETURNS TEXT AS $$
+      SELECT CASE
+        WHEN p IS NULL  THEN 'normal'
+        WHEN p >= 85    THEN 'emergency'
+        WHEN p >= 60    THEN 'high'
+        WHEN p >= 35    THEN 'normal'
+        ELSE                 'low'
+      END;
+    $$ LANGUAGE SQL IMMUTABLE
+  `);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION inbox_status_message_to_thread(s TEXT)
+    RETURNS TEXT AS $$
+      SELECT CASE
+        WHEN s IN ('open', 'in_progress') THEN 'open'
+        WHEN s = 'waiting'                THEN 'waiting_on_tenant'
+        WHEN s = 'resolved'               THEN 'closed'
+        ELSE                                   COALESCE(s, 'open')
+      END;
+    $$ LANGUAGE SQL IMMUTABLE
+  `);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION refresh_thread_from_message()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      v_count       INTEGER;
+      v_unread      INTEGER;
+      v_attach      BOOLEAN;
+      v_first       TIMESTAMPTZ;
+      v_last        TIMESTAMPTZ;
+      v_last_in     TIMESTAMPTZ;
+    BEGIN
+      IF NEW.thread_id IS NULL THEN
+        RETURN NEW;
+      END IF;
+      SELECT
+        COUNT(*),
+        COUNT(*) FILTER (WHERE is_read = FALSE),
+        BOOL_OR(COALESCE(has_attachments, FALSE)),
+        MIN(received_at),
+        MAX(received_at),
+        MAX(received_at) FILTER (WHERE direction = 'inbound')
+      INTO v_count, v_unread, v_attach, v_first, v_last, v_last_in
+      FROM tickets
+      WHERE thread_id = NEW.thread_id
+        AND deleted_at IS NULL;
+      INSERT INTO threads (
+        thread_id, subject, connection_id, category, priority,
+        linked_property_name, linked_tenant_name, linked_owner_name,
+        ai_summary,
+        message_count, unread_count, has_attachments,
+        first_message_at, last_message_at, last_inbound_at,
+        starred, status
+      ) VALUES (
+        NEW.thread_id,
+        NEW.subject,
+        NEW.connection_id,
+        NEW.category,
+        inbox_priority_int_to_text(NEW.priority),
+        NEW.linked_property_name,
+        NEW.linked_tenant_name,
+        NEW.linked_owner_name,
+        NEW.ai_summary,
+        COALESCE(v_count, 1),
+        COALESCE(v_unread, CASE WHEN NEW.is_read THEN 0 ELSE 1 END),
+        COALESCE(v_attach, COALESCE(NEW.has_attachments, FALSE)),
+        COALESCE(v_first, NEW.received_at),
+        COALESCE(v_last, NEW.received_at),
+        COALESCE(v_last_in, NEW.received_at),
+        COALESCE(NEW.is_starred, FALSE),
+        inbox_status_message_to_thread(NEW.status)
+      )
+      ON CONFLICT (thread_id) DO UPDATE SET
+        subject       = COALESCE(threads.subject, EXCLUDED.subject),
+        connection_id = COALESCE(threads.connection_id, EXCLUDED.connection_id),
+        message_count   = EXCLUDED.message_count,
+        unread_count    = EXCLUDED.unread_count,
+        has_attachments = EXCLUDED.has_attachments,
+        first_message_at = LEAST(threads.first_message_at, EXCLUDED.first_message_at),
+        last_message_at  = GREATEST(threads.last_message_at, EXCLUDED.last_message_at),
+        last_inbound_at  = GREATEST(
+          COALESCE(threads.last_inbound_at, EXCLUDED.last_inbound_at),
+          EXCLUDED.last_inbound_at
+        ),
+        linked_property_name = COALESCE(EXCLUDED.linked_property_name, threads.linked_property_name),
+        linked_tenant_name   = COALESCE(EXCLUDED.linked_tenant_name,   threads.linked_tenant_name),
+        linked_owner_name    = COALESCE(EXCLUDED.linked_owner_name,    threads.linked_owner_name),
+        ai_summary           = COALESCE(EXCLUDED.ai_summary, threads.ai_summary),
+        status = CASE
+          WHEN TG_OP = 'INSERT' AND threads.status = 'closed' THEN 'open'
+          ELSE threads.status
+        END,
+        updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+
+  await p.query(`DROP TRIGGER IF EXISTS trg_refresh_thread ON tickets`);
+  await p.query(`
+    CREATE TRIGGER trg_refresh_thread
+      AFTER INSERT OR UPDATE ON tickets
+      FOR EACH ROW EXECUTE FUNCTION refresh_thread_from_message()
+  `);
+
+  await p.query(`
+    CREATE OR REPLACE FUNCTION refresh_thread_from_response()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      v_thread_id TEXT;
+      v_sent_at   TIMESTAMPTZ;
+    BEGIN
+      IF NEW.response_type <> 'reply' THEN RETURN NEW; END IF;
+      IF NEW.send_status IS DISTINCT FROM 'sent' THEN RETURN NEW; END IF;
+      IF TG_OP = 'UPDATE' AND OLD.send_status = 'sent' AND OLD.graph_id = NEW.graph_id THEN
+        RETURN NEW;
+      END IF;
+      SELECT thread_id INTO v_thread_id FROM tickets WHERE id = NEW.ticket_id;
+      IF v_thread_id IS NULL THEN RETURN NEW; END IF;
+      v_sent_at := COALESCE(NEW.sent_at, NOW());
+      UPDATE threads SET
+        last_outbound_at = GREATEST(COALESCE(last_outbound_at, v_sent_at), v_sent_at),
+        last_message_at  = GREATEST(last_message_at, v_sent_at),
+        updated_at       = NOW()
+      WHERE thread_id = v_thread_id;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+
+  await p.query(`DROP TRIGGER IF EXISTS trg_refresh_thread_from_response ON ticket_responses`);
+  await p.query(`
+    CREATE TRIGGER trg_refresh_thread_from_response
+      AFTER INSERT OR UPDATE ON ticket_responses
+      FOR EACH ROW EXECUTE FUNCTION refresh_thread_from_response()
+  `);
+
+  // One-time backfill (idempotent — ON CONFLICT DO NOTHING). Subsequent
+  // updates flow through the triggers.
+  await p.query(`
+    INSERT INTO threads (
+      thread_id, subject, connection_id, category, priority,
+      linked_property_name, linked_tenant_name, linked_owner_name, ai_summary,
+      message_count, unread_count, has_attachments,
+      first_message_at, last_message_at, last_inbound_at,
+      starred, status, assignee_id
+    )
+    SELECT
+      t.thread_id,
+      (SELECT subject FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         ORDER BY received_at ASC NULLS LAST, id ASC LIMIT 1),
+      (SELECT connection_id FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      (SELECT category FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND category IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      inbox_priority_int_to_text(MAX(t.priority)),
+      (SELECT linked_property_name FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND linked_property_name IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      (SELECT linked_tenant_name FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND linked_tenant_name IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      (SELECT linked_owner_name FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND linked_owner_name IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      (SELECT ai_summary FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND ai_summary IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1),
+      COUNT(*),
+      COUNT(*) FILTER (WHERE t.is_read = FALSE),
+      BOOL_OR(COALESCE(t.has_attachments, FALSE)),
+      MIN(t.received_at),
+      MAX(t.received_at),
+      MAX(t.received_at),
+      BOOL_OR(COALESCE(t.is_starred, FALSE)),
+      inbox_status_message_to_thread(
+        (SELECT status FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+           ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1)
+      ),
+      (SELECT assigned_to FROM tickets WHERE thread_id = t.thread_id AND deleted_at IS NULL
+         AND assigned_to IS NOT NULL ORDER BY received_at DESC NULLS LAST, id DESC LIMIT 1)
+    FROM tickets t
+    WHERE t.thread_id IS NOT NULL AND t.deleted_at IS NULL
+    GROUP BY t.thread_id
+    ON CONFLICT (thread_id) DO NOTHING
+  `);
+
+  await p.query(`
+    UPDATE threads th
+    SET last_outbound_at = GREATEST(COALESCE(th.last_outbound_at, sub.max_sent), sub.max_sent),
+        last_message_at  = GREATEST(th.last_message_at, sub.max_sent),
+        updated_at       = NOW()
+    FROM (
+      SELECT t.thread_id, MAX(COALESCE(tr.sent_at, tr.created_at)) AS max_sent
+      FROM ticket_responses tr
+      JOIN tickets t ON t.id = tr.ticket_id
+      WHERE tr.response_type = 'reply'
+        AND COALESCE(tr.send_status, 'sent') = 'sent'
+        AND t.thread_id IS NOT NULL
+      GROUP BY t.thread_id
+    ) AS sub
+    WHERE th.thread_id = sub.thread_id
+      AND (th.last_outbound_at IS NULL OR th.last_outbound_at < sub.max_sent)
+  `);
 }
 
 async function migrateInboxDeltaSync(p) {

@@ -264,6 +264,15 @@ import {
   putInboxTicket,
 } from "./routes/inbox.js";
 import {
+  getInboxThread,
+  getInboxThreadStats,
+  getInboxThreads,
+  patchInboxThread,
+  postInboxThreadMarkRead,
+  postInboxThreadReply,
+  postInboxThreadSync,
+} from "./routes/inboxThreads.js";
+import {
   deleteVideoById,
   deleteVideoFolder,
   deleteVideoShare,
@@ -917,6 +926,16 @@ app.delete("/inbox/tickets/:id/ai-draft", requireAuth, deleteInboxTicketAiDraft)
 app.get("/inbox/tickets/:id/sla", requireAuth, getInboxTicketSla);
 app.post("/inbox/ai-draft/batch", requireAuth, requireAdminRole, postInboxAiDraftBatch);
 app.get("/inbox/stats", requireAuth, getInboxStats);
+
+// Phase 1 thread-first inbox API. Mutations go here; the old /inbox/tickets
+// endpoints stay for back-compat (admin tooling, batch AI drafts).
+app.get("/inbox/threads", requireAuth, getInboxThreads);
+app.get("/inbox/thread-stats", requireAuth, getInboxThreadStats);
+app.get("/inbox/threads/:thread_id", requireAuth, getInboxThread);
+app.patch("/inbox/threads/:thread_id", requireAuth, patchInboxThread);
+app.post("/inbox/threads/:thread_id/messages", requireAuth, postInboxThreadReply);
+app.post("/inbox/threads/:thread_id/read", requireAuth, postInboxThreadMarkRead);
+app.post("/inbox/threads/:thread_id/sync", requireAuth, postInboxThreadSync);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);

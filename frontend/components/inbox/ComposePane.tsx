@@ -2,13 +2,13 @@
 
 import styles from "../../app/(protected)/inbox/inbox.module.css";
 import { sanitizeEmailHtml } from "../../lib/sanitizeEmailHtml";
-import type { TicketRow } from "../../hooks/inbox/types";
+import type { ThreadRow } from "../../hooks/inbox/types";
 import type { UseAIDraft } from "../../hooks/inbox/useAIDraft";
 import type { UseCompose } from "../../hooks/inbox/useCompose";
 import { hasNoAiContext } from "./inboxConstants";
 
 type Props = {
-  thread: TicketRow;
+  thread: ThreadRow;
   compose: UseCompose;
   aiDraft: UseAIDraft;
   /** Mailbox permission allows replying. */
@@ -138,9 +138,9 @@ export default function ComposePane({
           </details>
         ) : null}
 
-        {compose.mode === "reply" && canReply && (thread.reply_from_email || thread.mailbox_email) ? (
+        {compose.mode === "reply" && canReply && thread.mailbox_email ? (
           <p className={styles.replyFromLine}>
-            Replying from: {(thread.reply_from_email || thread.mailbox_email || "").trim()}
+            Replying from: {(thread.mailbox_email || "").trim()}
           </p>
         ) : null}
 

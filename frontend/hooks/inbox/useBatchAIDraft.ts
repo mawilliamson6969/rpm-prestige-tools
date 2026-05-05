@@ -4,12 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiUrl } from "../../lib/api";
 import { networkErrorMessage, parseApiError, type ApiResult } from "../../lib/apiResult";
-import type { TicketRow } from "./types";
+import type { ThreadRow } from "./types";
 
 const BATCH_SUMMARY_TTL_MS = 9000;
 const BATCH_PROGRESS_TICK_MS = 720;
 const BATCH_LIMIT = 10;
-const OPEN_STATUSES = new Set(["open", "in_progress", "waiting"]);
+const ACTIVE_THREAD_STATUSES = new Set([
+  "open",
+  "waiting_on_tenant",
+  "waiting_on_owner",
+  "waiting_on_vendor",
+  "snoozed",
+]);
 
 export type BatchDraftOutcome = { ok: number; touched: number[] };
 
@@ -18,7 +24,10 @@ export type UseBatchAIDraft = {
   progress: string | null;
   summary: string | null;
   /** Pick the eligible IDs for "Draft All Unread" (capped at 10). */
-  selectEligible: (rows: TicketRow[]) => number[];
+  /** Returns up to 10 seed_ticket_ids — threads with unread inbound and no
+   *  reply yet that are still open. The batch endpoint takes ticket ids, so
+   *  we resolve via threads.seed_ticket_id from the list query. */
+  selectEligible: (rows: ThreadRow[]) => number[];
   run: (ticketIds: number[]) => Promise<ApiResult<BatchDraftOutcome>>;
 };
 
@@ -35,10 +44,16 @@ export default function useBatchAIDraft(): UseBatchAIDraft {
   }, [summary]);
 
   const selectEligible = useCallback(
-    (rows: TicketRow[]) =>
+    (rows: ThreadRow[]) =>
       rows
-        .filter((t) => !t.is_read && !t.first_response_at && OPEN_STATUSES.has(t.status))
-        .map((t) => t.id)
+        .filter(
+          (th) =>
+            th.unread_count > 0 &&
+            !th.last_outbound_at &&
+            ACTIVE_THREAD_STATUSES.has(th.status) &&
+            !!th.seed_ticket_id
+        )
+        .map((th) => th.seed_ticket_id as number)
         .slice(0, BATCH_LIMIT),
     []
   );
