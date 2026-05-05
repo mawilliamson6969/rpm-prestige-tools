@@ -46,6 +46,12 @@ type Cell = {
   meetsGoal: boolean | null;
 };
 
+type EditingCell = {
+  metricId: number;
+  periodKey: string;
+  value: string;
+};
+
 function formatValue(unit: string, v: number): string {
   if (unit === "currency") return `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   if (unit === "percentage") return `${v}%`;
@@ -68,9 +74,7 @@ export default function ScorecardClient() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ metricId: number; periodKey: string; value: string } | null>(
-    null
-  );
+  const [editing, setEditing] = useState<EditingCell | null>(null);
   const [notesFor, setNotesFor] = useState<{ entryId: number; notes: string } | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [allMetrics, setAllMetrics] = useState<Metric[]>([]);
@@ -83,6 +87,7 @@ export default function ScorecardClient() {
   const [askAnalysis, setAskAnalysis] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
   const commitInFlightRef = useRef(false);
+  const pendingNextEditRef = useRef<EditingCell | null>(null);
 
   const { start, end } = useMemo(() => {
     if (preset === "last_13_weeks" && frequency === "monthly") {
@@ -193,26 +198,24 @@ export default function ScorecardClient() {
 
   const startEditing = useCallback((metricId: number, periodKey: string, value: string) => {
     if (commitInFlightRef.current) return;
+    pendingNextEditRef.current = null;
     setEditing({ metricId, periodKey, value });
   }, []);
 
+  const queueNextEdit = useCallback((next: EditingCell) => {
+    pendingNextEditRef.current = next;
+  }, []);
+
   const commitEditing = useCallback(
-    async (
-      current: { metricId: number; periodKey: string; value: string } | null,
-      next:
-        | {
-            metricId: number;
-            periodKey: string;
-            value: string;
-          }
-        | null = null
-    ) => {
+    async (current: EditingCell | null, next: EditingCell | null = null) => {
       if (!current || commitInFlightRef.current) return;
       commitInFlightRef.current = true;
       setEditing(null);
       try {
         await saveCell(current.metricId, current.periodKey, current.value);
-        if (next) setEditing(next);
+        const resolvedNext = next ?? pendingNextEditRef.current;
+        pendingNextEditRef.current = null;
+        if (resolvedNext) setEditing(resolvedNext);
       } finally {
         commitInFlightRef.current = false;
       }
@@ -224,13 +227,7 @@ export default function ScorecardClient() {
     e: React.KeyboardEvent,
     mi: number,
     pi: number,
-    current:
-      | {
-          metricId: number;
-          periodKey: string;
-          value: string;
-        }
-      | null
+    current: EditingCell | null
   ) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -239,6 +236,7 @@ export default function ScorecardClient() {
     }
     if (e.key === "Escape") {
       e.preventDefault();
+      pendingNextEditRef.current = null;
       setEditing(null);
       return;
     }
@@ -448,6 +446,13 @@ export default function ScorecardClient() {
                             <button
                               type="button"
                               className={styles.cellBtn}
+                              onMouseDown={() =>
+                                queueNextEdit({
+                                  metricId: m.id,
+                                  periodKey: p.key,
+                                  value: c ? String(c.value) : "",
+                                })
+                              }
                               onClick={() => startEditing(m.id, p.key, c ? String(c.value) : "")}
                             >
                               {c ? formatValue(m.unit, c.value) : "—"}
