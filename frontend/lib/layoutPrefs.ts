@@ -91,6 +91,14 @@ export const DEFAULT_HUB_CARDS: HubCardDef[] = [
     component: "playbook",
   },
   {
+    id: "documents",
+    title: "Documents",
+    description: "Rich-text notes, SOPs, owner letters, meeting notes — with AI assist",
+    href: "/documents",
+    section: "Knowledge Base",
+    icon: "📄",
+  },
+  {
     id: "files",
     title: "Files",
     description: "Shared company file manager",
@@ -302,6 +310,7 @@ export const DEFAULT_SIDEBAR_ITEMS: SidebarNavItem[] = [
   { id: "videos", type: "link", label: "Videos", icon: "🎬", href: "/videos", section: "tools" },
   { id: "wiki", type: "link", label: "Wiki", icon: "📚", href: "/wiki", section: "tools" },
   { id: "playbooks", type: "link", label: "Playbooks", icon: "📋", href: "/playbooks", section: "tools" },
+  { id: "documents", type: "link", label: "Documents", icon: "📄", href: "/documents", section: "tools" },
   { id: "files", type: "link", label: "Files", icon: "📁", href: "/files", section: "tools" },
   { id: "forms", type: "link", label: "Forms", icon: "📋", href: "/forms", section: "tools" },
   { id: "marketing", type: "link", label: "Marketing", icon: "📅", href: "/marketing/calendar", section: "tools" },
