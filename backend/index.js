@@ -662,6 +662,22 @@ import {
   putQueueEdit,
   putQueueReject,
 } from "./routes/agents.js";
+import { ensureMailersSchema } from "./lib/mailers-schema.js";
+import {
+  deleteMailer,
+  getMailerById,
+  getMailers,
+  getMailerStats,
+  getMailerSuggestions,
+  getMailerVolumeByWeek,
+  postMailer,
+  postMailerCancel,
+  postMailerNote,
+  postMailerResend,
+  postMailerSend,
+  putMailer,
+} from "./routes/mailers.js";
+import { pollAllPendingMailers } from "./services/letterstream.js";
 import { ensureEsignSchema } from "./lib/esign-schema.js";
 import {
   deleteRequest as deleteEsignRequest,
@@ -968,6 +984,20 @@ app.get("/playbooks/pages", requireAuth, getPlaybookPages);
 app.post("/playbooks/pages", requireAuth, postPlaybookPage);
 app.get("/playbooks/attachments/:id", requireAuth, getPlaybookAttachment);
 app.delete("/playbooks/attachments/:id", requireAuth, deletePlaybookAttachment);
+
+/** Mailers — physical mail via LetterStream */
+app.get("/mailers/stats", requireAuth, getMailerStats);
+app.get("/mailers/volume", requireAuth, getMailerVolumeByWeek);
+app.get("/mailers/suggestions", requireAuth, getMailerSuggestions);
+app.get("/mailers", requireAuth, getMailers);
+app.post("/mailers", requireAuth, postMailer);
+app.get("/mailers/:id", requireAuth, getMailerById);
+app.put("/mailers/:id", requireAuth, putMailer);
+app.delete("/mailers/:id", requireAuth, deleteMailer);
+app.post("/mailers/:id/send", requireAuth, postMailerSend);
+app.post("/mailers/:id/cancel", requireAuth, postMailerCancel);
+app.post("/mailers/:id/resend", requireAuth, postMailerResend);
+app.post("/mailers/:id/note", requireAuth, postMailerNote);
 
 /** Documents — standalone rich-text docs (notes, SOPs, owner letters, wikis) */
 app.post("/documents/ai-assist", requireAuth, postDocumentAiAssist);
@@ -1560,6 +1590,8 @@ async function start() {
       console.log("Database schema OK (esign_requests).");
       await ensureDocumentsSchema();
       console.log("Database schema OK (documents).");
+      await ensureMailersSchema();
+      console.log("Database schema OK (mailers + mailer_events).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -1652,6 +1684,13 @@ async function start() {
       );
     });
     console.log("Scheduled recycle-bin purge: 30 3 * * * (daily 3:30 AM).");
+
+    cron.schedule("0 */4 * * *", () => {
+      pollAllPendingMailers().catch((e) =>
+        console.error("[mailers tracking cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled mailer tracking poll: 0 */4 * * * (every 4 hours).");
 
     cron.schedule("*/30 * * * *", () => {
       syncGoogleReviews({ trigger: "cron" }).catch((e) =>
