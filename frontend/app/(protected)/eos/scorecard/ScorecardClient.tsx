@@ -207,12 +207,12 @@ export default function ScorecardClient() {
   }, []);
 
   const commitEditing = useCallback(
-    async (current: EditingCell | null, next: EditingCell | null = null) => {
+    async (current: EditingCell | null, next: EditingCell | null = null, rawValue?: string) => {
       if (!current || commitInFlightRef.current) return;
       commitInFlightRef.current = true;
       setEditing(null);
       try {
-        await saveCell(current.metricId, current.periodKey, current.value);
+        await saveCell(current.metricId, current.periodKey, rawValue ?? current.value);
         const resolvedNext = next ?? pendingNextEditRef.current;
         pendingNextEditRef.current = null;
         if (resolvedNext) setEditing(resolvedNext);
@@ -224,14 +224,14 @@ export default function ScorecardClient() {
   );
 
   const onCellKeyDown = (
-    e: React.KeyboardEvent,
+    e: React.KeyboardEvent<HTMLInputElement>,
     mi: number,
     pi: number,
     current: EditingCell | null
   ) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      void commitEditing(current);
+      void commitEditing(current, null, e.currentTarget.value);
       return;
     }
     if (e.key === "Escape") {
@@ -262,7 +262,7 @@ export default function ScorecardClient() {
       metricId: metrics[nmi].id,
       periodKey: nextPk,
       value: cell ? String(cell.value) : "",
-    });
+    }, e.currentTarget.value);
   };
 
   const chartData = useMemo(() => {
@@ -438,9 +438,11 @@ export default function ScorecardClient() {
                               className={styles.input}
                               autoFocus
                               value={editing.value}
-                              onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                              onChange={(e) =>
+                                setEditing((prev) => (prev ? { ...prev, value: e.target.value } : prev))
+                              }
                               onKeyDown={(e) => onCellKeyDown(e, mi, pi, editing)}
-                              onBlur={() => void commitEditing(editing)}
+                              onBlur={(e) => void commitEditing(editing, null, e.currentTarget.value)}
                             />
                           ) : (
                             <button
