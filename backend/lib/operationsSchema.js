@@ -827,6 +827,25 @@ export async function ensureOperationsSchema() {
   `);
   await pool.query(`ALTER TABLE process_templates ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT TRUE`);
 
+  // Hotfix: process_automations.test_card_id was created without an ON DELETE
+  // rule, so deleting a process that any automation referenced as its test
+  // card raised a foreign-key error. Re-add the constraint with SET NULL.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'process_automations'
+          AND constraint_name = 'process_automations_test_card_id_fkey'
+      ) THEN
+        ALTER TABLE process_automations DROP CONSTRAINT process_automations_test_card_id_fkey;
+      END IF;
+      ALTER TABLE process_automations
+        ADD CONSTRAINT process_automations_test_card_id_fkey
+        FOREIGN KEY (test_card_id) REFERENCES processes(id) ON DELETE SET NULL;
+    END$$;
+  `);
+
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS category VARCHAR(20) DEFAULT 'active'`);
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS exit_rule VARCHAR(50) DEFAULT 'manual'`);
   await pool.query(`ALTER TABLE process_template_stages ADD COLUMN IF NOT EXISTS short_name VARCHAR(50)`);
