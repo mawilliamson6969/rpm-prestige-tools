@@ -17,6 +17,7 @@ import useMailboxes from "../../../hooks/inbox/useMailboxes";
 import useResponsiveLayout from "../../../hooks/inbox/useResponsiveLayout";
 import useSLA from "../../../hooks/inbox/useSLA";
 import useStats from "../../../hooks/inbox/useStats";
+import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
@@ -50,6 +51,7 @@ function InboxOrchestrator() {
   const stats = useStats();
   const teamUsers = useTeamUsers();
   const mailboxes = useMailboxes();
+  useSyncHealthReporter(mailboxes.mailboxes, notifications);
   const list = useThreadList(mailboxes.currentMailbox);
   const aiDraft = useAIDraft({ ticketId: selectedId });
   const batch = useBatchAIDraft();
