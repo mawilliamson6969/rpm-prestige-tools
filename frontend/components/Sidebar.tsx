@@ -238,8 +238,13 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     () =>
       [
         { href: "/agent-hub", label: "Dashboard" },
+        { href: "/agent-hub/pipeline", label: "Pipeline" },
         { href: "/agent-hub/agents", label: "Agents" },
+        { href: "/agent-hub/owners", label: "Owners" },
+        { href: "/agent-hub/properties", label: "Properties" },
         { href: "/agent-hub/brokerages", label: "Brokerages" },
+        { href: "/agent-hub/tasks", label: "Tasks" },
+        { href: "/agent-hub/financials", label: "Financials" },
         { href: "/agent-hub/search", label: "Search" },
       ] as const,
     []
@@ -415,7 +420,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     }
     if (key === "agentHub" && subOpen.agentHub) {
       return (
-        <div className={styles.subWrap} style={{ maxHeight: 200 }}>
+        <div className={styles.subWrap} style={{ maxHeight: 400 }}>
           <div className={styles.subList}>
             {agentHubSubLinks.map(({ href, label }) => {
               const active =

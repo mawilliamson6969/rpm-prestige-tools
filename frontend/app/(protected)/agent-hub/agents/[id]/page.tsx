@@ -8,14 +8,21 @@ import {
   agentHubFetch,
   ACTIVITY_ICONS,
   ACTIVITY_TYPE_LABELS,
+  formatMoney,
+  formatPct,
   relativeTime,
+  STAGE_LABELS,
+  STAGE_META,
   type Activity,
   type ActivityType,
   type Agent,
   type Direction,
   type HubPermissions,
+  type LifetimeValue,
   type PersonalDetails,
+  type Referral,
   type Relationship,
+  type Stage,
   type Tag,
   type Tier,
 } from "../../../../../lib/agentHub";
@@ -66,6 +73,9 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Agent>>({});
   const [newTag, setNewTag] = useState("");
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [ltv, setLtv] = useState<LifetimeValue | null>(null);
+  const [refreshingLtv, setRefreshingLtv] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -100,6 +110,49 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
+
+  // Phase 2: load this agent's referrals + LTV (always — visible to all hub roles).
+  useEffect(() => {
+    if (!token || !id) return;
+    (async () => {
+      try {
+        const [refs, ltvBody] = await Promise.all([
+          agentHubFetch<{ referrals: Referral[] }>(
+            `/agent-hub/referrals?agent_id=${id}&per_page=50`,
+            { authHeaders: authHeaders() }
+          ),
+          agentHubFetch<{ ltv: LifetimeValue }>(
+            `/agent-hub/agents/${id}/lifetime-value`,
+            { authHeaders: authHeaders() }
+          ),
+        ]);
+        setReferrals(refs.referrals);
+        setLtv(ltvBody.ltv);
+      } catch {
+        // Non-fatal — Phase 2 cards are progressive enhancement.
+      }
+    })();
+  }, [token, id, authHeaders]);
+
+  async function refreshLtv() {
+    setRefreshingLtv(true);
+    try {
+      await agentHubFetch("/agent-hub/lifetime-value/refresh", {
+        method: "POST",
+        authHeaders: authHeaders(),
+      });
+      const ltvBody = await agentHubFetch<{ ltv: LifetimeValue }>(
+        `/agent-hub/agents/${id}/lifetime-value`,
+        { authHeaders: authHeaders() }
+      );
+      setLtv(ltvBody.ltv);
+      setToast({ msg: "LTV refreshed.", variant: "ok" });
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : "Refresh failed.", variant: "error" });
+    } finally {
+      setRefreshingLtv(false);
+    }
+  }
 
   // Personal details (separate, gated)
   useEffect(() => {
@@ -302,6 +355,14 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+          {!a.do_not_contact && a.status !== "deleted" ? (
+            <Link
+              href={`/agent-hub/referrals/new?agent_id=${a.id}`}
+              className={`${styles.btn} ${styles.btnPrimary}`}
+            >
+              + Referral
+            </Link>
+          ) : null}
           {perms.can_change_tier ? (
             <select
               className={styles.select}
@@ -559,17 +620,114 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
         {/* RIGHT */}
         <div className={styles.flexCol}>
           <div className={styles.card}>
-            <div className={styles.cardTitle}>Pipeline (Phase 2)</div>
-            <div className={styles.placeholderBox}>
-              Active referrals will appear here in Phase 2.
+            <div className={styles.cardTitle}>
+              Active Pipeline
+              {!a.do_not_contact && a.status !== "deleted" ? (
+                <Link
+                  href={`/agent-hub/referrals/new?agent_id=${a.id}`}
+                  className={styles.btnGhost}
+                  style={{ fontSize: "0.78rem" }}
+                >
+                  + Add
+                </Link>
+              ) : null}
             </div>
+            {(() => {
+              const active = referrals.filter((r) => r.stage !== "lost" && r.stage !== "declined" && r.stage !== "active_management");
+              const completed = referrals.filter((r) => r.stage === "active_management");
+              if (active.length === 0 && completed.length === 0) {
+                return <div className={styles.muted} style={{ fontSize: "0.85rem" }}>No referrals yet.</div>;
+              }
+              return (
+                <>
+                  {active.length === 0 ? (
+                    <div className={styles.muted} style={{ fontSize: "0.85rem" }}>No active referrals.</div>
+                  ) : (
+                    active.map((r) => (
+                      <Link
+                        key={r.id}
+                        href={`/agent-hub/pipeline/${r.id}`}
+                        style={{ display: "block", padding: "0.4rem 0", borderBottom: "1px solid #f3f4f6", textDecoration: "none", color: "inherit" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                          <span style={{ fontWeight: 500 }}>{r.owner_name}</span>
+                          <span style={{ padding: "0.05rem 0.35rem", borderRadius: 9999, background: STAGE_META[r.stage as Stage].bg, color: STAGE_META[r.stage as Stage].fg, fontSize: "0.65rem", fontWeight: 600 }}>
+                            {STAGE_LABELS[r.stage as Stage]}
+                          </span>
+                        </div>
+                        {r.property_address ? (
+                          <div className={styles.muted} style={{ fontSize: "0.75rem" }}>
+                            {r.property_address}
+                          </div>
+                        ) : null}
+                      </Link>
+                    ))
+                  )}
+                  {completed.length > 0 ? (
+                    <details style={{ marginTop: "0.5rem" }}>
+                      <summary className={styles.muted} style={{ cursor: "pointer", fontSize: "0.85rem" }}>
+                        {completed.length} converted
+                      </summary>
+                      {completed.map((r) => (
+                        <Link
+                          key={r.id}
+                          href={`/agent-hub/pipeline/${r.id}`}
+                          style={{ display: "block", padding: "0.3rem 0", textDecoration: "none", color: "inherit" }}
+                        >
+                          <div style={{ fontSize: "0.85rem" }}>
+                            {r.owner_name} {r.property_address ? `· ${r.property_address}` : ""}
+                          </div>
+                        </Link>
+                      ))}
+                    </details>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
 
           <div className={styles.card}>
-            <div className={styles.cardTitle}>Lifetime value (Phase 2)</div>
-            <div className={styles.placeholderBox}>
-              Closed referrals + commission totals will appear here in Phase 2.
+            <div className={styles.cardTitle}>
+              Lifetime Value
+              {(perms.role === "owner" || perms.role === "manager") ? (
+                <button
+                  className={styles.btnGhost}
+                  style={{ fontSize: "0.78rem" }}
+                  onClick={refreshLtv}
+                  disabled={refreshingLtv}
+                  title="Recompute lifetime value now"
+                >
+                  {refreshingLtv ? "Refreshing…" : "Refresh"}
+                </button>
+              ) : null}
             </div>
+            {ltv ? (
+              <div className={styles.flexCol} style={{ gap: "0.3rem", fontSize: "0.85rem" }}>
+                <Row label="Referrals" value={`${ltv.total_referrals_received} (${ltv.total_referrals_in_pipeline} active)`} />
+                <Row label="Converted" value={`${ltv.total_referrals_converted} of ${ltv.total_referrals_received}`} />
+                <Row label="Conversion rate" value={formatPct(ltv.conversion_rate_pct)} />
+                <Row label="Fees paid" value={formatMoney(ltv.total_referral_fees_paid)} />
+                <Row label="Revenue generated" value={formatMoney(ltv.total_revenue_generated)} />
+                <Row
+                  label="Net relationship"
+                  value={
+                    <span style={{ color: ltv.lifetime_relationship_value >= 0 ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                      {formatMoney(ltv.lifetime_relationship_value)}
+                    </span>
+                  }
+                />
+                {ltv.avg_days_to_convert != null ? (
+                  <Row label="Avg days to convert" value={`${Math.round(ltv.avg_days_to_convert)}d`} />
+                ) : null}
+                {ltv.last_calculated_at ? (
+                  <div className={styles.muted} style={{ fontSize: "0.72rem", marginTop: "0.4rem" }}>
+                    Calculated {relativeTime(ltv.last_calculated_at)}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className={styles.muted} style={{ fontSize: "0.85rem" }}>No data yet.</div>
+            )}
           </div>
 
           <div className={styles.card}>

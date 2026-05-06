@@ -1,4 +1,13 @@
-# Agent Hub — Phase 1 (CRM Foundation)
+# Agent Hub — Phase 1 (CRM Foundation) + Phase 2 (Pipeline)
+
+> **Phase 2 is now built and deployed** alongside Phase 1. Phase 2 adds the
+> referral pipeline, owners, properties, payments, monthly revenue tracking,
+> a lightweight task system, and the agent lifetime value materialized view.
+> Phase 2 sections are interleaved with Phase 1 below — read the whole file.
+
+---
+
+# Phase 1 — CRM Foundation
 
 The Agent Hub is the real-estate-agent referral CRM inside Prestige Dash.
 Phase 1 ships the data model, permissions, audit trail, and manual UI
@@ -251,12 +260,236 @@ When/if we add tests, the highest-value targets are:
 - Soft-delete preserving FK targets (referral history in Phase 2 will
   rely on this).
 
-## Open questions for Phase 2
+## Phase 1 open questions answered in Phase 2
 
-- Where does the referral cycle start — manually from the agent detail
-  page, or via an inbound MLS hit? (Spec says manual-first.)
-- Commission-tracking: separate table, or column on `referrals`?
-- Retention policy for `agent_hub_audit_log` — keep forever, or roll
-  up after 1 year?
-- VIP personal_details access: should we audit-log every read, not just
-  writes? (Currently we don't log reads of any kind.)
+- **Where does the referral cycle start?** Manually via the wizard at
+  `/agent-hub/referrals/new` (or pre-filled with `?agent_id=N` from the
+  agent detail page). No inbound channels yet — Phase 4.
+- **Commission tracking?** Separate table: `agent_hub_referral_payments`
+  + `agent_hub_revenue_tracking`. The denormalized
+  `agent_hub_referrals.actual_referral_fee_paid` is a cached cumulative
+  sum that gets recomputed by `recomputeReferralPaid()` on every
+  payment write/edit/delete.
+
+## Phase 1 still-open
+
+- Retention policy for `agent_hub_audit_log` — still grows unbounded.
+  Address before first compliance audit.
+- VIP personal_details audit-on-READ — still write-only.
+
+---
+
+# Phase 2 — Referral Pipeline (built)
+
+## Phase 2 scope (built)
+
+- 7 new tables: `agent_hub_owners`, `agent_hub_properties`,
+  `agent_hub_referrals`, `agent_hub_referral_stage_history`,
+  `agent_hub_referral_payments`, `agent_hub_revenue_tracking`,
+  `agent_hub_tasks`.
+- 1 materialized view: `agent_hub_agent_lifetime_value` (refreshed
+  nightly at 2:15 AM via cron, plus on-demand by writes).
+- 9 new backend route files mounted under `/agent-hub/*`.
+- Pipeline kanban with drag-drop stage advancement
+  (`/agent-hub/pipeline`).
+- 5-step new-referral wizard with localStorage state persistence
+  (`/agent-hub/referrals/new`). Pre-fills `?agent_id=` when arriving
+  from an agent detail page.
+- Phase 1 dashboard + agent detail pages updated to wire in real
+  pipeline + LTV cards (placeholders removed).
+- Stage transition rules centralized in
+  `backend/lib/agentHub/stages.js`. The DB CHECK constraint enforces
+  the enum; the JS helper validates allowed transitions.
+
+## Phase 2 scope (NOT built — stay out)
+
+- **Automation engine.** The thank-you task created when a referral hits
+  `tenant_placed` is a single SQL INSERT inside `advanceReferralStage`.
+  It is NOT a generic trigger. Phase 3 will add a real automation engine.
+- **Outbound sending.** No emails / SMS / postcards sent. The thank-you
+  task lands on Mike's task queue for manual handling.
+- **AppFolio sync.** `external_appfolio_id` and
+  `external_appfolio_property_id` columns exist on owners + properties
+  for future linking. Not queried in Phase 2.
+- **Predictive analytics, "next likely referrer," birthday touchpoint
+  automation.** Phase 3 territory.
+
+## Stage transition rules
+
+Source of truth: `backend/lib/agentHub/stages.js`. Enforced server-side
+in `agentHubReferrals.js` via `assertValidTransition`.
+
+```
+lead_received      → owner_contacted | lost | declined
+owner_contacted    → property_toured | lost | declined
+property_toured    → agreement_pending | lost | declined
+agreement_pending  → agreement_signed | lost | declined
+agreement_signed   → tenant_placed | lost
+tenant_placed      → active_management
+active_management  → (terminal-completed; revenue tracking continues)
+lost / declined    → (terminal; use restore endpoint to revert)
+```
+
+The `advance-stage` endpoint blocks moves to `lost`/`declined` — those
+must use `mark-lost` / `mark-declined` (which require a reason).
+Restore is manager+ only.
+
+### Idempotency
+
+- `advance-stage` to the SAME stage: returns 200 with `idempotent: true`,
+  no duplicate stage_history row.
+- `mark-lost` / `mark-declined` on already-terminal: same.
+- The unique index `uq_agent_hub_stage_history_unique` on
+  `(referral_id, to_stage, changed_at)` provides DB-level protection
+  against double-inserts within the same second.
+
+### Active uniqueness
+
+Only ONE in-flight referral can exist per `(owner_id, property_id)` combo
+at a time. Enforced by partial unique index
+`uq_agent_hub_referrals_active`. `active_management` is excluded so
+re-leases of the same property over time produce multiple completed
+records (intentional).
+
+## Side effects on stage advancement
+
+Each transition fires specific side effects, all inside one transaction:
+
+- **Any transition** writes a row to `agent_hub_referral_stage_history`
+  with `duration_in_previous_stage` and logs an activity on the
+  referring agent's timeline.
+- **→ tenant_placed**: stamps `tenant_placed_at`, picks up
+  `actual_monthly_rent` / `actual_management_fee_pct` if provided in the
+  body, creates a system thank-you task assigned to Mike.
+  Idempotent via `uq_agent_hub_tasks_system_thank_you`.
+- **→ active_management**: stamps `active_management_started_at`,
+  flips `agent_hub_properties.status = 'under_management'`, flips
+  `agent_hub_owners.status = 'converted'` (unless already), refreshes
+  the LTV materialized view (best-effort, async).
+
+## Thank-you workflow (manual)
+
+The thank-you action when a referral converts is a TASK, not an
+auto-send. When you advance a referral to `tenant_placed`:
+
+1. The advance handler creates a task with
+   `source = 'system_referral_thank_you'` assigned to Mike (falls back
+   to the user who triggered the advance if Mike's user row isn't
+   found by username).
+2. The task description includes the referring agent's name, the
+   property address, and the referral ID.
+3. Mike sees it in `/agent-hub/tasks` (default view = "my pending").
+4. He sends the thank-you (gift / handwritten card / call) outside
+   the system, then marks the task complete.
+
+There is no auto-send and no Phase 2 helper to send. Phase 3 will
+optionally add automation behind the same task creation.
+
+## Revenue tracking workflow
+
+Revenue is **manual entry** in Phase 2. Two paths:
+
+- **One-off**: on the referral detail page, "Add month" button →
+  `POST /agent-hub/referrals/:id/revenue`. Idempotent: re-adding the
+  same month UPSERTs.
+- **Bulk CSV import** (manager+):
+  `POST /agent-hub/revenue/bulk-import` with CSV body. Required columns:
+  `referral_id,month,rent_collected,management_fee_earned`. Optional:
+  `notes`. The route reports per-row errors and counts. `month` must
+  be `YYYY-MM-01` (first of month).
+
+The use case: monthly batch entry from an AppFolio export or
+spreadsheet. Phase 4 will wire this to AppFolio sync directly.
+
+## Lifetime value (LTV)
+
+Read from the materialized view `agent_hub_agent_lifetime_value`.
+Reads NEVER compute LTV on the fly — always from the view.
+
+Refresh paths (most frequent first):
+- Inside `recordPayment`, `updatePayment`, `deletePayment`.
+- Inside `addRevenue`, `updateRevenue`, `deleteRevenue`,
+  `bulkImportRevenue`.
+- Inside `advanceReferralStage` when transitioning to
+  `active_management`.
+- Manual: `POST /agent-hub/lifetime-value/refresh` (manager+).
+- Nightly: cron at 2:15 AM via `refresh_agent_lifetime_value()`.
+
+The refresh uses `REFRESH MATERIALIZED VIEW CONCURRENTLY` so reads
+during refresh aren't blocked. CONCURRENTLY requires the unique index
+`uq_agent_hub_ltv_agent_id`.
+
+LTV columns include `total_referral_fees_paid`, `total_revenue_generated`,
+and the simple `lifetime_relationship_value = revenue - fees`.
+"Net relationship" is what the agent detail page shows in green/red.
+Negative LTV = we paid more in fees than we've earned in management
+revenue from their conversions yet. (Common early in the relationship —
+fees are paid up-front, revenue trickles in monthly.)
+
+## DNC firewall (still relevant in Phase 2)
+
+`createReferral` rejects with 400 + `code: 'AGENT_DNC'` if the referring
+agent has `do_not_contact = true`. Existing referrals continue normally.
+This is consistent with the Phase 1 promise that DNC blocks new
+outreach but doesn't terminate ongoing relationships.
+
+## Permissions matrix (Phase 2 changes only)
+
+| Action | Required |
+|--------|----------|
+| List/get owners, properties, referrals, payments, revenue, tasks | Hub access |
+| Create owner | Hub access |
+| Soft-delete owner / property (must have no active referrals) | Manager+ |
+| Create referral | Hub access (DNC firewall applies to agent) |
+| Advance / mark-lost / mark-declined | Hub access |
+| Restore lost/declined referral | Manager+ |
+| Record / update / delete payment | Manager+ for record + delete; creator OR manager+ for update |
+| Add / update / delete revenue, bulk import | Manager+ |
+| Create task (assigned to self) | Hub access |
+| Create task (assigned to others) / reassign | Manager+ |
+| Refresh LTV | Manager+ |
+
+## Files added in Phase 2
+
+```
+backend/
+  migrations/026_agent_hub_phase2.sql       # All Phase 2 DDL + materialized view
+  lib/agentHubPhase2Schema.js                # ensureAgentHubPhase2Schema + refreshAgentLifetimeValue
+  lib/agentHub/
+    stages.js                                # Stage transition rules
+  routes/
+    agentHubOwners.js
+    agentHubProperties.js
+    agentHubReferrals.js                     # CRUD + advance-stage + mark-lost/declined + restore
+    agentHubReferralPayments.js
+    agentHubRevenue.js                       # CRUD + bulk CSV import
+    agentHubTasks.js
+    agentHubLifetimeValue.js                 # Read MV + manual refresh + leaderboard
+    agentHubFinancials.js                    # Pipeline stats, summary, by-month, CSV export
+
+frontend/
+  lib/agentHub.ts                            # Extended with Phase 2 types + helpers
+  app/(protected)/agent-hub/
+    pipeline/page.tsx                        # Kanban with drag-drop
+    pipeline/[id]/page.tsx                   # Referral detail with payment/revenue forms
+    owners/page.tsx + [id]/page.tsx + new/page.tsx
+    properties/page.tsx + [id]/page.tsx
+    tasks/page.tsx
+    financials/page.tsx                      # Stats + monthly chart + leaderboards
+    referrals/new/page.tsx                   # 5-step wizard with localStorage persistence
+```
+
+## Adversarial-review remaining items (Phase 2)
+
+[Filled in by /codex:adversarial-review run]
+
+## Phase 3 backlog (don't sneak ahead)
+
+- Automation engine (generic triggers + actions): birthday touchpoints,
+  dormant-agent revival, "agent X has 3+ referrals this quarter" alerts.
+- Email / SMS / postcard sending behind the same task-creation pattern.
+- AppFolio sync to populate `agent_hub_owners.external_appfolio_id` and
+  monthly revenue rows automatically.
+- LinkedIn / HAR Matrix bulk import for new agents.
+- Predictive: "agents most likely to refer next."
+- Audit log retention policy + rollup.

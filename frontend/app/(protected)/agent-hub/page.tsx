@@ -7,11 +7,15 @@ import {
   agentHubFetch,
   ACTIVITY_ICONS,
   ACTIVITY_TYPE_LABELS,
+  formatMoney,
   relativeTime,
   type DashboardSummary,
+  type FinancialsSummary,
   type HubPermissions,
   type NeedsAttentionAgent,
+  type PipelineStats,
   type RecentActivity,
+  type Task,
   type UpcomingTouchpoint,
 } from "../../../lib/agentHub";
 import AgentHubGate from "./AgentHubGate";
@@ -25,6 +29,9 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
   const [upcoming, setUpcoming] = useState<UpcomingTouchpoint[] | null>(null);
   const [upcomingCount, setUpcomingCount] = useState<number | null>(null);
   const [needs, setNeeds] = useState<NeedsAttentionAgent[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
+  const [financials, setFinancials] = useState<FinancialsSummary | null>(null);
+  const [tasksToday, setTasksToday] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,7 +41,7 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
     (async () => {
       try {
         const headers = authHeaders();
-        const [s, r, u, n] = await Promise.all([
+        const [s, r, u, n, ps, fs, tasks] = await Promise.all([
           agentHubFetch<DashboardSummary>("/agent-hub/dashboard", { authHeaders: headers }),
           agentHubFetch<{ activities: RecentActivity[] }>("/agent-hub/dashboard/recent-activity", { authHeaders: headers }),
           agentHubFetch<{ upcoming: UpcomingTouchpoint[] | null; counts?: { total: number } }>(
@@ -42,6 +49,9 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
             { authHeaders: headers }
           ),
           agentHubFetch<{ agents: NeedsAttentionAgent[] }>("/agent-hub/dashboard/needs-attention", { authHeaders: headers }),
+          agentHubFetch<PipelineStats>("/agent-hub/pipeline/stats", { authHeaders: headers }).catch(() => null),
+          agentHubFetch<FinancialsSummary>("/agent-hub/financials/summary", { authHeaders: headers }).catch(() => null),
+          agentHubFetch<{ tasks: Task[] }>("/agent-hub/tasks?assigned_to=me&status=pending", { authHeaders: headers }).catch(() => ({ tasks: [] })),
         ]);
         if (cancel) return;
         setSummary(s);
@@ -53,6 +63,9 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
           setUpcomingCount(u.counts?.total ?? 0);
         }
         setNeeds(n.agents);
+        setPipeline(ps);
+        setFinancials(fs);
+        setTasksToday(tasks.tasks);
       } catch (e) {
         if (cancel) return;
         setErr(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -90,11 +103,35 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
           <StatCard label="VIP + Partner" value={summary.vip + summary.partner} href="/agent-hub/agents?tier=partner" />
           <StatCard label="Warm" value={summary.warm} href="/agent-hub/agents?tier=warm" />
           <StatCard label="Prospect" value={summary.prospect} href="/agent-hub/agents?tier=prospect" />
-          <StatCard label="Cold" value={summary.cold} href="/agent-hub/agents?tier=cold" />
-          <StatCard label="Dormant" value={summary.dormant} href="/agent-hub/agents?tier=dormant" />
-          <StatCard label="DNC" value={summary.dnc} />
+          <StatCard label="Active Pipeline" value={pipeline?.total_in_pipeline ?? 0} href="/agent-hub/pipeline" />
+          <StatCard label="Tasks due" value={tasksToday.length} href="/agent-hub/tasks" highlight={tasksToday.some((t) => t.priority === "urgent")} />
+          <StatCard label="MTD fees" value={formatMoney(financials?.mtd_fees_paid)} href="/agent-hub/financials" />
           <StatCard label="Interactions (7d)" value={summary.interactions_7d} />
           <StatCard label="Needs Attention" value={summary.needs_attention} highlight={summary.needs_attention > 0} />
+        </div>
+      ) : null}
+
+      {tasksToday.length > 0 ? (
+        <div className={styles.card} style={{ marginBottom: "1rem" }}>
+          <div className={styles.cardTitle}>
+            Tasks due
+            <Link href="/agent-hub/tasks" className={styles.btnGhost} style={{ fontSize: "0.78rem" }}>
+              View all →
+            </Link>
+          </div>
+          {tasksToday.slice(0, 5).map((t) => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0", borderBottom: "1px solid #f3f4f6" }}>
+              <span style={{ flex: 1, fontSize: "0.9rem" }}>{t.title}</span>
+              <span className={styles.muted} style={{ fontSize: "0.78rem" }}>
+                {t.due_date || "—"} · {t.priority}
+              </span>
+            </div>
+          ))}
+          {tasksToday.length > 5 ? (
+            <div className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.4rem" }}>
+              +{tasksToday.length - 5} more
+            </div>
+          ) : null}
         </div>
       ) : null}
 
