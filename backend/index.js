@@ -25,6 +25,10 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
+import {
+  ensureAgentHubPhase2Schema,
+  refreshAgentLifetimeValue,
+} from "./lib/agentHubPhase2Schema.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
@@ -359,6 +363,63 @@ import {
   revokeAgentHubAccess,
   upsertAgentHubPermissions,
 } from "./routes/agentHubPermissions.js";
+import {
+  createOwner,
+  deleteOwner,
+  getOwner,
+  listOwners,
+  updateOwner,
+} from "./routes/agentHubOwners.js";
+import {
+  createProperty,
+  deleteProperty,
+  getProperty,
+  listProperties,
+  updateProperty,
+} from "./routes/agentHubProperties.js";
+import {
+  advanceReferralStage,
+  createReferral,
+  getReferral,
+  getReferralStageHistory,
+  listReferrals,
+  markReferralDeclined,
+  markReferralLost,
+  restoreReferral,
+  updateReferral,
+} from "./routes/agentHubReferrals.js";
+import {
+  deletePayment,
+  listPayments,
+  recordPayment,
+  updatePayment,
+} from "./routes/agentHubReferralPayments.js";
+import {
+  addRevenue,
+  bulkImportRevenue,
+  deleteRevenue,
+  listRevenue,
+  updateRevenue,
+} from "./routes/agentHubRevenue.js";
+import {
+  createTask as createAgentHubTask,
+  deleteTask as deleteAgentHubTask,
+  getTask as getAgentHubTask,
+  listTasks as listAgentHubTasks,
+  updateTask as updateAgentHubTask,
+} from "./routes/agentHubTasks.js";
+import {
+  getAgentLifetimeValue,
+  leaderboard as agentHubLeaderboard,
+  refreshLifetimeValue,
+} from "./routes/agentHubLifetimeValue.js";
+import {
+  exportFinancialsCsv,
+  getFinancialsByMonth,
+  getFinancialsSummary,
+  getPipelineFunnel,
+  getPipelineStats,
+} from "./routes/agentHubFinancials.js";
 import {
   deleteVideoById,
   deleteVideoFolder,
@@ -1152,6 +1213,68 @@ app.get("/agent-hub/agents/export.csv", requireAuth, requireAgentHubAccess, expo
 app.get("/agent-hub/permissions", requireAuth, requireAgentHubAccess, listAgentHubPermissions);
 app.put("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, upsertAgentHubPermissions);
 app.delete("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, revokeAgentHubAccess);
+
+/* ============================================================
+ * Agent Hub Phase 2: referral pipeline, owners, properties,
+ * payments, revenue tracking, tasks, LTV, financials.
+ * ============================================================ */
+
+// Owners
+app.get("/agent-hub/owners", requireAuth, requireAgentHubAccess, listOwners);
+app.get("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, getOwner);
+app.post("/agent-hub/owners", requireAuth, requireAgentHubAccess, createOwner);
+app.patch("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, updateOwner);
+app.delete("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, deleteOwner);
+
+// Properties
+app.get("/agent-hub/properties", requireAuth, requireAgentHubAccess, listProperties);
+app.get("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, getProperty);
+app.post("/agent-hub/properties", requireAuth, requireAgentHubAccess, createProperty);
+app.patch("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, updateProperty);
+app.delete("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, deleteProperty);
+
+// Referrals
+app.get("/agent-hub/referrals", requireAuth, requireAgentHubAccess, listReferrals);
+app.get("/agent-hub/referrals/:id", requireAuth, requireAgentHubAccess, getReferral);
+app.post("/agent-hub/referrals", requireAuth, requireAgentHubAccess, createReferral);
+app.patch("/agent-hub/referrals/:id", requireAuth, requireAgentHubAccess, updateReferral);
+app.post("/agent-hub/referrals/:id/advance-stage", requireAuth, requireAgentHubAccess, advanceReferralStage);
+app.post("/agent-hub/referrals/:id/mark-lost", requireAuth, requireAgentHubAccess, markReferralLost);
+app.post("/agent-hub/referrals/:id/mark-declined", requireAuth, requireAgentHubAccess, markReferralDeclined);
+app.post("/agent-hub/referrals/:id/restore", requireAuth, requireAgentHubAccess, restoreReferral);
+app.get("/agent-hub/referrals/:id/stage-history", requireAuth, requireAgentHubAccess, getReferralStageHistory);
+
+// Payments
+app.get("/agent-hub/referrals/:id/payments", requireAuth, requireAgentHubAccess, listPayments);
+app.post("/agent-hub/referrals/:id/payments", requireAuth, requireAgentHubAccess, recordPayment);
+app.patch("/agent-hub/payments/:id", requireAuth, requireAgentHubAccess, updatePayment);
+app.delete("/agent-hub/payments/:id", requireAuth, requireAgentHubAccess, deletePayment);
+
+// Revenue tracking
+app.get("/agent-hub/referrals/:id/revenue", requireAuth, requireAgentHubAccess, listRevenue);
+app.post("/agent-hub/referrals/:id/revenue", requireAuth, requireAgentHubAccess, addRevenue);
+app.patch("/agent-hub/revenue/:id", requireAuth, requireAgentHubAccess, updateRevenue);
+app.delete("/agent-hub/revenue/:id", requireAuth, requireAgentHubAccess, deleteRevenue);
+app.post("/agent-hub/revenue/bulk-import", requireAuth, requireAgentHubAccess, bulkImportRevenue);
+
+// Tasks (Agent Hub specific — different table from operations.tasks)
+app.get("/agent-hub/tasks", requireAuth, requireAgentHubAccess, listAgentHubTasks);
+app.get("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, getAgentHubTask);
+app.post("/agent-hub/tasks", requireAuth, requireAgentHubAccess, createAgentHubTask);
+app.patch("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, updateAgentHubTask);
+app.delete("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, deleteAgentHubTask);
+
+// Lifetime value
+app.get("/agent-hub/agents/:id/lifetime-value", requireAuth, requireAgentHubAccess, getAgentLifetimeValue);
+app.post("/agent-hub/lifetime-value/refresh", requireAuth, requireAgentHubAccess, refreshLifetimeValue);
+app.get("/agent-hub/financials/leaderboard", requireAuth, requireAgentHubAccess, agentHubLeaderboard);
+
+// Pipeline + financials aggregations
+app.get("/agent-hub/pipeline/stats", requireAuth, requireAgentHubAccess, getPipelineStats);
+app.get("/agent-hub/pipeline/funnel", requireAuth, requireAgentHubAccess, getPipelineFunnel);
+app.get("/agent-hub/financials/summary", requireAuth, requireAgentHubAccess, getFinancialsSummary);
+app.get("/agent-hub/financials/by-month", requireAuth, requireAgentHubAccess, getFinancialsByMonth);
+app.get("/agent-hub/financials/export.csv", requireAuth, requireAgentHubAccess, exportFinancialsCsv);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
@@ -1837,6 +1960,8 @@ async function start() {
       console.log("Database schema OK (mailers + mailer_events).");
       await ensureAgentHubSchema();
       console.log("Database schema OK (agent_hub_*).");
+      await ensureAgentHubPhase2Schema();
+      console.log("Database schema OK (agent_hub_* phase 2).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -1872,6 +1997,18 @@ async function start() {
       takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot cron]", e.message || e));
     });
     console.log("Scheduled portfolio snapshot: 0 6 * * * (daily at 6 AM).");
+
+    // Phase 2 Agent Hub: refresh agent_hub_agent_lifetime_value materialized
+    // view every night at 2:15 AM. We also refresh on-demand inside the
+    // payment / revenue / advance-to-active_management handlers, so the
+    // nightly run is mostly a safety net for edits that bypass those paths
+    // (e.g. direct DB tweaks).
+    cron.schedule("15 2 * * *", () => {
+      refreshAgentLifetimeValue().catch((e) =>
+        console.error("[agent-hub LTV cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub LTV refresh: 15 2 * * * (daily at 2:15 AM).");
 
     cron.schedule("0 * * * *", () => {
       processDelayedAutoCompletes().catch((e) =>

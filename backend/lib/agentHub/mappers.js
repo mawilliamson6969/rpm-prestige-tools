@@ -199,6 +199,196 @@ export function mapHubPermissions(r) {
   };
 }
 
+// ============================================================
+// Phase 2 mappers
+// ============================================================
+
+export function mapOwner(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    full_name: r.full_name,
+    first_name: r.first_name ?? null,
+    last_name: r.last_name ?? null,
+    email: r.email ?? null,
+    phone_mobile: r.phone_mobile ?? null,
+    phone_office: r.phone_office ?? null,
+    mailing_address_1: r.mailing_address_1 ?? null,
+    mailing_address_2: r.mailing_address_2 ?? null,
+    city: r.city ?? null,
+    state: r.state ?? null,
+    zip: r.zip ?? null,
+    is_company: r.is_company === true,
+    company_name: r.company_name ?? null,
+    source_agent_id: r.source_agent_id ?? null,
+    source_agent_name: r.source_agent_name ?? null,
+    first_referral_date: r.first_referral_date ?? null,
+    notes: r.notes ?? null,
+    status: r.status,
+    external_appfolio_id: r.external_appfolio_id ?? null,
+    property_count: r.property_count != null ? Number(r.property_count) : undefined,
+    active_referral_count: r.active_referral_count != null ? Number(r.active_referral_count) : undefined,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+export function mapProperty(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    owner_id: r.owner_id,
+    owner_name: r.owner_name ?? null,
+    address_1: r.address_1,
+    address_2: r.address_2 ?? null,
+    city: r.city,
+    state: r.state,
+    zip: r.zip,
+    property_type: r.property_type ?? null,
+    bedrooms: r.bedrooms != null ? Number(r.bedrooms) : null,
+    bathrooms: r.bathrooms != null ? Number(r.bathrooms) : null,
+    square_feet: r.square_feet ?? null,
+    year_built: r.year_built ?? null,
+    notes: r.notes ?? null,
+    status: r.status,
+    external_appfolio_property_id: r.external_appfolio_property_id ?? null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+export function mapReferral(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    agent_id: r.agent_id,
+    agent_name: r.agent_name ?? null,
+    agent_brokerage_name: r.agent_brokerage_name ?? null,
+    agent_tier: r.agent_tier ?? null,
+    agent_photo_url: r.agent_photo_url ?? null,
+    owner_id: r.owner_id,
+    owner_name: r.owner_name ?? null,
+    property_id: r.property_id ?? null,
+    property_address: r.property_address ?? null,
+    property_city: r.property_city ?? null,
+    stage: r.stage,
+    stage_changed_at: r.stage_changed_at,
+    stage_changed_by: r.stage_changed_by ?? null,
+    lost_reason: r.lost_reason ?? null,
+    lost_at: r.lost_at ?? null,
+    declined_reason: r.declined_reason ?? null,
+    declined_at: r.declined_at ?? null,
+    expected_monthly_rent: r.expected_monthly_rent != null ? Number(r.expected_monthly_rent) : null,
+    expected_management_fee_pct: r.expected_management_fee_pct != null ? Number(r.expected_management_fee_pct) : null,
+    expected_first_month_referral_fee: r.expected_first_month_referral_fee != null ? Number(r.expected_first_month_referral_fee) : null,
+    actual_monthly_rent: r.actual_monthly_rent != null ? Number(r.actual_monthly_rent) : null,
+    actual_management_fee_pct: r.actual_management_fee_pct != null ? Number(r.actual_management_fee_pct) : null,
+    actual_referral_fee_paid: r.actual_referral_fee_paid != null ? Number(r.actual_referral_fee_paid) : 0,
+    tenant_placed_at: r.tenant_placed_at ?? null,
+    active_management_started_at: r.active_management_started_at ?? null,
+    notes: r.notes ?? null,
+    internal_priority: r.internal_priority,
+    expected_close_date: r.expected_close_date ?? null,
+    source_activity_id: r.source_activity_id ?? null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    created_by: r.created_by ?? null,
+    updated_by: r.updated_by ?? null,
+  };
+}
+
+export function mapStageHistory(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    referral_id: r.referral_id,
+    from_stage: r.from_stage ?? null,
+    to_stage: r.to_stage,
+    changed_at: r.changed_at,
+    changed_by: r.changed_by ?? null,
+    changed_by_name: r.changed_by_name ?? null,
+    notes: r.notes ?? null,
+    duration_in_previous_stage: r.duration_in_previous_stage ?? null,
+  };
+}
+
+export function mapPayment(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    referral_id: r.referral_id,
+    amount: Number(r.amount),
+    payment_date: r.payment_date,
+    payment_method: r.payment_method,
+    check_number: r.check_number ?? null,
+    paid_to_name: r.paid_to_name,
+    notes: r.notes ?? null,
+    created_at: r.created_at,
+    created_by: r.created_by ?? null,
+    updated_at: r.updated_at,
+  };
+}
+
+export function mapRevenue(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    referral_id: r.referral_id,
+    month: r.month,
+    rent_collected: Number(r.rent_collected),
+    management_fee_earned: Number(r.management_fee_earned),
+    notes: r.notes ?? null,
+    created_at: r.created_at,
+    created_by: r.created_by ?? null,
+    updated_at: r.updated_at,
+  };
+}
+
+export function mapTask(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description ?? null,
+    assigned_to: r.assigned_to ?? null,
+    assigned_to_name: r.assigned_to_name ?? null,
+    related_agent_id: r.related_agent_id ?? null,
+    related_agent_name: r.related_agent_name ?? null,
+    related_referral_id: r.related_referral_id ?? null,
+    related_owner_id: r.related_owner_id ?? null,
+    related_property_id: r.related_property_id ?? null,
+    due_date: r.due_date ?? null,
+    status: r.status,
+    priority: r.priority,
+    completed_at: r.completed_at ?? null,
+    completed_by: r.completed_by ?? null,
+    source: r.source,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    created_by: r.created_by ?? null,
+  };
+}
+
+export function mapLifetimeValue(r) {
+  if (!r) return null;
+  return {
+    agent_id: r.agent_id,
+    total_referrals_received: Number(r.total_referrals_received),
+    total_referrals_in_pipeline: Number(r.total_referrals_in_pipeline),
+    total_referrals_converted: Number(r.total_referrals_converted),
+    total_referrals_lost: Number(r.total_referrals_lost),
+    total_referrals_declined: Number(r.total_referrals_declined),
+    conversion_rate_pct: r.conversion_rate_pct != null ? Number(r.conversion_rate_pct) : 0,
+    total_referral_fees_paid: Number(r.total_referral_fees_paid),
+    total_revenue_generated: Number(r.total_revenue_generated),
+    lifetime_relationship_value: Number(r.lifetime_relationship_value),
+    first_referral_date: r.first_referral_date ?? null,
+    last_referral_date: r.last_referral_date ?? null,
+    avg_days_to_convert: r.avg_days_to_convert != null ? Number(r.avg_days_to_convert) : null,
+    last_calculated_at: r.last_calculated_at,
+  };
+}
+
 export function mapAuditEntry(r) {
   if (!r) return null;
   return {

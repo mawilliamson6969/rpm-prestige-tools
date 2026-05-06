@@ -248,6 +248,110 @@ export function vTimestamp(v, label, { allowNull = true } = {}) {
 const URL_SCHEME_RE = /^(https?:)?\/\//i;
 const URL_DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+/i;
 
+// ============================================================
+// Phase 2 enums
+// ============================================================
+export const PROPERTY_TYPES = new Set([
+  "single_family",
+  "condo",
+  "townhome",
+  "duplex",
+  "multi_family",
+  "other",
+]);
+export const PROPERTY_STATUSES = new Set(["prospect", "under_management", "lost", "inactive", "deleted"]);
+export const OWNER_STATUSES = new Set(["active", "lost", "converted", "dormant", "deleted"]);
+export const PRIORITIES = new Set(["low", "medium", "high", "urgent"]);
+export const PAYMENT_METHODS = new Set(["check", "ach", "wire", "zelle", "other"]);
+export const TASK_STATUSES = new Set(["pending", "in_progress", "completed", "cancelled"]);
+export const TASK_SOURCES = new Set([
+  "manual",
+  "system_referral_thank_you",
+  "system_followup_reminder",
+  "system_other",
+]);
+
+export function vPropertyType(v, opts) {
+  return vEnum(v, PROPERTY_TYPES, "property_type", opts);
+}
+export function vPropertyStatus(v, opts) {
+  return vEnum(v, PROPERTY_STATUSES, "status", opts);
+}
+export function vOwnerStatus(v, opts) {
+  return vEnum(v, OWNER_STATUSES, "status", opts);
+}
+export function vPriority(v, opts) {
+  return vEnum(v, PRIORITIES, "priority", opts);
+}
+export function vPaymentMethod(v) {
+  return vEnum(v, PAYMENT_METHODS, "payment_method", { allowNull: false });
+}
+export function vTaskStatus(v) {
+  return vEnum(v, TASK_STATUSES, "status", { allowNull: false });
+}
+export function vTaskSource(v) {
+  return vEnum(v, TASK_SOURCES, "source", { allowNull: false });
+}
+
+/**
+ * Validate a money amount: non-negative, max 2 decimal places, < 1 billion.
+ * Returns the value as a Number (NUMERIC roundtrip handled by pg).
+ */
+export function vMoney(v, label, { allowNull = true, max = 999999999.99 } = {}) {
+  if (v == null || v === "") {
+    if (allowNull) return null;
+    throw bad(`${label} is required.`);
+  }
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw bad(`${label} must be a number.`);
+  if (n < 0) throw bad(`${label} must be non-negative.`);
+  if (n > max) throw bad(`${label} too large.`);
+  // Reject more than 2 decimal places.
+  const s = String(v);
+  const dot = s.indexOf(".");
+  if (dot !== -1 && s.length - dot - 1 > 2) {
+    throw bad(`${label} must have at most 2 decimal places.`);
+  }
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Validate a percentage: 0–100 inclusive.
+ */
+export function vPercent(v, label, { allowNull = true } = {}) {
+  if (v == null || v === "") {
+    if (allowNull) return null;
+    throw bad(`${label} is required.`);
+  }
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw bad(`${label} must be a number.`);
+  if (n < 0 || n > 100) throw bad(`${label} must be between 0 and 100.`);
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Validate a payment date: must be a valid date and not in the future.
+ */
+export function vPastDate(v, label) {
+  const iso = vDate(v, label, { allowNull: false });
+  if (iso == null) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (iso > today) throw bad(`${label} cannot be in the future.`);
+  return iso;
+}
+
+/**
+ * Validate a "first of month" date — a DATE with day=1.
+ */
+export function vMonth(v, label) {
+  const iso = vDate(v, label, { allowNull: false });
+  if (iso == null) return null;
+  if (!/^\d{4}-\d{2}-01$/.test(iso)) {
+    throw bad(`${label} must be the first day of a month (YYYY-MM-01).`);
+  }
+  return iso;
+}
+
 export function vUrl(v, { allowNull = true } = {}) {
   if (v == null || v === "") {
     if (allowNull) return null;

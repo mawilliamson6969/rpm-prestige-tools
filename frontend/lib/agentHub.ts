@@ -213,6 +213,301 @@ export type HubPermissions = {
   synthetic?: boolean;
 };
 
+// ============================================================
+// Phase 2 types
+// ============================================================
+
+export type Stage =
+  | "lead_received"
+  | "owner_contacted"
+  | "property_toured"
+  | "agreement_pending"
+  | "agreement_signed"
+  | "tenant_placed"
+  | "active_management"
+  | "lost"
+  | "declined";
+
+export const PIPELINE_STAGES: Stage[] = [
+  "lead_received",
+  "owner_contacted",
+  "property_toured",
+  "agreement_pending",
+  "agreement_signed",
+  "tenant_placed",
+  "active_management",
+];
+
+export const TERMINAL_STAGES: Stage[] = ["lost", "declined"];
+
+export const STAGE_LABELS: Record<Stage, string> = {
+  lead_received: "Lead Received",
+  owner_contacted: "Owner Contacted",
+  property_toured: "Property Toured",
+  agreement_pending: "Agreement Pending",
+  agreement_signed: "Agreement Signed",
+  tenant_placed: "Tenant Placed",
+  active_management: "Active Management",
+  lost: "Lost",
+  declined: "Declined",
+};
+
+const ALLOWED_NEXT: Record<Stage, Stage[]> = {
+  lead_received: ["owner_contacted", "lost", "declined"],
+  owner_contacted: ["property_toured", "lost", "declined"],
+  property_toured: ["agreement_pending", "lost", "declined"],
+  agreement_pending: ["agreement_signed", "lost", "declined"],
+  agreement_signed: ["tenant_placed", "lost"],
+  tenant_placed: ["active_management"],
+  active_management: [],
+  lost: [],
+  declined: [],
+};
+
+export function nextStages(s: Stage): Stage[] {
+  return ALLOWED_NEXT[s] || [];
+}
+
+export type Priority = "low" | "medium" | "high" | "urgent";
+export type PaymentMethod = "check" | "ach" | "wire" | "zelle" | "other";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type TaskSource =
+  | "manual"
+  | "system_referral_thank_you"
+  | "system_followup_reminder"
+  | "system_other";
+export type PropertyType =
+  | "single_family"
+  | "condo"
+  | "townhome"
+  | "duplex"
+  | "multi_family"
+  | "other";
+export type PropertyStatus = "prospect" | "under_management" | "lost" | "inactive" | "deleted";
+export type OwnerStatus = "active" | "lost" | "converted" | "dormant" | "deleted";
+
+export type Owner = {
+  id: number;
+  full_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone_mobile: string | null;
+  phone_office: string | null;
+  mailing_address_1: string | null;
+  mailing_address_2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  is_company: boolean;
+  company_name: string | null;
+  source_agent_id: number | null;
+  source_agent_name: string | null;
+  first_referral_date: string | null;
+  notes: string | null;
+  status: OwnerStatus;
+  external_appfolio_id: string | null;
+  property_count?: number;
+  active_referral_count?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Property = {
+  id: number;
+  owner_id: number;
+  owner_name: string | null;
+  address_1: string;
+  address_2: string | null;
+  city: string;
+  state: string;
+  zip: string;
+  property_type: PropertyType | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  square_feet: number | null;
+  year_built: number | null;
+  notes: string | null;
+  status: PropertyStatus;
+  external_appfolio_property_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Referral = {
+  id: number;
+  agent_id: number;
+  agent_name: string | null;
+  agent_brokerage_name: string | null;
+  agent_tier: Tier | null;
+  agent_photo_url: string | null;
+  owner_id: number;
+  owner_name: string | null;
+  property_id: number | null;
+  property_address: string | null;
+  property_city: string | null;
+  stage: Stage;
+  stage_changed_at: string;
+  stage_changed_by: number | null;
+  lost_reason: string | null;
+  lost_at: string | null;
+  declined_reason: string | null;
+  declined_at: string | null;
+  expected_monthly_rent: number | null;
+  expected_management_fee_pct: number | null;
+  expected_first_month_referral_fee: number | null;
+  actual_monthly_rent: number | null;
+  actual_management_fee_pct: number | null;
+  actual_referral_fee_paid: number;
+  tenant_placed_at: string | null;
+  active_management_started_at: string | null;
+  notes: string | null;
+  internal_priority: Priority;
+  expected_close_date: string | null;
+  source_activity_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StageHistoryEntry = {
+  id: number;
+  referral_id: number;
+  from_stage: Stage | null;
+  to_stage: Stage;
+  changed_at: string;
+  changed_by: number | null;
+  changed_by_name: string | null;
+  notes: string | null;
+  duration_in_previous_stage: string | null; // Postgres INTERVAL serialized
+};
+
+export type Payment = {
+  id: number;
+  referral_id: number;
+  amount: number;
+  payment_date: string;
+  payment_method: PaymentMethod;
+  check_number: string | null;
+  paid_to_name: string;
+  notes: string | null;
+  created_at: string;
+  created_by: number | null;
+  updated_at: string;
+};
+
+export type Revenue = {
+  id: number;
+  referral_id: number;
+  month: string;
+  rent_collected: number;
+  management_fee_earned: number;
+  notes: string | null;
+  created_at: string;
+  created_by: number | null;
+  updated_at: string;
+};
+
+export type Task = {
+  id: number;
+  title: string;
+  description: string | null;
+  assigned_to: number | null;
+  assigned_to_name: string | null;
+  related_agent_id: number | null;
+  related_agent_name: string | null;
+  related_referral_id: number | null;
+  related_owner_id: number | null;
+  related_property_id: number | null;
+  due_date: string | null;
+  status: TaskStatus;
+  priority: Priority;
+  completed_at: string | null;
+  completed_by: number | null;
+  source: TaskSource;
+  created_at: string;
+  updated_at: string;
+  created_by: number | null;
+};
+
+export type LifetimeValue = {
+  agent_id: number;
+  total_referrals_received: number;
+  total_referrals_in_pipeline: number;
+  total_referrals_converted: number;
+  total_referrals_lost: number;
+  total_referrals_declined: number;
+  conversion_rate_pct: number;
+  total_referral_fees_paid: number;
+  total_revenue_generated: number;
+  lifetime_relationship_value: number;
+  first_referral_date: string | null;
+  last_referral_date: string | null;
+  avg_days_to_convert: number | null;
+  last_calculated_at: string | null;
+};
+
+export type PipelineStats = {
+  total_in_pipeline: number;
+  total_expected_first_month_fees: number;
+  total_expected_mrr: number;
+  conversion_rate_qtr: number;
+  by_stage: Array<{
+    stage: Stage;
+    count: number;
+    expected_fees: number;
+    expected_mrr: number;
+    avg_days_in_stage: number | null;
+  }>;
+};
+
+export type FinancialsSummary = {
+  lifetime_fees_paid: number;
+  ytd_fees_paid: number;
+  mtd_fees_paid: number;
+  lifetime_revenue_generated: number;
+  ytd_revenue_generated: number;
+  mtd_revenue_generated: number;
+  net_margin: number;
+  roi_ratio: number | null;
+};
+
+// Stage badge color tokens.
+export const STAGE_META: Record<Stage, { bg: string; fg: string }> = {
+  lead_received: { bg: "#e0f2fe", fg: "#0369a1" },
+  owner_contacted: { bg: "#dbeafe", fg: "#1e40af" },
+  property_toured: { bg: "#ede9fe", fg: "#5b21b6" },
+  agreement_pending: { bg: "#fef3c7", fg: "#92400e" },
+  agreement_signed: { bg: "#fde68a", fg: "#78350f" },
+  tenant_placed: { bg: "#bbf7d0", fg: "#14532d" },
+  active_management: { bg: "#a7f3d0", fg: "#064e3b" },
+  lost: { bg: "#fecaca", fg: "#991b1b" },
+  declined: { bg: "#e5e7eb", fg: "#374151" },
+};
+
+export function formatMoney(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+export function formatPct(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return `${Number(n).toFixed(1)}%`;
+}
+
+export function daysSince(iso: string | null): number {
+  if (!iso) return 0;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.floor(ms / 86400000);
+}
+
+export function daysSinceColor(days: number): string {
+  if (days < 7) return "#16a34a";
+  if (days < 14) return "#ca8a04";
+  if (days < 30) return "#ea580c";
+  return "#b91c1c";
+}
+
 export type DashboardSummary = {
   total: number;
   cold: number;
