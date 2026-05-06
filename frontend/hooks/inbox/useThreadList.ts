@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiUrl } from "../../lib/api";
 import { parseApiError } from "../../lib/apiResult";
@@ -43,7 +43,25 @@ export type UseThreadList = {
   patchThreads: (threadIds: string[], patch: Partial<ThreadRow>) => void;
 };
 
-export default function useThreadList(connectionId: number | null): UseThreadList {
+export type UseThreadListOptions = {
+  connectionId: number | null;
+  /** When set, the list fetches via /inbox/views/:id/threads and ignores
+   *  bucket/category/etc. filter state. The orchestrator clears this when
+   *  the user touches any filter control. */
+  viewId?: number | null;
+  /** Fires whenever the user changes a filter (bucket, category, status,
+   *  assignee, search, sort). Used to clear an active saved view. */
+  onUserFilterChange?: () => void;
+};
+
+export default function useThreadList(opts: UseThreadListOptions): UseThreadList {
+  const { connectionId, viewId = null, onUserFilterChange } = opts;
+  const onUserFilterChangeRef = useRef(onUserFilterChange);
+  onUserFilterChangeRef.current = onUserFilterChange;
+  const wrap = <T,>(setter: (v: T) => void) => (v: T) => {
+    onUserFilterChangeRef.current?.();
+    setter(v);
+  };
   const { authHeaders } = useAuth();
 
   const [bucket, setBucket] = useState<string>("open");
@@ -89,9 +107,15 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
     async (startOffset: number, append: boolean) => {
       setLoading(true);
       try {
-        const p = new URLSearchParams(queryString);
+        const p = new URLSearchParams(viewId != null ? "" : queryString);
         p.set("offset", String(startOffset));
-        const res = await fetch(apiUrl(`/inbox/threads?${p.toString()}`), {
+        if (viewId == null) p.set("limit", String(PAGE_LIMIT));
+        else p.set("limit", String(PAGE_LIMIT));
+        const url =
+          viewId != null
+            ? `/inbox/views/${viewId}/threads?${p.toString()}`
+            : `/inbox/threads?${p.toString()}`;
+        const res = await fetch(apiUrl(url), {
           cache: "no-store",
           headers: { ...authHeaders() },
         });
@@ -113,13 +137,13 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
         setLoading(false);
       }
     },
-    [authHeaders, queryString]
+    [authHeaders, queryString, viewId]
   );
 
   useEffect(() => {
     setOffset(0);
     void loadList(0, false);
-  }, [queryString, loadList]);
+  }, [queryString, viewId, loadList]);
 
   const refetch = useCallback(() => loadList(0, false), [loadList]);
   const loadMore = useCallback(() => loadList(offset, true), [loadList, offset]);
@@ -152,13 +176,13 @@ export default function useThreadList(connectionId: number | null): UseThreadLis
     loading,
     error,
     filters,
-    setBucket,
-    setCategory,
-    setNarrowStatus,
-    setTeamUserId,
-    setSearch,
-    setSort,
-    applyPreset,
+    setBucket: wrap(setBucket),
+    setCategory: wrap(setCategory),
+    setNarrowStatus: wrap(setNarrowStatus),
+    setTeamUserId: wrap(setTeamUserId),
+    setSearch: wrap(setSearch),
+    setSort: wrap(setSort),
+    applyPreset: wrap(applyPreset),
     refetch,
     loadMore,
     patchThread,

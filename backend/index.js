@@ -274,6 +274,13 @@ import {
   postInboxThreadSync,
 } from "./routes/inboxThreads.js";
 import {
+  deleteInboxView,
+  getInboxViewThreads,
+  getInboxViews,
+  patchInboxView,
+  postInboxView,
+} from "./routes/inboxViews.js";
+import {
   deleteVideoById,
   deleteVideoFolder,
   deleteVideoShare,
@@ -937,6 +944,13 @@ app.patch("/inbox/threads/:thread_id", requireAuth, patchInboxThread);
 app.post("/inbox/threads/:thread_id/messages", requireAuth, postInboxThreadReply);
 app.post("/inbox/threads/:thread_id/read", requireAuth, postInboxThreadMarkRead);
 app.post("/inbox/threads/:thread_id/sync", requireAuth, postInboxThreadSync);
+
+// Phase 2 saved views.
+app.get("/inbox/views", requireAuth, getInboxViews);
+app.post("/inbox/views", requireAuth, postInboxView);
+app.patch("/inbox/views/:id", requireAuth, patchInboxView);
+app.delete("/inbox/views/:id", requireAuth, deleteInboxView);
+app.get("/inbox/views/:id/threads", requireAuth, getInboxViewThreads);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
