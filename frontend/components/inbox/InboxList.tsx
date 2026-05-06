@@ -2,6 +2,7 @@
 
 import styles from "../../app/(protected)/inbox/inbox.module.css";
 import type { ThreadRow } from "../../hooks/inbox/types";
+import useSLA from "../../hooks/inbox/useSLA";
 import type { UseThreadList } from "../../hooks/inbox/useThreadList";
 import {
   CAT_STYLE,
@@ -10,6 +11,35 @@ import {
   relativeTime,
 } from "./inboxConstants";
 import RetryState from "./RetryState";
+
+// Phase 3 SLA dot tiers. The map covers every variant useSLA emits.
+const SLA_DOT_COLOR: Record<string, string> = {
+  ok: "#1a7f4c",       // green: ≥2h remaining or responded on time
+  open: "#1a7f4c",
+  late: "#c5960c",     // yellow: <2h remaining
+  overdue: "#b32317",  // red: past sla_due_at
+  paused: "#9e9e9e",   // gray: paused on a waiting status
+};
+
+function SlaDot({ thread }: { thread: ThreadRow }) {
+  const view = useSLA(thread);
+  if (!view) return null;
+  return (
+    <span
+      title={`${view.label} — ${view.tooltip}`}
+      aria-label={view.label}
+      style={{
+        display: "inline-block",
+        width: 8,
+        height: 8,
+        borderRadius: 999,
+        background: SLA_DOT_COLOR[view.variant] ?? "#9e9e9e",
+        marginRight: "0.35rem",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
 
 const PRIORITY_BAR: Record<string, string> = {
   emergency: "#b32317",
@@ -66,6 +96,7 @@ export default function InboxList({ list, selectedThreadId, onSelect, onToggleSt
               <div className={styles.ticketTop}>
                 <p className={`${styles.sender} ${unread ? styles.unread : ""}`}>{senderLabel}</p>
                 <span className={styles.ticketTopRight}>
+                  <SlaDot thread={t} />
                   {t.has_ai_draft_ready ? (
                     <span className={styles.draftReadyMark} title="Draft ready">
                       ✨

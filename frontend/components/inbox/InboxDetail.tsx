@@ -106,7 +106,11 @@ export default function InboxDetail({
               Last activity: {t.last_message_at ? new Date(t.last_message_at).toLocaleString() : "—"}
             </span>
             {slaView ? (
-              <span className={styles.slaBadge} data-variant={slaView.variant}>
+              <span
+                className={styles.slaBadge}
+                data-variant={slaView.variant}
+                title={slaView.tooltip}
+              >
                 {slaView.label}
               </span>
             ) : null}

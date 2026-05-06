@@ -989,6 +989,11 @@
   color: #e65100;
 }
 
+.slaBadge[data-variant="paused"] {
+  background: #eceff1;
+  color: #546e7a;
+}
+
 .composeBusy {
   position: relative;
 }

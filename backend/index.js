@@ -281,6 +281,12 @@ import {
   postInboxView,
 } from "./routes/inboxViews.js";
 import {
+  deleteInboxSlaPolicy,
+  getInboxSlaPolicies,
+  patchInboxSlaPolicy,
+  postInboxSlaPolicy,
+} from "./routes/inboxSlaPolicies.js";
+import {
   deleteVideoById,
   deleteVideoFolder,
   deleteVideoShare,
@@ -951,6 +957,12 @@ app.post("/inbox/views", requireAuth, postInboxView);
 app.patch("/inbox/views/:id", requireAuth, patchInboxView);
 app.delete("/inbox/views/:id", requireAuth, deleteInboxView);
 app.get("/inbox/views/:id/threads", requireAuth, getInboxViewThreads);
+
+// Phase 3 SLA policies — admin-only.
+app.get("/inbox/sla-policies", requireAuth, getInboxSlaPolicies);
+app.post("/inbox/sla-policies", requireAuth, requireAdminRole, postInboxSlaPolicy);
+app.patch("/inbox/sla-policies/:id", requireAuth, requireAdminRole, patchInboxSlaPolicy);
+app.delete("/inbox/sla-policies/:id", requireAuth, requireAdminRole, deleteInboxSlaPolicy);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);

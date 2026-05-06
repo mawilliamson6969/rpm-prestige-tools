@@ -149,8 +149,15 @@ export type ThreadRow = {
   last_outbound_at: string | null;
   last_touched_by?: number | null;
   last_touched_at?: string | null;
+  sla_policy_id?: number | null;
+  sla_policy_name?: string | null;
   sla_due_at?: string | null;
   sla_paused?: boolean | null;
+  sla_paused_at?: string | null;
+  sla_paused_total_minutes?: number | null;
+  sla_breached_at?: string | null;
+  sla_first_response_minutes?: number | null;
+  sla_business_hours_only?: boolean | null;
   ai_summary: string | null;
   ai_confidence?: number | null;
   mailbox_display_name?: string | null;
