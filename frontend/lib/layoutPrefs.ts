@@ -312,6 +312,7 @@ export const DEFAULT_SIDEBAR_ITEMS: SidebarNavItem[] = [
   { id: "dashboard", type: "dropdown", label: "Dashboard", icon: "📊", section: "primary" },
   { id: "inbox", type: "link", label: "Inbox", icon: "📧", href: "/inbox", section: "primary" },
   { id: "agents", type: "link", label: "Agents", icon: "🤖", href: "/agents", section: "primary" },
+  { id: "agentHub", type: "dropdown", label: "Agent Hub", icon: "🤝", section: "primary" },
   { id: "eos", type: "dropdown", label: "EOS", icon: "📈", section: "tools" },
   { id: "operations", type: "dropdown", label: "Operations", icon: "🗂️", section: "tools" },
   { id: "ask", type: "link", label: "Ask the AI", icon: "💬", href: "/ask", section: "tools" },
