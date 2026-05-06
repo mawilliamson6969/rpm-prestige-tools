@@ -164,6 +164,7 @@ export async function getInboxThreads(req, res) {
              ec.mailbox_email AS mailbox_email,
              ec.mailbox_type AS mailbox_type,
              ip.permission AS my_permission,
+             sp.name AS sla_policy_name,
              EXISTS (
                SELECT 1 FROM ticket_ai_drafts tad
                JOIN tickets t2 ON t2.id = tad.ticket_id
@@ -194,6 +195,7 @@ export async function getInboxThreads(req, res) {
         LEFT JOIN email_connections ec ON ec.id = th.connection_id
         LEFT JOIN inbox_permissions ip
           ON ip.connection_id = th.connection_id AND ip.user_id = $${params.length + 1}
+        LEFT JOIN sla_policies sp ON sp.id = th.sla_policy_id
        WHERE ${where}
        ORDER BY ${orderBy}
        LIMIT ${limit} OFFSET ${offset}`;
@@ -242,6 +244,9 @@ export async function getInboxThread(req, res) {
               ec.mailbox_email AS mailbox_email,
               ec.mailbox_type AS mailbox_type,
               ip.permission AS my_permission,
+              sp.name AS sla_policy_name,
+              sp.first_response_minutes AS sla_first_response_minutes,
+              sp.business_hours_only AS sla_business_hours_only,
               EXISTS (
                 SELECT 1 FROM ticket_ai_drafts tad
                 JOIN tickets t2 ON t2.id = tad.ticket_id
@@ -252,6 +257,7 @@ export async function getInboxThread(req, res) {
          LEFT JOIN email_connections ec ON ec.id = th.connection_id
          LEFT JOIN inbox_permissions ip
            ON ip.connection_id = th.connection_id AND ip.user_id = $1
+         LEFT JOIN sla_policies sp ON sp.id = th.sla_policy_id
         WHERE th.thread_id = $2`,
       [req.user.id, threadId]
     );

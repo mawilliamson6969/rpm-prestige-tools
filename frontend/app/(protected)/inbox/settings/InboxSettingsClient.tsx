@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SignatureManager from "../../../../components/signature/SignatureManager";
+import SlaPoliciesPanel from "../../../../components/inbox/SlaPoliciesPanel";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
 import styles from "../inbox.module.css";
@@ -469,6 +470,8 @@ export default function InboxSettingsClient() {
               );
             })}
         </section>
+
+        <SlaPoliciesPanel />
 
         <SignatureManager authHeaders={authHeaders} variant="inbox" />
       </div>
