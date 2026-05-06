@@ -287,6 +287,17 @@ import {
   postInboxSlaPolicy,
 } from "./routes/inboxSlaPolicies.js";
 import {
+  deleteInboxAutomationRule,
+  getInboxAutomationAccuracy,
+  getInboxAutomationLog,
+  getInboxAutomationRules,
+  patchInboxAutomationRule,
+  postInboxAutomationExecute,
+  postInboxAutomationFeedback,
+  postInboxAutomationRevert,
+  postInboxAutomationRule,
+} from "./routes/inboxAutomations.js";
+import {
   deleteVideoById,
   deleteVideoFolder,
   deleteVideoShare,
@@ -963,6 +974,17 @@ app.get("/inbox/sla-policies", requireAuth, getInboxSlaPolicies);
 app.post("/inbox/sla-policies", requireAuth, requireAdminRole, postInboxSlaPolicy);
 app.patch("/inbox/sla-policies/:id", requireAuth, requireAdminRole, patchInboxSlaPolicy);
 app.delete("/inbox/sla-policies/:id", requireAuth, requireAdminRole, deleteInboxSlaPolicy);
+
+// Phase 4 workflow automations.
+app.get("/inbox/automation-rules", requireAuth, getInboxAutomationRules);
+app.post("/inbox/automation-rules", requireAuth, requireAdminRole, postInboxAutomationRule);
+app.patch("/inbox/automation-rules/:id", requireAuth, requireAdminRole, patchInboxAutomationRule);
+app.delete("/inbox/automation-rules/:id", requireAuth, requireAdminRole, deleteInboxAutomationRule);
+app.get("/inbox/automation-log", requireAuth, getInboxAutomationLog);
+app.get("/inbox/automation-accuracy", requireAuth, getInboxAutomationAccuracy);
+app.post("/inbox/automation-log/:id/feedback", requireAuth, postInboxAutomationFeedback);
+app.post("/inbox/automation-log/:id/execute", requireAuth, postInboxAutomationExecute);
+app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, postInboxAutomationRevert);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
