@@ -18,6 +18,7 @@
 
 import { getPool } from "../db.js";
 import { classifyTicket } from "./ai-classifier.js";
+import { ingestInboundAttachments } from "./attachments-graph.js";
 import { graphGet } from "./graph-client.js";
 import { getValidAccessTokenForConnection } from "./microsoft-auth.js";
 
@@ -220,6 +221,16 @@ export async function syncConnection(connectionRow) {
             classifyTicket(ticketId).catch((e) =>
               console.error("[delta-sync] classify failed", ticketId, e.message || e)
             );
+            if (msg.hasAttachments) {
+              ingestInboundAttachments({
+                connectionRow,
+                messageId: ticketId,
+                threadId: msg.conversationId || null,
+                messageGraphId: msg.id,
+              }).catch((e) =>
+                console.error("[delta-sync] attachment ingest failed", ticketId, e.message || e)
+              );
+            }
           }
         }
       } catch (e) {

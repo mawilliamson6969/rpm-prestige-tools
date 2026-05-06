@@ -193,4 +193,18 @@ export type ThreadMessage = {
   ai_summary: string | null;
   category: string | null;
   priority: number;
+  attachments?: ThreadAttachment[];
+};
+
+export type ThreadAttachment = {
+  id: number;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  direction: "inbound" | "outbound";
+  /** True once Graph bytes have been pulled to disk; false means the
+   *  thread detail just kicked off a lazy fetch and a refetch in a few
+   *  seconds will surface the file. */
+  fetched: boolean;
+  created_at: string;
 };

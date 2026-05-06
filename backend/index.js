@@ -299,6 +299,13 @@ import {
   postInboxAutomationRule,
 } from "./routes/inboxAutomations.js";
 import {
+  getInboxAttachmentDownload,
+  getInboxAttachmentPreview,
+  inboxAttachmentUpload,
+  postInboxThreadFetchAttachments,
+  postInboxThreadReplyWithAttachments,
+} from "./routes/inboxAttachments.js";
+import {
   requireAgentHubAccess,
 } from "./lib/agentHub/permissions.js";
 import {
@@ -1047,6 +1054,22 @@ app.get("/inbox/automation-accuracy", requireAuth, getInboxAutomationAccuracy);
 app.post("/inbox/automation-log/:id/feedback", requireAuth, postInboxAutomationFeedback);
 app.post("/inbox/automation-log/:id/execute", requireAuth, postInboxAutomationExecute);
 app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, postInboxAutomationRevert);
+
+// Phase 5 attachments. Download + preview accept ?token= so plain
+// <a download> + <img src> work without bespoke client fetch logic.
+app.get("/inbox/attachments/:id/download", requireAuthOrQueryToken, getInboxAttachmentDownload);
+app.get("/inbox/attachments/:id/preview", requireAuthOrQueryToken, getInboxAttachmentPreview);
+app.post(
+  "/inbox/threads/:thread_id/messages-with-attachments",
+  requireAuth,
+  inboxAttachmentUpload,
+  postInboxThreadReplyWithAttachments
+);
+app.post(
+  "/inbox/threads/:thread_id/fetch-attachments",
+  requireAuth,
+  postInboxThreadFetchAttachments
+);
 
 /* ============================================================
  * Agent Hub (Phase 1): real estate referral CRM.

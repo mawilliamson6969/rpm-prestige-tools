@@ -1,8 +1,10 @@
+import { promises as fs } from "node:fs";
 import { getPool } from "../db.js";
 import { graphGet, graphPatch, graphPost } from "./graph-client.js";
 import { refreshThread } from "./email-delta-sync.js";
 import { getUserPermissionOnConnection, permissionAtLeast } from "./inbox-permissions.js";
 import { getValidAccessTokenForConnection } from "./microsoft-auth.js";
+import { attachFileToDraft } from "./attachments-graph.js";
 
 /**
  * Reply via Microsoft Graph and capture the canonical Graph message id so
@@ -141,6 +143,124 @@ export async function sendTicketReply({ ticketId, body, userId }) {
 
   // 6) Fire-and-forget thread refresh so the just-sent message + any
   //    out-of-band replies appear quickly in the UI.
+  const conversationId = ticket.thread_id || null;
+  if (conversationId) {
+    refreshThread(connection, conversationId).catch((err) =>
+      console.error("[email-send] post-send refresh failed", err.message || err)
+    );
+  }
+
+  return { ok: true, responseId, graphId, sentAt };
+}
+
+/**
+ * Same as sendTicketReply, but also attaches files to the draft message
+ * before /send. Each `attachments` entry is { absolutePath, filename,
+ * contentType, size }. Files exceeding the inline cap (3 MB each) throw
+ * `code: "ATTACHMENT_TOO_LARGE_FOR_INLINE"`; the route layer surfaces a
+ * 400 with the file name. Total cap (25 MB) is enforced by the caller.
+ */
+export async function sendTicketReplyWithAttachments({ ticketId, body, userId, attachments }) {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT * FROM tickets WHERE id = $1`, [ticketId]);
+  if (!rows.length) throw new Error("Ticket not found.");
+  const ticket = rows[0];
+  if (!ticket.external_id) throw new Error("Ticket has no Graph message id.");
+
+  const connId = await resolveConnectionIdForTicket(ticket);
+  const perm = await getUserPermissionOnConnection(pool, userId, connId);
+  if (!permissionAtLeast(perm, "reply")) {
+    const e = new Error("You have read-only access to this mailbox.");
+    e.code = "FORBIDDEN";
+    throw e;
+  }
+
+  const { accessToken, connection } = await getValidAccessTokenForConnection(connId);
+  const base = basePathForConnection(connection);
+  const mid = encodeURIComponent(ticket.external_id);
+
+  const insert = await pool.query(
+    `INSERT INTO ticket_responses (ticket_id, response_type, body, sent_via, responded_by, send_status)
+     VALUES ($1, 'reply', $2, 'graph', $3, 'pending')
+     RETURNING id`,
+    [ticketId, body, userId]
+  );
+  const responseId = insert.rows[0].id;
+
+  let graphId = null;
+  let sentAt = null;
+  try {
+    const draft = await graphPost(`${base}/messages/${mid}/createReply`, accessToken, {});
+    graphId = draft?.id;
+    if (!graphId) throw new Error("Graph did not return a draft message id.");
+
+    if (body && body.trim()) {
+      await graphPatch(`${base}/messages/${encodeURIComponent(graphId)}`, accessToken, {
+        body: { contentType: isHtml(body) ? "html" : "text", content: body },
+      });
+    }
+
+    // Attach files to the draft, one POST per file.
+    for (const f of attachments || []) {
+      const buffer = await fs.readFile(f.absolutePath);
+      await attachFileToDraft({
+        connection,
+        accessToken,
+        draftMessageId: graphId,
+        filename: f.filename,
+        contentType: f.contentType,
+        buffer,
+      });
+    }
+
+    await graphPost(`${base}/messages/${encodeURIComponent(graphId)}/send`, accessToken, undefined);
+
+    sentAt = new Date();
+    try {
+      const sent = await graphGet(
+        `${base}/messages/${encodeURIComponent(graphId)}?$select=sentDateTime`,
+        accessToken
+      );
+      if (sent?.sentDateTime) sentAt = new Date(sent.sentDateTime);
+    } catch {
+      /* non-fatal */
+    }
+  } catch (e) {
+    const msg = e.message || String(e);
+    await pool.query(
+      `UPDATE ticket_responses
+         SET send_status = 'failed', send_error = $2, sent_at = NOW()
+       WHERE id = $1`,
+      [responseId, msg]
+    );
+    if (e.code === "ATTACHMENT_TOO_LARGE_FOR_INLINE" || e.code === "FORBIDDEN") throw e;
+    const wrapped = new Error(msg);
+    wrapped.code = "SEND_FAILED";
+    wrapped.responseId = responseId;
+    throw wrapped;
+  }
+
+  await pool.query(
+    `UPDATE ticket_responses
+       SET graph_id = $2, send_status = 'sent', sent_at = $3, send_error = NULL
+     WHERE id = $1`,
+    [responseId, graphId, sentAt]
+  );
+
+  await pool.query(
+    `UPDATE tickets
+       SET first_response_at = COALESCE(first_response_at, NOW()),
+           updated_at = NOW(),
+           status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+     WHERE id = $1`,
+    [ticketId]
+  );
+
+  await pool.query(
+    `UPDATE ticket_ai_drafts SET used_at = NOW() WHERE ticket_id = $1 AND used_at IS NULL`,
+    [ticketId]
+  );
+
   const conversationId = ticket.thread_id || null;
   if (conversationId) {
     refreshThread(connection, conversationId).catch((err) =>

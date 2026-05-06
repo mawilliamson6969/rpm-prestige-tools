@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import styles from "../../app/(protected)/inbox/inbox.module.css";
 import { sanitizeEmailHtml } from "../../lib/sanitizeEmailHtml";
 import type { ThreadRow } from "../../hooks/inbox/types";
@@ -207,15 +208,126 @@ export default function ComposePane({
         ) : null}
 
         {compose.expanded ? (
-          <button
-            type="button"
-            className={styles.sendBtn}
-            disabled={compose.sending || !compose.body.trim()}
-            onClick={onSend}
-          >
-            {compose.mode === "reply" ? "Send reply" : "Add note"}
-          </button>
+          <ComposeFooter compose={compose} canReply={canReply} onSend={onSend} />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const FILE_CHIP: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.4rem",
+  border: "1px solid #cfd4dc",
+  borderRadius: 999,
+  padding: "0.2rem 0.55rem",
+  background: "#f9fafc",
+  fontSize: "0.78rem",
+  color: "#1b2856",
+  marginRight: "0.35rem",
+  marginTop: "0.3rem",
+};
+
+function ComposeFooter({
+  compose,
+  canReply,
+  onSend,
+}: {
+  compose: Props["compose"];
+  canReply: boolean;
+  onSend: Props["onSend"];
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const allowAttachments = compose.mode === "reply" && canReply;
+  const hasFiles = compose.attachments.length > 0;
+  const sendDisabled = compose.sending || (!compose.body.trim() && !hasFiles);
+  return (
+    <div style={{ marginTop: "0.5rem" }}>
+      {hasFiles ? (
+        <div style={{ display: "flex", flexWrap: "wrap", marginBottom: "0.35rem" }}>
+          {compose.attachments.map((f, idx) => (
+            <span key={`${f.name}-${idx}`} style={FILE_CHIP} title={`${f.name} · ${formatBytes(f.size)}`}>
+              <span aria-hidden>📎</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
+                {f.name}
+              </span>
+              <span style={{ color: "#6a737b" }}>{formatBytes(f.size)}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => compose.removeAttachment(idx)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#6a737b",
+                  fontSize: "0.95rem",
+                  lineHeight: 1,
+                  padding: 0,
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {compose.attachmentsError ? (
+        <div style={{ color: "#b32317", fontSize: "0.78rem", marginBottom: "0.35rem" }}>
+          {compose.attachmentsError}
+        </div>
+      ) : null}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        {allowAttachments ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) compose.addAttachments(e.target.files);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach files"
+              aria-label="Attach files"
+              style={{
+                background: "transparent",
+                border: "1px solid #cfd4dc",
+                borderRadius: 6,
+                padding: "0.35rem 0.6rem",
+                cursor: "pointer",
+                fontSize: "0.95rem",
+              }}
+            >
+              📎
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className={styles.sendBtn}
+          disabled={sendDisabled}
+          onClick={onSend}
+          style={{ marginLeft: "auto" }}
+        >
+          {compose.mode === "reply"
+            ? hasFiles
+              ? `Send reply (${compose.attachments.length})`
+              : "Send reply"
+            : "Add note"}
+        </button>
       </div>
     </div>
   );

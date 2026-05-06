@@ -31,6 +31,10 @@ export type UseComposeOptions = {
   readOnly: boolean;
 };
 
+/** 25 MB total cap, mirroring backend MAX_TOTAL_BYTES. */
+export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
+export const MAX_ATTACHMENT_INLINE_BYTES = 3 * 1024 * 1024;
+
 export type UseCompose = {
   body: string;
   setBody: (s: string) => void;
@@ -44,6 +48,14 @@ export type UseCompose = {
   signaturesError: string | null;
   selectedSigId: SignatureSelection;
   setSelectedSigId: (id: SignatureSelection) => void;
+
+  /** Files staged on the reply. Empty array means JSON send path. */
+  attachments: File[];
+  /** Pre-flight error (e.g. exceeded total cap or per-file inline cap). */
+  attachmentsError: string | null;
+  addAttachments: (files: FileList | File[]) => void;
+  removeAttachment: (idx: number) => void;
+  clearAttachments: () => void;
 
   sending: boolean;
   send: () => Promise<ApiResult<void>>;
@@ -66,6 +78,47 @@ export default function useCompose({
   const [signaturesLoading, setSignaturesLoading] = useState(true);
   const [signaturesError, setSignaturesError] = useState<string | null>(null);
   const [selectedSigId, setSelectedSigId] = useState<SignatureSelection>(null);
+
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
+
+  const validateAttachments = useCallback((files: File[]): string | null => {
+    let total = 0;
+    for (const f of files) {
+      if (f.size > MAX_ATTACHMENT_INLINE_BYTES) {
+        return `${f.name} is ${(f.size / 1024 / 1024).toFixed(1)} MB. Per-file cap is ${MAX_ATTACHMENT_INLINE_BYTES / 1024 / 1024} MB until upload-session protocol is wired.`;
+      }
+      total += f.size;
+    }
+    if (total > MAX_ATTACHMENTS_BYTES) {
+      return `Total attachment size ${(total / 1024 / 1024).toFixed(1)} MB exceeds the ${MAX_ATTACHMENTS_BYTES / 1024 / 1024} MB cap.`;
+    }
+    return null;
+  }, []);
+
+  const addAttachments = useCallback(
+    (files: FileList | File[]) => {
+      setAttachmentsError(null);
+      setAttachments((prev) => {
+        const next = [...prev, ...Array.from(files)];
+        const err = validateAttachments(next);
+        if (err) {
+          setAttachmentsError(err);
+          return prev;
+        }
+        return next;
+      });
+    },
+    [validateAttachments]
+  );
+  const removeAttachment = useCallback((idx: number) => {
+    setAttachmentsError(null);
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+  const clearAttachments = useCallback(() => {
+    setAttachments([]);
+    setAttachmentsError(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,12 +150,16 @@ export default function useCompose({
   const reset = useCallback(() => {
     setBody("");
     setExpanded(false);
+    setAttachments([]);
+    setAttachmentsError(null);
   }, []);
 
   // Reset transient compose state when the active ticket changes.
   useEffect(() => {
     setBody("");
     setExpanded(false);
+    setAttachments([]);
+    setAttachmentsError(null);
   }, [threadId]);
 
   // Pick a default signature whenever the active ticket or the loaded signature list changes.
@@ -131,10 +188,20 @@ export default function useCompose({
 
   const send = useCallback(async (): Promise<ApiResult<void>> => {
     const trimmed = body.trim();
-    if (!trimmed) return { ok: false, error: "Message is empty." };
+    const hasFiles = attachments.length > 0;
+    if (!trimmed && !(mode === "reply" && hasFiles)) {
+      return { ok: false, error: "Message is empty." };
+    }
     if (mode === "reply" && !threadId) return { ok: false, error: "No thread selected." };
     if (mode === "note" && seedTicketId == null) {
       return { ok: false, error: "No message to attach a note to." };
+    }
+    if (mode === "note" && hasFiles) {
+      return { ok: false, error: "Notes don't support attachments — switch to Reply." };
+    }
+    if (hasFiles) {
+      const err = validateAttachments(attachments);
+      if (err) return { ok: false, error: err };
     }
     setSending(true);
     try {
@@ -144,32 +211,60 @@ export default function useCompose({
         const raw = row?.signatureHtml?.trim();
         replySigHtml = raw ? raw : null;
       }
-      const url =
-        mode === "reply"
-          ? apiUrl(`/inbox/threads/${encodeURIComponent(threadId as string)}/messages`)
-          : apiUrl(`/inbox/tickets/${seedTicketId}/note`);
-      const payload =
-        mode === "reply"
-          ? { body: buildReplyEmailHtml(body, replySigHtml) }
-          : { body: trimmed };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+
+      let res: Response;
+      if (mode === "reply" && hasFiles) {
+        const fd = new FormData();
+        fd.set("body", buildReplyEmailHtml(body, replySigHtml));
+        for (const f of attachments) fd.append("attachments", f, f.name);
+        res = await fetch(
+          apiUrl(`/inbox/threads/${encodeURIComponent(threadId as string)}/messages-with-attachments`),
+          {
+            method: "POST",
+            headers: { ...authHeaders() }, // don't set Content-Type — let the browser set the boundary
+            body: fd,
+          }
+        );
+      } else {
+        const url =
+          mode === "reply"
+            ? apiUrl(`/inbox/threads/${encodeURIComponent(threadId as string)}/messages`)
+            : apiUrl(`/inbox/tickets/${seedTicketId}/note`);
+        const payload =
+          mode === "reply"
+            ? { body: buildReplyEmailHtml(body, replySigHtml) }
+            : { body: trimmed };
+        res = await fetch(url, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         return { ok: false, error: parseApiError(j, res.status) };
       }
       setBody("");
       setExpanded(false);
+      setAttachments([]);
+      setAttachmentsError(null);
       return { ok: true, data: undefined };
     } catch (e) {
       return { ok: false, error: networkErrorMessage(e) };
     } finally {
       setSending(false);
     }
-  }, [authHeaders, body, mode, selectedSigId, signatures, threadId, seedTicketId]);
+  }, [
+    authHeaders,
+    body,
+    mode,
+    selectedSigId,
+    signatures,
+    threadId,
+    seedTicketId,
+    attachments,
+    validateAttachments,
+  ]);
 
   return {
     body,
@@ -183,6 +278,11 @@ export default function useCompose({
     signaturesError,
     selectedSigId,
     setSelectedSigId,
+    attachments,
+    attachmentsError,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
     sending,
     send,
     reset,
