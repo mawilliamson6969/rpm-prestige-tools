@@ -24,6 +24,7 @@ import {
   ensureDocumentsSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
+import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
@@ -297,6 +298,67 @@ import {
   postInboxAutomationRevert,
   postInboxAutomationRule,
 } from "./routes/inboxAutomations.js";
+import {
+  requireAgentHubAccess,
+} from "./lib/agentHub/permissions.js";
+import {
+  createAgentHubBrokerage,
+  deleteAgentHubBrokerage,
+  getAgentHubBrokerage,
+  listAgentHubBrokerages,
+  updateAgentHubBrokerage,
+} from "./routes/agentHubBrokerages.js";
+import {
+  createAgentHubAgent,
+  deleteAgentHubAgent,
+  getAgentHubAgent,
+  listAgentHubAgents,
+  mergeAgentHubAgents,
+  updateAgentHubAgent,
+} from "./routes/agentHubAgents.js";
+import {
+  getAgentHubPersonalDetails,
+  upsertAgentHubPersonalDetails,
+} from "./routes/agentHubPersonalDetails.js";
+import {
+  createAgentHubActivity,
+  deleteAgentHubActivity,
+  downloadAgentHubAttachment,
+  listAgentHubActivities,
+  updateAgentHubActivity,
+  uploadActivityAttachmentMiddleware,
+} from "./routes/agentHubActivities.js";
+import {
+  addAgentHubTag,
+  deleteGlobalTag,
+  listGlobalTags,
+  removeAgentHubTag,
+  renameGlobalTag,
+} from "./routes/agentHubTags.js";
+import {
+  createAgentHubRelationship,
+  deleteAgentHubRelationship,
+  listAgentHubRelationships,
+} from "./routes/agentHubRelationships.js";
+import { searchAgentHub } from "./routes/agentHubSearch.js";
+import {
+  getAgentHubDashboard,
+  getAgentHubNeedsAttention,
+  getAgentHubRecentActivity,
+  getAgentHubUpcomingTouchpoints,
+} from "./routes/agentHubDashboard.js";
+import {
+  bulkChangeTier,
+  bulkMarkDnc,
+  bulkTagAgents,
+  exportAgentsCsv,
+} from "./routes/agentHubBulk.js";
+import {
+  getMyHubPermissions,
+  listAgentHubPermissions,
+  revokeAgentHubAccess,
+  upsertAgentHubPermissions,
+} from "./routes/agentHubPermissions.js";
 import {
   deleteVideoById,
   deleteVideoFolder,
@@ -985,6 +1047,111 @@ app.get("/inbox/automation-accuracy", requireAuth, getInboxAutomationAccuracy);
 app.post("/inbox/automation-log/:id/feedback", requireAuth, postInboxAutomationFeedback);
 app.post("/inbox/automation-log/:id/execute", requireAuth, postInboxAutomationExecute);
 app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, postInboxAutomationRevert);
+
+/* ============================================================
+ * Agent Hub (Phase 1): real estate referral CRM.
+ * All routes require requireAuth + requireAgentHubAccess.
+ * Per-route permission flags enforced inside handlers via assertPermission().
+ * ============================================================ */
+
+// "me" — used by frontend to know what to show. Must be reachable by anyone
+// with global auth so the UI can render a "no access" state.
+app.get("/agent-hub/permissions/me", requireAuth, async (req, res, next) => {
+  try {
+    // Run requireAgentHubAccess in a soft mode: don't 403 if no row, just
+    // pass null perms through.
+    const { getPool } = await import("./lib/db.js");
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT * FROM agent_hub_user_permissions WHERE user_id = $1`,
+      [req.user.id]
+    );
+    if (rows.length) {
+      req.agentHubPerms = rows[0];
+    } else if (req.user.role === "owner" || req.user.role === "admin") {
+      req.agentHubPerms = {
+        user_id: req.user.id,
+        role: "owner",
+        can_view_personal_details: true,
+        can_change_tier: true,
+        can_mark_dnc: true,
+        can_export: true,
+        can_merge: true,
+        synthetic: true,
+      };
+    } else {
+      req.agentHubPerms = null;
+    }
+    next();
+  } catch (e) {
+    console.error("[agent-hub] perms/me", e);
+    res.status(500).json({ error: "Could not load permissions." });
+  }
+}, getMyHubPermissions);
+
+// Brokerages
+app.get("/agent-hub/brokerages", requireAuth, requireAgentHubAccess, listAgentHubBrokerages);
+app.get("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, getAgentHubBrokerage);
+app.post("/agent-hub/brokerages", requireAuth, requireAgentHubAccess, createAgentHubBrokerage);
+app.patch("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, updateAgentHubBrokerage);
+app.delete("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, deleteAgentHubBrokerage);
+
+// Agents
+app.get("/agent-hub/agents", requireAuth, requireAgentHubAccess, listAgentHubAgents);
+app.get("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, getAgentHubAgent);
+app.post("/agent-hub/agents", requireAuth, requireAgentHubAccess, createAgentHubAgent);
+app.patch("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, updateAgentHubAgent);
+app.delete("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, deleteAgentHubAgent);
+app.post("/agent-hub/agents/:id/merge/:other_id", requireAuth, requireAgentHubAccess, mergeAgentHubAgents);
+
+// Personal details (gated)
+app.get("/agent-hub/agents/:id/personal", requireAuth, requireAgentHubAccess, getAgentHubPersonalDetails);
+app.put("/agent-hub/agents/:id/personal", requireAuth, requireAgentHubAccess, upsertAgentHubPersonalDetails);
+
+// Activities
+app.get("/agent-hub/agents/:id/activities", requireAuth, requireAgentHubAccess, listAgentHubActivities);
+app.post(
+  "/agent-hub/agents/:id/activities",
+  requireAuth,
+  requireAgentHubAccess,
+  uploadActivityAttachmentMiddleware,
+  createAgentHubActivity
+);
+app.patch("/agent-hub/activities/:id", requireAuth, requireAgentHubAccess, updateAgentHubActivity);
+app.delete("/agent-hub/activities/:id", requireAuth, requireAgentHubAccess, deleteAgentHubActivity);
+app.get("/agent-hub/attachments/:id/download", requireAuth, requireAgentHubAccess, downloadAgentHubAttachment);
+
+// Tags
+app.get("/agent-hub/tags", requireAuth, requireAgentHubAccess, listGlobalTags);
+app.post("/agent-hub/agents/:id/tags", requireAuth, requireAgentHubAccess, addAgentHubTag);
+app.delete("/agent-hub/agents/:id/tags/:tag", requireAuth, requireAgentHubAccess, removeAgentHubTag);
+app.post("/agent-hub/tags/rename", requireAuth, requireAgentHubAccess, renameGlobalTag);
+app.delete("/agent-hub/tags/:tag", requireAuth, requireAgentHubAccess, deleteGlobalTag);
+
+// Relationships
+app.get("/agent-hub/agents/:id/relationships", requireAuth, requireAgentHubAccess, listAgentHubRelationships);
+app.post("/agent-hub/agents/:id/relationships", requireAuth, requireAgentHubAccess, createAgentHubRelationship);
+app.delete("/agent-hub/relationships/:id", requireAuth, requireAgentHubAccess, deleteAgentHubRelationship);
+
+// Search
+app.get("/agent-hub/search", requireAuth, requireAgentHubAccess, searchAgentHub);
+
+// Dashboard
+app.get("/agent-hub/dashboard", requireAuth, requireAgentHubAccess, getAgentHubDashboard);
+app.get("/agent-hub/dashboard/recent-activity", requireAuth, requireAgentHubAccess, getAgentHubRecentActivity);
+app.get("/agent-hub/dashboard/upcoming-touchpoints", requireAuth, requireAgentHubAccess, getAgentHubUpcomingTouchpoints);
+app.get("/agent-hub/dashboard/needs-attention", requireAuth, requireAgentHubAccess, getAgentHubNeedsAttention);
+
+// Bulk + export
+app.post("/agent-hub/agents/bulk-tag", requireAuth, requireAgentHubAccess, bulkTagAgents);
+app.post("/agent-hub/agents/bulk-tier", requireAuth, requireAgentHubAccess, bulkChangeTier);
+app.post("/agent-hub/agents/bulk-dnc", requireAuth, requireAgentHubAccess, bulkMarkDnc);
+app.get("/agent-hub/agents/export.csv", requireAuth, requireAgentHubAccess, exportAgentsCsv);
+
+// Permission settings
+app.get("/agent-hub/permissions", requireAuth, requireAgentHubAccess, listAgentHubPermissions);
+app.put("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, upsertAgentHubPermissions);
+app.delete("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, revokeAgentHubAccess);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
@@ -1668,6 +1835,8 @@ async function start() {
       console.log("Database schema OK (documents).");
       await ensureMailersSchema();
       console.log("Database schema OK (mailers + mailer_events).");
+      await ensureAgentHubSchema();
+      console.log("Database schema OK (agent_hub_*).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
