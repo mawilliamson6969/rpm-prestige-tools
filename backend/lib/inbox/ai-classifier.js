@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../db.js";
+import { runAutomationsForThread } from "./automation-engine.js";
 
 const MODEL = "claude-sonnet-4-20250514";
 
@@ -110,7 +111,8 @@ Classify this email and return ONLY valid JSON:
   "tenantSearch": (a tenant name to search for, or null),
   "ownerSearch": (an owner name to search for, or null),
   "summary": (one sentence summary of what this email is about),
-  "isActionable": (true if this requires a response or action, false for newsletters/receipts/notifications)
+  "isActionable": (true if this requires a response or action, false for newsletters/receipts/notifications),
+  "confidence": (0.00 to 1.00, your confidence in the category + assignee classification — used by the rules engine to decide whether to auto-act)
 }`;
 
   const anthropic = new Anthropic({ apiKey: key });
@@ -125,11 +127,25 @@ Classify this email and return ONLY valid JSON:
     return;
   }
 
+  // Confidence is optional from the model; clamp to [0, 1] when present.
+  const aiConfidence =
+    typeof data.confidence === "number" && Number.isFinite(data.confidence)
+      ? Math.max(0, Math.min(1, data.confidence))
+      : null;
+
   if (data.priority < 10) {
     await pool.query(
-      `UPDATE tickets SET priority = $1, category = COALESCE($2, 'other'), ai_summary = $3, updated_at = NOW() WHERE id = $4`,
-      [Math.max(0, Math.min(100, data.priority)), data.category || "other", data.summary || null, ticketId]
+      `UPDATE tickets SET priority = $1, category = COALESCE($2, 'other'),
+        ai_summary = $3, ai_confidence = $4, updated_at = NOW() WHERE id = $5`,
+      [
+        Math.max(0, Math.min(100, data.priority)),
+        data.category || "other",
+        data.summary || null,
+        aiConfidence,
+        ticketId,
+      ]
     );
+    void fireAutomationsForTicket(pool, ticketId);
     return;
   }
 
@@ -146,16 +162,18 @@ Classify this email and return ONLY valid JSON:
       priority = $1,
       category = $2,
       ai_summary = $3,
-      assigned_to = COALESCE($4, assigned_to),
-      linked_property_name = COALESCE($5, linked_property_name),
-      linked_tenant_name = COALESCE($6, linked_tenant_name),
-      linked_owner_name = COALESCE($7, linked_owner_name),
+      ai_confidence = $4,
+      assigned_to = COALESCE($5, assigned_to),
+      linked_property_name = COALESCE($6, linked_property_name),
+      linked_tenant_name = COALESCE($7, linked_tenant_name),
+      linked_owner_name = COALESCE($8, linked_owner_name),
       updated_at = NOW()
-     WHERE id = $8`,
+     WHERE id = $9`,
     [
       Math.max(0, Math.min(100, Math.round(data.priority))),
       String(data.category || "other").slice(0, 50),
       data.summary || null,
+      aiConfidence,
       assigneeId,
       propName,
       tenName,
@@ -163,4 +181,28 @@ Classify this email and return ONLY valid JSON:
       ticketId,
     ]
   );
+
+  void fireAutomationsForTicket(pool, ticketId);
+}
+
+/** Fire automations for a freshly-classified ticket. We trigger
+ *  `new_thread` only on the seed message of each thread; later messages
+ *  on the same conversation skip (the engine's idempotency would also
+ *  short-circuit this, but skipping the call avoids an extra round trip). */
+async function fireAutomationsForTicket(pool, ticketId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT thread_id,
+              (SELECT COUNT(*)::int FROM tickets t2
+                WHERE t2.thread_id = t.thread_id AND t2.deleted_at IS NULL) AS msg_count
+         FROM tickets t WHERE id = $1`,
+      [ticketId]
+    );
+    const row = rows[0];
+    if (!row?.thread_id) return;
+    const trigger = row.msg_count <= 1 ? "new_thread" : "classification_changed";
+    await runAutomationsForThread(row.thread_id, trigger);
+  } catch (e) {
+    console.error("[automation] fire failed", ticketId, e.message || e);
+  }
 }

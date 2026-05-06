@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SignatureManager from "../../../../components/signature/SignatureManager";
+import AutomationsPanel from "../../../../components/inbox/AutomationsPanel";
 import SlaPoliciesPanel from "../../../../components/inbox/SlaPoliciesPanel";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
@@ -472,6 +473,8 @@ export default function InboxSettingsClient() {
         </section>
 
         <SlaPoliciesPanel />
+
+        <AutomationsPanel />
 
         <SignatureManager authHeaders={authHeaders} variant="inbox" />
       </div>
