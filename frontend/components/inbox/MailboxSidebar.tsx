@@ -28,6 +28,8 @@ type Props = {
   onItemClick?: () => void;
   /** Mobile-only menu button at the top of the sidebar. */
   onToggleMenu?: () => void;
+  /** Phase 2 Saved Views section, rendered above the mailbox/preset list. */
+  viewsSlot?: React.ReactNode;
 };
 
 export default function MailboxSidebar({
@@ -42,6 +44,7 @@ export default function MailboxSidebar({
   setTeamUserId,
   onItemClick,
   onToggleMenu,
+  viewsSlot,
 }: Props) {
   const { stats: s } = stats;
   const allActiveHighlight =
@@ -62,6 +65,13 @@ export default function MailboxSidebar({
           ☰ Menu
         </button>
       </div>
+
+      {viewsSlot ? (
+        <>
+          {viewsSlot}
+          <div className={styles.divider} />
+        </>
+      ) : null}
 
       <div className={styles.mailboxSectionLabel}>Mailboxes</div>
       <button

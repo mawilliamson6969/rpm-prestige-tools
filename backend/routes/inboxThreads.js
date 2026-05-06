@@ -30,7 +30,7 @@ END`;
 
 /** Translate the existing list-bucket vocabulary into thread filters so the
  *  frontend's existing `useThreadList` query shape works unchanged. */
-function buildThreadWhere(req, allowedConnectionIds) {
+export function buildThreadWhere(req, allowedConnectionIds) {
   const params = [];
   let n = 1;
   const parts = ["1=1"];
@@ -81,6 +81,15 @@ function buildThreadWhere(req, allowedConnectionIds) {
   if (req.query.priority && VALID_PRIORITIES.has(String(req.query.priority))) {
     parts.push(`th.priority = $${n++}`);
     params.push(String(req.query.priority));
+  }
+  if (Array.isArray(req.query.priority_in) && req.query.priority_in.length) {
+    const list = req.query.priority_in
+      .map((p) => String(p))
+      .filter((p) => VALID_PRIORITIES.has(p));
+    if (list.length) {
+      parts.push(`th.priority = ANY($${n++}::text[])`);
+      params.push(list);
+    }
   }
   if (req.query.sla_breached === "true") {
     parts.push(`th.sla_due_at IS NOT NULL AND th.sla_due_at < NOW() AND th.sla_paused = FALSE`);
