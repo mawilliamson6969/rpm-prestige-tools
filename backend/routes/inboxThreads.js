@@ -10,6 +10,7 @@ import { getPool } from "../lib/db.js";
 import { sendTicketReply } from "../lib/inbox/email-send.js";
 import { refreshThread as graphRefreshThread } from "../lib/inbox/email-delta-sync.js";
 import { getValidAccessTokenForConnection } from "../lib/inbox/microsoft-auth.js";
+import { fetchPendingAttachmentsForThread } from "../lib/inbox/attachments-graph.js";
 import {
   getAllowedConnectionIds,
   getUserPermissionOnConnection,
@@ -282,6 +283,39 @@ export async function getInboxThread(req, res) {
       [threadId]
     );
 
+    const { rows: attachmentRows } = await pool.query(
+      `SELECT id, message_id, filename, content_type, size_bytes,
+              storage_path, direction, fetched_at, created_at
+         FROM attachments
+        WHERE thread_id = $1 AND is_inline = FALSE
+        ORDER BY id ASC`,
+      [threadId]
+    );
+    const attachmentsByMessage = new Map();
+    for (const a of attachmentRows) {
+      if (!attachmentsByMessage.has(a.message_id)) attachmentsByMessage.set(a.message_id, []);
+      attachmentsByMessage.get(a.message_id).push({
+        id: a.id,
+        filename: a.filename,
+        content_type: a.content_type,
+        size_bytes: a.size_bytes != null ? Number(a.size_bytes) : null,
+        direction: a.direction,
+        fetched: !!a.storage_path,
+        created_at: a.created_at,
+      });
+    }
+    const messagesWithAttachments = messages.map((m) => ({
+      ...m,
+      attachments: attachmentsByMessage.get(m.id) ?? [],
+    }));
+
+    // Fire-and-forget lazy fetch for any attachments we don't have bytes
+    // for yet. The first detail load won't show them, but a refetch a few
+    // seconds later will.
+    fetchPendingAttachmentsForThread(threadId).catch((e) =>
+      console.error("[inbox] lazy attachment fetch failed", threadId, e.message || e)
+    );
+
     const { rows: responses } = await pool.query(
       `SELECT tr.id, tr.response_type, tr.body, tr.body_html, tr.sent_via, tr.created_at,
               tr.graph_id, tr.send_status, tr.send_error, tr.sent_at,
@@ -318,7 +352,13 @@ export async function getInboxThread(req, res) {
       ? messages.filter((m) => m.direction !== "outbound").slice(-1)[0]?.id ?? messages[0].id
       : null;
 
-    res.json({ thread, messages, responses, ai_draft: aiDraft, seed_ticket_id: seedTicketId });
+    res.json({
+      thread,
+      messages: messagesWithAttachments,
+      responses,
+      ai_draft: aiDraft,
+      seed_ticket_id: seedTicketId,
+    });
   } catch (e) {
     console.error("[inbox] thread detail", e);
     res.status(500).json({ error: "Could not load thread." });

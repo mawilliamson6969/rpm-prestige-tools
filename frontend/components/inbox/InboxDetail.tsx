@@ -7,6 +7,7 @@ import type { UseThreadDetail } from "../../hooks/inbox/useThreadDetail";
 import type { UseTeamUsers } from "../../hooks/inbox/useTeamUsers";
 import type { SlaView } from "../../hooks/inbox/useSLA";
 import { CATEGORY_OPTIONS } from "./inboxConstants";
+import AttachmentChip from "./AttachmentChip";
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "open", label: "Open" },
@@ -76,6 +77,13 @@ function MessageBlock({ msg }: { msg: ThreadMessage }) {
           __html: sanitizeEmailHtml(msg.body_html || "<p>(No body)</p>"),
         }}
       />
+      {msg.attachments && msg.attachments.length > 0 ? (
+        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap" }}>
+          {msg.attachments.map((a) => (
+            <AttachmentChip key={a.id} att={a} />
+          ))}
+        </div>
+      ) : null}
     </article>
   );
 }
