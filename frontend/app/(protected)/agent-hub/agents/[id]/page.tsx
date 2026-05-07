@@ -10,16 +10,23 @@ import {
   ACTIVITY_TYPE_LABELS,
   formatMoney,
   formatPct,
+  FLAG_ICONS,
+  FLAG_LABELS,
   relativeTime,
+  scoreColor,
+  SEVERITY_META,
   STAGE_LABELS,
   STAGE_META,
+  TIER_META,
   type Activity,
   type ActivityType,
   type Agent,
   type Direction,
+  type EngagementScore,
   type HubPermissions,
   type LifetimeValue,
   type PersonalDetails,
+  type PredictiveFlag,
   type Referral,
   type Relationship,
   type Stage,
@@ -76,6 +83,9 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [ltv, setLtv] = useState<LifetimeValue | null>(null);
   const [refreshingLtv, setRefreshingLtv] = useState(false);
+  const [engagementScore, setEngagementScore] = useState<EngagementScore | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<{ calculation_date: string; score: number }[]>([]);
+  const [activeFlags, setActiveFlags] = useState<PredictiveFlag[]>([]);
 
   useEffect(() => {
     if (!toast) return;
@@ -111,12 +121,12 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 
-  // Phase 2: load this agent's referrals + LTV (always — visible to all hub roles).
+  // Phase 2 + 4: load referrals + LTV + engagement score + flags.
   useEffect(() => {
     if (!token || !id) return;
     (async () => {
       try {
-        const [refs, ltvBody] = await Promise.all([
+        const [refs, ltvBody, score, flags] = await Promise.all([
           agentHubFetch<{ referrals: Referral[] }>(
             `/agent-hub/referrals?agent_id=${id}&per_page=50`,
             { authHeaders: authHeaders() }
@@ -125,11 +135,22 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
             `/agent-hub/agents/${id}/lifetime-value`,
             { authHeaders: authHeaders() }
           ),
+          agentHubFetch<{ score: EngagementScore | null; history: { calculation_date: string; score: number }[] }>(
+            `/agent-hub/intelligence/scores/${id}`,
+            { authHeaders: authHeaders() }
+          ).catch(() => ({ score: null, history: [] })),
+          agentHubFetch<{ flags: PredictiveFlag[] }>(
+            `/agent-hub/intelligence/flags?agent_id=${id}`,
+            { authHeaders: authHeaders() }
+          ).catch(() => ({ flags: [] })),
         ]);
         setReferrals(refs.referrals);
         setLtv(ltvBody.ltv);
+        setEngagementScore(score.score);
+        setScoreHistory(score.history);
+        setActiveFlags(flags.flags);
       } catch {
-        // Non-fatal — Phase 2 cards are progressive enhancement.
+        // Non-fatal — progressive enhancement.
       }
     })();
   }, [token, id, authHeaders]);
@@ -619,6 +640,101 @@ function DetailInner({ perms }: { perms: HubPermissions }) {
 
         {/* RIGHT */}
         <div className={styles.flexCol}>
+          {/* Phase 4: engagement intelligence */}
+          {engagementScore ? (
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>
+                Engagement Score
+                {engagementScore.tier_recommendation_changed ? (
+                  <span style={{ padding: "0.05rem 0.35rem", borderRadius: 4, background: "#fef3c7", color: "#854d0e", fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase" }}>
+                    Tier rec differs
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <div style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  background: scoreColor(engagementScore.score),
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.4rem",
+                  fontWeight: 700,
+                }}>
+                  {engagementScore.score}
+                </div>
+                <div style={{ flex: 1, fontSize: "0.85rem" }}>
+                  <div>
+                    Recommended tier:{" "}
+                    {engagementScore.tier_recommendation ? (
+                      <strong>{engagementScore.tier_recommendation}</strong>
+                    ) : "—"}
+                  </div>
+                  <div className={styles.muted} style={{ fontSize: "0.75rem" }}>
+                    Calculated {relativeTime(engagementScore.calculated_at)}
+                  </div>
+                </div>
+              </div>
+              {scoreHistory.length > 1 ? (
+                <div style={{ marginTop: "0.6rem" }}>
+                  <svg viewBox="0 0 100 30" style={{ width: "100%", height: 30 }}>
+                    {(() => {
+                      const max = 100;
+                      const points = scoreHistory.map((h, i) => {
+                        const x = (i / Math.max(1, scoreHistory.length - 1)) * 100;
+                        const y = 30 - (h.score / max) * 30;
+                        return `${x},${y}`;
+                      }).join(" ");
+                      return <polyline fill="none" stroke={scoreColor(engagementScore.score)} strokeWidth={1.5} points={points} />;
+                    })()}
+                  </svg>
+                  <div className={styles.muted} style={{ fontSize: "0.7rem", textAlign: "center" }}>
+                    {scoreHistory.length}-day trend
+                  </div>
+                </div>
+              ) : null}
+              <details style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                <summary style={{ cursor: "pointer", color: "#1b2856" }}>Why this score?</summary>
+                <ul style={{ paddingLeft: "1.2rem", marginTop: "0.3rem", fontSize: "0.78rem" }}>
+                  {engagementScore.explanation.map((line, i) => <li key={i}>{line}</li>)}
+                </ul>
+                <div className={styles.muted} style={{ fontSize: "0.72rem", marginTop: "0.3rem" }}>
+                  Recency {engagementScore.components.recency}/25 ·
+                  Frequency {engagementScore.components.frequency}/20 ·
+                  Two-way {engagementScore.components.two_way}/15 ·
+                  Referrals {engagementScore.components.referrals}/25 ·
+                  Financial {engagementScore.components.financials}/15
+                </div>
+              </details>
+            </div>
+          ) : null}
+
+          {activeFlags.length > 0 ? (
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>Active Flags</div>
+              {activeFlags.map((f) => {
+                const sev = SEVERITY_META[f.severity];
+                return (
+                  <div key={f.id} style={{ padding: "0.4rem 0", borderBottom: "1px solid #f3f4f6", fontSize: "0.85rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <span>{FLAG_ICONS[f.flag_type]}</span>
+                      <strong>{FLAG_LABELS[f.flag_type]}</strong>
+                      <span style={{ marginLeft: "auto", padding: "0.05rem 0.35rem", borderRadius: 4, background: sev.bg, color: sev.fg, fontSize: "0.65rem", fontWeight: 600 }}>
+                        {sev.label}
+                      </span>
+                    </div>
+                    <div className={styles.muted} style={{ fontSize: "0.78rem", marginTop: "0.2rem" }}>
+                      {f.reasoning}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
           <div className={styles.card}>
             <div className={styles.cardTitle}>
               Active Pipeline
