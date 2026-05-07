@@ -30,12 +30,19 @@ import {
   refreshAgentLifetimeValue,
 } from "./lib/agentHubPhase2Schema.js";
 import { ensureAgentHubPhase3Schema } from "./lib/agentHubPhase3Schema.js";
+import { ensureAgentHubPhase4Schema } from "./lib/agentHubPhase4Schema.js";
 import {
   evaluateTriggers as agentHubEvaluateTriggers,
   executeActions as agentHubExecuteActions,
   reapApprovalWindow as agentHubReapApprovalWindow,
   detectReplies as agentHubDetectReplies,
 } from "./lib/agentHub/engine.js";
+import {
+  recomputeAllEngagementScores as agentHubRecomputeScores,
+  refreshAllPredictiveFlags as agentHubRefreshFlags,
+  refreshCohorts as agentHubRefreshCohorts,
+  archiveAndPruneScoreHistory as agentHubArchiveScores,
+} from "./lib/agentHub/intelligence/jobs.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
@@ -487,6 +494,38 @@ import {
   toggleKillSwitch,
   updateConfig as updateAgentHubSystemConfig,
 } from "./routes/agentHubSystemConfig.js";
+import {
+  dismissFlag,
+  getAgentScore,
+  getCalculationLog,
+  getFlag,
+  getFunnel,
+  getHealth,
+  getPredictions,
+  leaderboard as agentHubLeaderboardIntel,
+  listFlags,
+  listScores,
+  recalculateFlags,
+  recalculateScores,
+  trendReferralVelocity,
+  trendScoreDistribution,
+  trendTierMovement,
+} from "./routes/agentHubIntelligence.js";
+import {
+  compareCohorts,
+  createCohort,
+  deleteCohort,
+  getCohort,
+  listCohorts,
+} from "./routes/agentHubCohorts.js";
+import {
+  bulkImportMarket,
+  createMarket,
+  deleteMarket,
+  getLatestForZip,
+  listMarket,
+  updateMarket,
+} from "./routes/agentHubMarket.js";
 import {
   deleteVideoById,
   deleteVideoFolder,
@@ -1419,6 +1458,46 @@ app.get("/agent-hub/system-config", requireAuth, requireAgentHubAccess, getAgent
 app.patch("/agent-hub/system-config", requireAuth, requireAgentHubAccess, updateAgentHubSystemConfig);
 app.post("/agent-hub/system-config/kill-switch", requireAuth, requireAgentHubAccess, toggleKillSwitch);
 app.post("/agent-hub/system-config/complete-launch-checklist", requireAuth, requireAgentHubAccess, completeLaunchChecklist);
+
+/* ============================================================
+ * Agent Hub Phase 4: intelligence layer.
+ * ============================================================ */
+
+// Engagement scores
+app.get("/agent-hub/intelligence/scores", requireAuth, requireAgentHubAccess, listScores);
+app.get("/agent-hub/intelligence/scores/calculation-log", requireAuth, requireAgentHubAccess, getCalculationLog);
+app.get("/agent-hub/intelligence/scores/:agent_id", requireAuth, requireAgentHubAccess, getAgentScore);
+app.post("/agent-hub/intelligence/scores/recalculate", requireAuth, requireAgentHubAccess, recalculateScores);
+
+// Predictive flags
+app.get("/agent-hub/intelligence/flags", requireAuth, requireAgentHubAccess, listFlags);
+app.get("/agent-hub/intelligence/flags/:id", requireAuth, requireAgentHubAccess, getFlag);
+app.post("/agent-hub/intelligence/flags/:id/dismiss", requireAuth, requireAgentHubAccess, dismissFlag);
+app.post("/agent-hub/intelligence/flags/recalculate", requireAuth, requireAgentHubAccess, recalculateFlags);
+
+// Leaderboard, health, funnel, predictions, trends
+app.get("/agent-hub/intelligence/leaderboard", requireAuth, requireAgentHubAccess, agentHubLeaderboardIntel);
+app.get("/agent-hub/intelligence/health", requireAuth, requireAgentHubAccess, getHealth);
+app.get("/agent-hub/intelligence/funnel", requireAuth, requireAgentHubAccess, getFunnel);
+app.get("/agent-hub/intelligence/predictions", requireAuth, requireAgentHubAccess, getPredictions);
+app.get("/agent-hub/intelligence/trends/score-distribution", requireAuth, requireAgentHubAccess, trendScoreDistribution);
+app.get("/agent-hub/intelligence/trends/tier-movement", requireAuth, requireAgentHubAccess, trendTierMovement);
+app.get("/agent-hub/intelligence/trends/referral-velocity", requireAuth, requireAgentHubAccess, trendReferralVelocity);
+
+// Cohorts
+app.get("/agent-hub/intelligence/cohorts", requireAuth, requireAgentHubAccess, listCohorts);
+app.get("/agent-hub/intelligence/cohorts/compare", requireAuth, requireAgentHubAccess, compareCohorts);
+app.get("/agent-hub/intelligence/cohorts/:id", requireAuth, requireAgentHubAccess, getCohort);
+app.post("/agent-hub/intelligence/cohorts", requireAuth, requireAgentHubAccess, createCohort);
+app.delete("/agent-hub/intelligence/cohorts/:id", requireAuth, requireAgentHubAccess, deleteCohort);
+
+// Market intelligence
+app.get("/agent-hub/intelligence/market", requireAuth, requireAgentHubAccess, listMarket);
+app.get("/agent-hub/intelligence/market/zips/:zip/latest", requireAuth, requireAgentHubAccess, getLatestForZip);
+app.post("/agent-hub/intelligence/market", requireAuth, requireAgentHubAccess, createMarket);
+app.post("/agent-hub/intelligence/market/bulk-import", requireAuth, requireAgentHubAccess, bulkImportMarket);
+app.patch("/agent-hub/intelligence/market/:id", requireAuth, requireAgentHubAccess, updateMarket);
+app.delete("/agent-hub/intelligence/market/:id", requireAuth, requireAgentHubAccess, deleteMarket);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
@@ -2108,6 +2187,8 @@ async function start() {
       console.log("Database schema OK (agent_hub_* phase 2).");
       await ensureAgentHubPhase3Schema();
       console.log("Database schema OK (agent_hub_* phase 3).");
+      await ensureAgentHubPhase4Schema();
+      console.log("Database schema OK (agent_hub_* phase 4).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -2192,6 +2273,39 @@ async function start() {
       );
     });
     console.log("Scheduled Agent Hub reply detector: */15 * * * * (every 15 min).");
+
+    // Phase 4 intelligence layer:
+    //   3:00 AM — engagement scores (full recompute)
+    //   3:30 AM — predictive flags
+    //   4:00 AM — cohort metrics + maintain quarterly cohorts
+    //   5:00 AM — score history archival + log retention
+    cron.schedule("0 3 * * *", () => {
+      agentHubRecomputeScores().catch((e) =>
+        console.error("[agent-hub intel scores]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub engagement scoring: 0 3 * * * (daily at 3 AM).");
+
+    cron.schedule("30 3 * * *", () => {
+      agentHubRefreshFlags().catch((e) =>
+        console.error("[agent-hub intel flags]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub predictive flags: 30 3 * * * (daily at 3:30 AM).");
+
+    cron.schedule("0 4 * * *", () => {
+      agentHubRefreshCohorts().catch((e) =>
+        console.error("[agent-hub intel cohorts]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub cohort refresh: 0 4 * * * (daily at 4 AM).");
+
+    cron.schedule("0 5 * * *", () => {
+      agentHubArchiveScores().catch((e) =>
+        console.error("[agent-hub intel archive]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub score archival: 0 5 * * * (daily at 5 AM).");
 
     cron.schedule("0 * * * *", () => {
       processDelayedAutoCompletes().catch((e) =>

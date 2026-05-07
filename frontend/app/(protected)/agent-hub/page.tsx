@@ -39,6 +39,10 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
   const [pendingPostcards, setPendingPostcards] = useState<Postcard[]>([]);
   const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
   const [repliesPending, setRepliesPending] = useState<number>(0);
+  // Phase 4: intelligence dashboard cards
+  const [actionFlagsCount, setActionFlagsCount] = useState<number>(0);
+  const [tierRecChangedCount, setTierRecChangedCount] = useState<number>(0);
+  const [risingScoreCount, setRisingScoreCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -64,6 +68,17 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
           agentHubFetch<{ config: SystemConfig }>("/agent-hub/system-config", { authHeaders: headers }).catch(() => ({ config: null as SystemConfig | null })),
           agentHubFetch<{ replies: { still_flagged: boolean }[] }>("/agent-hub/replies", { authHeaders: headers }).catch(() => ({ replies: [] })),
         ]);
+        // Phase 4: load intelligence dashboard counts in parallel (non-fatal)
+        const [predictionsBody, scoresBody] = await Promise.all([
+          agentHubFetch<{ predictions: { severity: string }[] }>(
+            "/agent-hub/intelligence/predictions?limit=100",
+            { authHeaders: headers }
+          ).catch(() => ({ predictions: [] })),
+          agentHubFetch<{ scores: { tier_recommendation_changed: boolean; score: number; score_30d_ago: number | null }[]; total: number }>(
+            "/agent-hub/intelligence/scores?per_page=200",
+            { authHeaders: headers }
+          ).catch(() => ({ scores: [], total: 0 })),
+        ]);
         if (cancel) return;
         setSummary(s);
         setRecent(r.activities);
@@ -81,6 +96,9 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
         setPendingPostcards(postcards.postcards);
         setSystemConfig(cfg.config);
         setRepliesPending(replies.replies.filter((r) => r.still_flagged).length);
+        setActionFlagsCount(predictionsBody.predictions.filter((f) => f.severity === "action").length);
+        setTierRecChangedCount(scoresBody.scores.filter((s) => s.tier_recommendation_changed).length);
+        setRisingScoreCount(scoresBody.scores.filter((s) => s.score_30d_ago != null && s.score > s.score_30d_ago).length);
       } catch (e) {
         if (cancel) return;
         setErr(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -123,6 +141,9 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
         <div className={styles.statGrid}>
           <StatCard label="Total Agents" value={summary.total} href="/agent-hub/agents" />
           <StatCard label="Active Pipeline" value={pipeline?.total_in_pipeline ?? 0} href="/agent-hub/pipeline" />
+          <StatCard label="Attention queue" value={actionFlagsCount} href="/agent-hub/insights" highlight={actionFlagsCount > 0} />
+          <StatCard label="Tier recs differ" value={tierRecChangedCount} href="/agent-hub/insights" />
+          <StatCard label="Scores rising" value={risingScoreCount} href="/agent-hub/leaderboard" />
           <StatCard label="Approval Queue" value={approvals.length} href="/agent-hub/approval-queue" highlight={approvals.length > 0} />
           <StatCard label="Replies pending" value={repliesPending} href="/agent-hub/replies" highlight={repliesPending > 0} />
           <StatCard label="Postcards queued" value={pendingPostcards.length} href="/agent-hub/print-queue" />

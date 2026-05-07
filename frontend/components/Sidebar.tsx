@@ -238,6 +238,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     () =>
       [
         { href: "/agent-hub", label: "Dashboard" },
+        { href: "/agent-hub/insights", label: "Insights" },
         { href: "/agent-hub/pipeline", label: "Pipeline" },
         { href: "/agent-hub/approval-queue", label: "Approval Queue" },
         { href: "/agent-hub/agents", label: "Agents" },
@@ -251,6 +252,9 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         { href: "/agent-hub/send-log", label: "Send Log" },
         { href: "/agent-hub/replies", label: "Replies" },
         { href: "/agent-hub/financials", label: "Financials" },
+        { href: "/agent-hub/leaderboard", label: "Leaderboard" },
+        { href: "/agent-hub/cohorts", label: "Cohorts" },
+        { href: "/agent-hub/market", label: "Market Data" },
         { href: "/agent-hub/system-config", label: "System Config" },
         { href: "/agent-hub/search", label: "Search" },
       ] as const,

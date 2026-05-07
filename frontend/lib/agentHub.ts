@@ -605,6 +605,130 @@ export type SystemConfig = {
   updated_at: string;
 };
 
+// ============================================================
+// Phase 4 types
+// ============================================================
+
+export type FlagType =
+  | "likely_referrer"
+  | "dormancy_risk"
+  | "tier_upgrade_candidate"
+  | "tier_downgrade_candidate"
+  | "re_engagement_candidate"
+  | "vip_consideration";
+
+export type FlagSeverity = "info" | "watch" | "action";
+export type FlagConfidence = "low" | "medium" | "high";
+
+export type EngagementScore = {
+  id: number;
+  agent_id: number;
+  agent_name: string | null;
+  agent_tier: Tier | null;
+  calculated_at: string;
+  score: number;
+  tier_recommendation: Tier | null;
+  tier_recommendation_changed: boolean;
+  components: {
+    recency: number;
+    frequency: number;
+    two_way: number;
+    referrals: number;
+    financials: number;
+  };
+  explanation: string[];
+  score_30d_ago?: number | null;
+};
+
+export type PredictiveFlag = {
+  id: number;
+  agent_id: number;
+  agent_name: string | null;
+  agent_tier: Tier | null;
+  agent_photo_url: string | null;
+  flag_type: FlagType;
+  severity: FlagSeverity;
+  confidence: FlagConfidence;
+  reasoning: string;
+  data_points: Record<string, unknown>;
+  first_flagged_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  dismissed_at: string | null;
+  dismissed_reason: string | null;
+  snooze_until: string | null;
+};
+
+export type Cohort = {
+  id: number;
+  name: string;
+  description: string | null;
+  definition: Record<string, unknown>;
+  is_system: boolean;
+  metrics: {
+    total_agents: number;
+    tier_distribution: Record<string, number>;
+    agents_with_referral: number;
+    converted_referrals: number;
+    conversion_rate_pct: number;
+    avg_days_to_first_referral: number | null;
+    avg_referrals_per_agent: string;
+    avg_revenue_per_agent: string;
+    avg_fees_per_agent: string;
+    active_retention_pct: number;
+    calculated_at: string;
+  } | null;
+  metrics_calculated_at: string | null;
+  created_at: string;
+};
+
+export type MarketEntry = {
+  id: number;
+  zip: string;
+  month: string;
+  avg_lease_price: number | null;
+  median_lease_price: number | null;
+  total_active_listings: number | null;
+  total_leased: number | null;
+  avg_days_on_market: number | null;
+  inventory_level: "low" | "balanced" | "high" | null;
+  notable_events: string | null;
+  data_source: "manual" | "appfolio" | "mls_export" | "external";
+  source_notes: string | null;
+};
+
+export const FLAG_LABELS: Record<FlagType, string> = {
+  likely_referrer: "Likely Referrer",
+  dormancy_risk: "Dormancy Risk",
+  tier_upgrade_candidate: "Tier Upgrade Candidate",
+  tier_downgrade_candidate: "Tier Downgrade Candidate",
+  re_engagement_candidate: "Re-engagement Candidate",
+  vip_consideration: "VIP Consideration",
+};
+
+export const FLAG_ICONS: Record<FlagType, string> = {
+  likely_referrer: "🎯",
+  dormancy_risk: "⚠️",
+  tier_upgrade_candidate: "⬆️",
+  tier_downgrade_candidate: "⬇️",
+  re_engagement_candidate: "🔄",
+  vip_consideration: "⭐",
+};
+
+export const SEVERITY_META: Record<FlagSeverity, { bg: string; fg: string; label: string }> = {
+  action: { bg: "#fee2e2", fg: "#991b1b", label: "Action" },
+  watch: { bg: "#fef3c7", fg: "#854d0e", label: "Watch" },
+  info: { bg: "#dbeafe", fg: "#1e40af", label: "Info" },
+};
+
+export function scoreColor(score: number): string {
+  if (score >= 80) return "#16a34a";
+  if (score >= 60) return "#65a30d";
+  if (score >= 40) return "#ca8a04";
+  if (score >= 20) return "#ea580c";
+  return "#b91c1c";
+}
+
 // Stage badge color tokens.
 export const STAGE_META: Record<Stage, { bg: string; fg: string }> = {
   lead_received: { bg: "#e0f2fe", fg: "#0369a1" },

@@ -1,4 +1,11 @@
-# Agent Hub — Phase 1 (CRM Foundation) + Phase 2 (Pipeline) + Phase 3 (Automation Engine)
+# Agent Hub — Phase 1 (CRM Foundation) + Phase 2 (Pipeline) + Phase 3 (Automation Engine) + Phase 4 (Intelligence Layer)
+
+> **Phase 4 is now built and deployed**. Phase 4 turns accumulated data into
+> insights: a daily-recomputed engagement score (5 transparent components),
+> 6 predictive heuristic flags, cohort analysis with parameterized
+> definitions, and a Houston rental-market-data table for partner-facing
+> reports. No machine learning — every threshold is a constant in
+> `lib/agentHub/intelligence/scoring.js`.
 
 > **Phase 3 is now built and deployed** alongside Phases 1 + 2. Phase 3 adds
 > the automation engine: time- and event-based triggers, an action queue
@@ -670,7 +677,220 @@ frontend/app/(protected)/agent-hub/
 
 [Filled in by /codex:adversarial-review run]
 
-## Phase 4 backlog (don't sneak ahead)
+---
+
+# Phase 4 — Intelligence layer (built)
+
+## Phase 4 scope (built)
+
+- **6 new tables**: `agent_hub_agent_engagement_scores`,
+  `agent_hub_engagement_score_history`, `agent_hub_predictive_flags`,
+  `agent_hub_market_intelligence`, `agent_hub_cohorts`,
+  `agent_hub_intelligence_calculations_log`.
+- **4 new daily cron workers**:
+  - 3:00 AM — `recomputeAllEngagementScores`
+  - 3:30 AM — `refreshAllPredictiveFlags`
+  - 4:00 AM — `refreshCohorts` + `maintainQuarterlyCohorts`
+  - 5:00 AM — `archiveAndPruneScoreHistory`
+- **Engagement scoring**: 5 components (recency, frequency, two-way,
+  referrals, financial impact) summed to 0-100. Algorithm in
+  `lib/agentHub/intelligence/scoring.js` — single source of truth,
+  every threshold a named constant with rationale.
+- **Predictive flags**: 6 heuristic rules in
+  `lib/agentHub/intelligence/flags.js`. Lifecycle handles
+  resolve-on-condition-no-longer-holds, dismiss-with-90d-snooze,
+  and idempotent re-evaluation.
+- **Cohorts**: auto-generated quarterly cohorts going back 2 years.
+  Custom cohorts user-creatable via JSONB definition. The cohort
+  evaluator uses a strict whitelist of allowed keys and parameterizes
+  every value — NO string-concat SQL.
+- **Market intelligence**: manual zip × month CRUD + bulk CSV import.
+  Multi-line quoted CSV + UTF-8 BOM handling.
+- **Intelligence routes**: scoring, flags, leaderboard (5 metrics),
+  health-by-tier, attention queue, funnel, score-distribution,
+  tier-movement, referral-velocity.
+- **Phase 3 integration**: `engine.js buildAgentEvalRow` now exposes
+  `engagement_score`, `tier_recommendation`,
+  `tier_recommendation_changed`, and `has_active_flag_<type>` to
+  automation conditions. An automation rule can now fire on
+  `{ field: "has_active_flag_likely_referrer", op: "eq", value: true }`.
+- **Frontend pages**: `/agent-hub/insights` (daily home),
+  `/agent-hub/leaderboard` (5 ranking tabs),
+  `/agent-hub/cohorts` + detail + new + comparison stub,
+  `/agent-hub/market` (CRUD + CSV import). Agent detail page gets an
+  Engagement Score card with sparkline trend + explanation breakdown.
+  Main dashboard gets attention-queue / tier-rec / scores-rising cards.
+
+## Phase 4 NON-scope (deferred to Phase 5+)
+
+- **Machine learning models** — heuristics only.
+- **Automated MLS/AppFolio market data fetch** — manual entry only.
+- **Real-time score recalc** on every event — daily batch is fine.
+- **Agent-facing portal exposure** of scores/flags.
+- **Predictive lifetime value** — current LTV from MV is enough.
+- **A/B testing infrastructure** for templates.
+
+## Engagement scoring algorithm (the math)
+
+Five transparent components, summed to a 0-100 score. Defined as
+named constants in `lib/agentHub/intelligence/scoring.js`:
+
+```
+COMPONENT 1: Recency (0-25)
+  ≤7 d: 25  ≤30: 23  ≤60: 20  ≤90: 15  ≤180: 10  ≤365: 5  else 0
+
+COMPONENT 2: Frequency (0-20)
+  Distinct activities in last 90 d:
+  0: 0  1: 5  2-3: 10  4-6: 15  7+: 20
+
+COMPONENT 3: Two-way engagement (0-15)
+  Days since last reply (any inbound activity OR send_log.replied_at):
+  ≤30: 15  ≤90: 12  ≤180: 8  any reply ever: 5  none: 0
+
+COMPONENT 4: Referrals (0-25)
+  Lifetime count base: 0:0  1:8  2-3:14  4-6:19  7+:22
+  Plus recency bonus: last <90d +3, last <180d +1. Cap 25.
+
+COMPONENT 5: Financial impact (0-15)
+  Total revenue from agent_hub_agent_lifetime_value:
+  ≥$50K: 15  ≥$15K: 12  ≥$5K: 8  >$0: 4  0/null: 0
+
+TIER RECOMMENDATION (post-score):
+  90+ AND existing partner+ → vip
+  70+ OR 3+ converted+consent → partner
+  40+ → warm
+  20+ AND any inbound → prospect
+  <20 AND >180 d ago AND no interactions → dormant
+  else → cold
+```
+
+**Edge cases (verified):**
+- Brand-new agent, no data: all components 0 → score 0, no error.
+- Referrals but no replies: component 3 = 0, others computed.
+- Replies but no referrals: component 4 = 0, others computed.
+- NULL last_interaction_date: component 1 = 0.
+
+## Predictive flag rules
+
+Each flag is a deterministic boolean function in
+`lib/agentHub/intelligence/flags.js`. Rules fire daily; conditions
+must hold continuously for the flag to remain active.
+
+| Flag | Severity | Rule summary |
+|---|---|---|
+| `likely_referrer` | action | warm/partner, ≥2 referrals, days since last is within ±30% of personal avg interval, score ≥50 |
+| `dormancy_risk` | watch | warm/partner/vip, last interaction 75-110 d ago, no pending automation, score dropped 5+ points in 14 d |
+| `tier_upgrade_candidate` | info | recommendation higher than current tier, consistent for 14+ d |
+| `tier_downgrade_candidate` | info | recommendation = cold/dormant, current = warm/partner/vip, consistent for 30+ d |
+| `re_engagement_candidate` | action | tier=dormant, score rose 10+ points in last 30 d |
+| `vip_consideration` | info | tier=partner, ≥5 converted referrals, ≥$50K revenue, last interaction <60 d |
+
+**Lifecycle:**
+1. Condition first holds → INSERT with status active.
+2. Condition still holds on next refresh → UPDATE last_seen_at + reasoning.
+3. Condition no longer holds → resolved_at = NOW, resolution_reason auto-filled.
+4. Manually dismissed → dismissed_at + dismissed_reason + snooze_until = NOW + 90d.
+5. Snoozed flag whose condition still holds is NOT recreated until snooze expires.
+
+The partial unique index `uq_agent_hub_flags_active` enforces "one
+active flag of each type per agent." Resolved/dismissed flags don't
+count.
+
+## Cohort framework (and why it's SQL-injection-safe)
+
+A cohort is a JSONB definition stored in `agent_hub_cohorts`. The
+evaluator in `lib/agentHub/intelligence/cohorts.js` translates the
+JSONB to a parameterized WHERE clause with a strict key whitelist:
+
+| Key | Validation |
+|---|---|
+| `added_after`, `added_before` | ISO date string `YYYY-MM-DD` |
+| `tiers` | array, filtered against the tier enum |
+| `sources` | array, filtered against the source enum |
+| `target_zips` | array, regex-validated as `^\d{5}(-\d{4})?$` |
+| `brokerage_ids` | array, coerced to integer, filtered for n>0 |
+| `tags` | array of strings, max 64 chars each |
+
+Every value flows through `$N` placeholders. Unknown keys are
+silently dropped. The output `whereClause` contains only literal
+operators and column names — never user-provided strings.
+
+System cohorts are auto-generated quarterly cohorts going back 2
+years and forward 1 quarter. `maintainQuarterlyCohorts` runs nightly
+and adds the next-upcoming-quarter cohort if it doesn't exist.
+
+## Phase 3 + Phase 4 integration (automation conditions)
+
+`engine.buildAgentEvalRow` now joins the latest engagement score and
+exposes:
+- `engagement_score` (number 0-100)
+- `tier_recommendation` (string)
+- `tier_recommendation_changed` (boolean)
+- `has_active_flag_likely_referrer` (boolean)
+- `has_active_flag_dormancy_risk` (boolean)
+- `has_active_flag_tier_upgrade_candidate` (boolean)
+- `has_active_flag_tier_downgrade_candidate` (boolean)
+- `has_active_flag_re_engagement_candidate` (boolean)
+- `has_active_flag_vip_consideration` (boolean)
+
+Example automation condition:
+```json
+[
+  { "field": "tier", "op": "in", "value": ["warm", "partner"] },
+  { "field": "engagement_score", "op": "gt", "value": 50 },
+  { "field": "has_active_flag_likely_referrer", "op": "eq", "value": true }
+]
+```
+
+A future Phase 5 will let automation creation flow through this from
+the `/agent-hub/automations/:id` UI form (Phase 4 ships the backend
+support; the conditions builder UI extension is a small follow-up).
+
+## Data retention
+
+| Table | Retention |
+|---|---|
+| `agent_hub_agent_engagement_scores` | 90 days (older archived to history) |
+| `agent_hub_engagement_score_history` | 365 days |
+| `agent_hub_predictive_flags` | forever (resolved/dismissed kept for audit) |
+| `agent_hub_intelligence_calculations_log` | 60 days |
+
+The 5:00 AM `archiveAndPruneScoreHistory` job enforces all four.
+
+## Files added in Phase 4
+
+```
+backend/
+  migrations/028_agent_hub_phase4.sql
+  lib/agentHubPhase4Schema.js
+  lib/agentHub/intelligence/
+    scoring.js                     # Single source of truth for engagement score
+    flags.js                       # 6 flag-evaluation rules
+    cohorts.js                     # Cohort SQL builder + metric refresh
+    jobs.js                        # 4 cron jobs
+  routes/
+    agentHubIntelligence.js        # scores + flags + leaderboard + health + funnel + trends
+    agentHubCohorts.js             # cohort CRUD + compare
+    agentHubMarket.js              # market data CRUD + bulk CSV import
+
+frontend/app/(protected)/agent-hub/
+  insights/page.tsx                # The daily home view
+  leaderboard/page.tsx             # 5 ranking tabs
+  cohorts/page.tsx + [id]/page.tsx + new/page.tsx
+  market/page.tsx                  # CRUD + CSV import
+```
+
+Plus updates to: `agent-hub/page.tsx` (4 new dashboard cards),
+`agent-hub/agents/[id]/page.tsx` (Engagement Score card +
+sparkline + Active Flags), `lib/agentHub.ts` (Phase 4 types),
+`components/Sidebar.tsx` (4 new sub-links), `engine.js`
+(`buildAgentEvalRow` extended).
+
+## Adversarial-review remaining items (Phase 4)
+
+[Filled in by /codex:adversarial-review run]
+
+## Phase 5 backlog (don't sneak ahead)
 
 - Automation engine (generic triggers + actions): birthday touchpoints,
   dormant-agent revival, "agent X has 3+ referrals this quarter" alerts.

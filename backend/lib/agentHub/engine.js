@@ -97,16 +97,47 @@ function evaluateCondition(agent, cond) {
   }
 }
 
-// Special pseudo-fields that derive from agent + personal_details.
+// Special pseudo-fields that derive from agent + personal_details + Phase 4
+// intelligence (engagement_score, tier_recommendation_changed, has_active_flag_*).
 async function buildAgentEvalRow(pool, agentId) {
   const { rows } = await pool.query(
     `SELECT a.*,
             (p.birthday_month IS NOT NULL AND p.birthday_day IS NOT NULL) AS has_birthday,
             (a.mailing_address_1 IS NOT NULL AND a.city IS NOT NULL
               AND a.state IS NOT NULL AND a.zip IS NOT NULL) AS has_mailing_address,
-            p.birthday_month, p.birthday_day, p.spouse_name, p.anniversary_date
+            p.birthday_month, p.birthday_day, p.spouse_name, p.anniversary_date,
+            -- Phase 4: latest engagement score + tier recommendation status.
+            COALESCE(s.score, 0) AS engagement_score,
+            s.tier_recommendation,
+            COALESCE(s.tier_recommendation_changed, FALSE) AS tier_recommendation_changed,
+            -- has_active_flag_<type> booleans for each flag type. Rule authors
+            -- can write conditions like { field: 'has_active_flag_likely_referrer', op: 'eq', value: true }.
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 'likely_referrer'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_likely_referrer,
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 'dormancy_risk'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_dormancy_risk,
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 'tier_upgrade_candidate'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_tier_upgrade_candidate,
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 'tier_downgrade_candidate'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_tier_downgrade_candidate,
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 're_engagement_candidate'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_re_engagement_candidate,
+            EXISTS (SELECT 1 FROM agent_hub_predictive_flags f
+                     WHERE f.agent_id = a.id AND f.flag_type = 'vip_consideration'
+                       AND f.resolved_at IS NULL AND f.dismissed_at IS NULL) AS has_active_flag_vip_consideration
        FROM agent_hub_agents a
        LEFT JOIN agent_hub_personal_details p ON p.agent_id = a.id
+       LEFT JOIN LATERAL (
+         SELECT score, tier_recommendation, tier_recommendation_changed
+           FROM agent_hub_agent_engagement_scores
+          WHERE agent_id = a.id
+          ORDER BY calculated_at DESC LIMIT 1
+       ) s ON TRUE
       WHERE a.id = $1`,
     [agentId]
   );
