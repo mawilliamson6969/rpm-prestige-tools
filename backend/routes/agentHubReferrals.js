@@ -42,6 +42,7 @@ import {
 import { refreshAgentLifetimeValue } from "../lib/agentHubPhase2Schema.js";
 import { clearAgentHubDashboardCache } from "./agentHubDashboard.js";
 import { clearAgentHubFinancialsCache } from "./agentHubFinancials.js";
+import { emitEvent } from "../lib/agentHub/engine.js";
 
 const REFERRAL_FIELDS = {
   expected_monthly_rent: (v) => vMoney(v, "expected_monthly_rent"),
@@ -622,6 +623,15 @@ export async function advanceReferralStage(req, res) {
     if (toStage === "active_management") {
       refreshAgentLifetimeValue().catch((e) => console.error("[agent-hub] LTV refresh", e));
     }
+
+    // Phase 3: emit event for matching event_based automations.
+    // Idempotency: event_id keyed on (referral, to_stage) — re-firing with
+    // the same combo (e.g. retry) is a no-op via uq_agent_hub_runs_event.
+    emitEvent(
+      "referral_stage_changed",
+      { agent_id: referral.agent_id, referral_id: referral.id, from_stage: old.stage, to_stage: toStage },
+      `referral_stage:${id}:${toStage}`
+    ).catch((e) => console.error("[agent-hub] emitEvent stage", e));
 
     res.json({ referral: mapReferral(referral) });
   } catch (e) {
