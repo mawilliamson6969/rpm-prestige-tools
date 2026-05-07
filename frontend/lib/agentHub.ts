@@ -568,6 +568,7 @@ export type SendLogEntry = {
   clicked_at: string | null;
   replied_at: string | null;
   bounced_at: string | null;
+  bounce_reason: string | null;
 };
 
 export type Postcard = {
