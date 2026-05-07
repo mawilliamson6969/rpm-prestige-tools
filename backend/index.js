@@ -29,6 +29,13 @@ import {
   ensureAgentHubPhase2Schema,
   refreshAgentLifetimeValue,
 } from "./lib/agentHubPhase2Schema.js";
+import { ensureAgentHubPhase3Schema } from "./lib/agentHubPhase3Schema.js";
+import {
+  evaluateTriggers as agentHubEvaluateTriggers,
+  executeActions as agentHubExecuteActions,
+  reapApprovalWindow as agentHubReapApprovalWindow,
+  detectReplies as agentHubDetectReplies,
+} from "./lib/agentHub/engine.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
@@ -427,6 +434,59 @@ import {
   getPipelineFunnel,
   getPipelineStats,
 } from "./routes/agentHubFinancials.js";
+import {
+  createAutomation as createAgentHubAutomation,
+  deleteAutomation as deleteAgentHubAutomation,
+  getAutomation as getAgentHubAutomation,
+  listAutomations as listAgentHubAutomations,
+  simulateAutomationRoute as simulateAgentHubAutomation,
+  triggerAutomationManual as triggerAgentHubAutomationManual,
+  updateAutomation as updateAgentHubAutomation,
+} from "./routes/agentHubAutomations.js";
+import {
+  approveRun,
+  bulkApprove,
+  bulkCancel,
+  cancelRun,
+  getApprovalQueue,
+  getRun,
+  listRuns,
+} from "./routes/agentHubAutomationRuns.js";
+import {
+  createTemplate as createAgentHubTemplate,
+  deleteTemplate as deleteAgentHubTemplate,
+  getTemplate as getAgentHubTemplate,
+  listTemplates as listAgentHubTemplates,
+  previewTemplate as previewAgentHubTemplate,
+  testSendTemplate as testSendAgentHubTemplate,
+  updateTemplate as updateAgentHubTemplate,
+} from "./routes/agentHubTemplates.js";
+import {
+  getSendLogEntry,
+  listAgentSendLog,
+  listReplies,
+  listSendLog,
+  markReplyHandled,
+} from "./routes/agentHubSendLog.js";
+import {
+  cancelPostcard,
+  exportPostcardQueueCsv,
+  getPostcard,
+  listPostcardQueue,
+  markPostcardMailed,
+} from "./routes/agentHubPostcardQueue.js";
+import {
+  adHocEmail,
+  adHocPostcard,
+  adHocSms,
+} from "./routes/agentHubAdHoc.js";
+import {
+  completeLaunchChecklist,
+  getConfig as getAgentHubSystemConfig,
+  publicUnsubscribe as publicAgentHubUnsubscribe,
+  toggleKillSwitch,
+  updateConfig as updateAgentHubSystemConfig,
+} from "./routes/agentHubSystemConfig.js";
 import {
   deleteVideoById,
   deleteVideoFolder,
@@ -1298,6 +1358,67 @@ app.get("/agent-hub/pipeline/funnel", requireAuth, requireAgentHubAccess, getPip
 app.get("/agent-hub/financials/summary", requireAuth, requireAgentHubAccess, getFinancialsSummary);
 app.get("/agent-hub/financials/by-month", requireAuth, requireAgentHubAccess, getFinancialsByMonth);
 app.get("/agent-hub/financials/export.csv", requireAuth, requireAgentHubAccess, exportFinancialsCsv);
+
+/* ============================================================
+ * Agent Hub Phase 3: automation engine + compliance + sends.
+ * ============================================================ */
+
+// Public unsubscribe handler — NO auth (token is the credential).
+app.get("/agent-hub/unsubscribe", publicAgentHubUnsubscribe);
+
+// Automations (Agent Hub specific — separate from reviews automations)
+app.get("/agent-hub/automations", requireAuth, requireAgentHubAccess, listAgentHubAutomations);
+app.get("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, getAgentHubAutomation);
+app.post("/agent-hub/automations", requireAuth, requireAgentHubAccess, createAgentHubAutomation);
+app.patch("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, updateAgentHubAutomation);
+app.delete("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, deleteAgentHubAutomation);
+app.post("/agent-hub/automations/:id/simulate", requireAuth, requireAgentHubAccess, simulateAgentHubAutomation);
+app.post("/agent-hub/automations/:id/trigger-manual", requireAuth, requireAgentHubAccess, triggerAgentHubAutomationManual);
+
+// Automation runs
+app.get("/agent-hub/automation-runs", requireAuth, requireAgentHubAccess, listRuns);
+app.get("/agent-hub/automation-runs/:id", requireAuth, requireAgentHubAccess, getRun);
+app.post("/agent-hub/automation-runs/:id/approve", requireAuth, requireAgentHubAccess, approveRun);
+app.post("/agent-hub/automation-runs/:id/cancel", requireAuth, requireAgentHubAccess, cancelRun);
+
+// Approval queue
+app.get("/agent-hub/approval-queue", requireAuth, requireAgentHubAccess, getApprovalQueue);
+app.post("/agent-hub/approval-queue/bulk-approve", requireAuth, requireAgentHubAccess, bulkApprove);
+app.post("/agent-hub/approval-queue/bulk-cancel", requireAuth, requireAgentHubAccess, bulkCancel);
+
+// Templates (Agent Hub specific)
+app.get("/agent-hub/templates", requireAuth, requireAgentHubAccess, listAgentHubTemplates);
+app.get("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, getAgentHubTemplate);
+app.post("/agent-hub/templates", requireAuth, requireAgentHubAccess, createAgentHubTemplate);
+app.patch("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, updateAgentHubTemplate);
+app.delete("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, deleteAgentHubTemplate);
+app.post("/agent-hub/templates/:id/preview", requireAuth, requireAgentHubAccess, previewAgentHubTemplate);
+app.post("/agent-hub/templates/:id/test-send", requireAuth, requireAgentHubAccess, testSendAgentHubTemplate);
+
+// Send log + replies
+app.get("/agent-hub/send-log", requireAuth, requireAgentHubAccess, listSendLog);
+app.get("/agent-hub/send-log/:id", requireAuth, requireAgentHubAccess, getSendLogEntry);
+app.get("/agent-hub/agents/:id/send-log", requireAuth, requireAgentHubAccess, listAgentSendLog);
+app.get("/agent-hub/replies", requireAuth, requireAgentHubAccess, listReplies);
+app.post("/agent-hub/replies/:id/handled", requireAuth, requireAgentHubAccess, markReplyHandled);
+
+// Postcard queue
+app.get("/agent-hub/postcard-queue", requireAuth, requireAgentHubAccess, listPostcardQueue);
+app.get("/agent-hub/postcard-queue/:id", requireAuth, requireAgentHubAccess, getPostcard);
+app.post("/agent-hub/postcard-queue/:id/mark-mailed", requireAuth, requireAgentHubAccess, markPostcardMailed);
+app.post("/agent-hub/postcard-queue/:id/cancel", requireAuth, requireAgentHubAccess, cancelPostcard);
+app.get("/agent-hub/postcard-queue/export.csv", requireAuth, requireAgentHubAccess, exportPostcardQueueCsv);
+
+// Ad-hoc sends from agent detail page
+app.post("/agent-hub/agents/:id/send-email", requireAuth, requireAgentHubAccess, adHocEmail);
+app.post("/agent-hub/agents/:id/send-sms", requireAuth, requireAgentHubAccess, adHocSms);
+app.post("/agent-hub/agents/:id/queue-postcard", requireAuth, requireAgentHubAccess, adHocPostcard);
+
+// System config + kill switch + launch checklist
+app.get("/agent-hub/system-config", requireAuth, requireAgentHubAccess, getAgentHubSystemConfig);
+app.patch("/agent-hub/system-config", requireAuth, requireAgentHubAccess, updateAgentHubSystemConfig);
+app.post("/agent-hub/system-config/kill-switch", requireAuth, requireAgentHubAccess, toggleKillSwitch);
+app.post("/agent-hub/system-config/complete-launch-checklist", requireAuth, requireAgentHubAccess, completeLaunchChecklist);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
 app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
@@ -1985,6 +2106,8 @@ async function start() {
       console.log("Database schema OK (agent_hub_*).");
       await ensureAgentHubPhase2Schema();
       console.log("Database schema OK (agent_hub_* phase 2).");
+      await ensureAgentHubPhase3Schema();
+      console.log("Database schema OK (agent_hub_* phase 3).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -2032,6 +2155,43 @@ async function start() {
       );
     });
     console.log("Scheduled Agent Hub LTV refresh: 15 2 * * * (daily at 2:15 AM).");
+
+    // Phase 3 Agent Hub engine workers.
+    // Trigger evaluator: scans time-based automations every 15 minutes
+    // and creates pending_approval (or approved) runs for eligible agents.
+    cron.schedule("*/15 * * * *", () => {
+      agentHubEvaluateTriggers().catch((e) =>
+        console.error("[agent-hub engine evaluate]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub trigger evaluator: */15 * * * * (every 15 min).");
+
+    // Action executor: drains the action queue every 5 minutes. Locks
+    // batches with FOR UPDATE SKIP LOCKED so concurrent crons can't double-send.
+    cron.schedule("*/5 * * * *", () => {
+      agentHubExecuteActions().catch((e) =>
+        console.error("[agent-hub engine execute]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub action executor: */5 * * * * (every 5 min).");
+
+    // Approval window reaper: cancels pending_approval runs whose
+    // approval_required_until has passed.
+    cron.schedule("0 * * * *", () => {
+      agentHubReapApprovalWindow().catch((e) =>
+        console.error("[agent-hub engine reap]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub approval reaper: 0 * * * * (hourly).");
+
+    // Reply detector: polls Microsoft Graph for replies and pauses
+    // automations on reply.
+    cron.schedule("*/15 * * * *", () => {
+      agentHubDetectReplies().catch((e) =>
+        console.error("[agent-hub engine reply-detect]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub reply detector: */15 * * * * (every 15 min).");
 
     cron.schedule("0 * * * *", () => {
       processDelayedAutoCompletes().catch((e) =>

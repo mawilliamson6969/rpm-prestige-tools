@@ -9,12 +9,15 @@ import {
   ACTIVITY_TYPE_LABELS,
   formatMoney,
   relativeTime,
+  type AutomationRun,
   type DashboardSummary,
   type FinancialsSummary,
   type HubPermissions,
   type NeedsAttentionAgent,
   type PipelineStats,
+  type Postcard,
   type RecentActivity,
+  type SystemConfig,
   type Task,
   type UpcomingTouchpoint,
 } from "../../../lib/agentHub";
@@ -32,6 +35,10 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
   const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
   const [financials, setFinancials] = useState<FinancialsSummary | null>(null);
   const [tasksToday, setTasksToday] = useState<Task[]>([]);
+  const [approvals, setApprovals] = useState<AutomationRun[]>([]);
+  const [pendingPostcards, setPendingPostcards] = useState<Postcard[]>([]);
+  const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
+  const [repliesPending, setRepliesPending] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -41,7 +48,7 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
     (async () => {
       try {
         const headers = authHeaders();
-        const [s, r, u, n, ps, fs, tasks] = await Promise.all([
+        const [s, r, u, n, ps, fs, tasks, approval, postcards, cfg, replies] = await Promise.all([
           agentHubFetch<DashboardSummary>("/agent-hub/dashboard", { authHeaders: headers }),
           agentHubFetch<{ activities: RecentActivity[] }>("/agent-hub/dashboard/recent-activity", { authHeaders: headers }),
           agentHubFetch<{ upcoming: UpcomingTouchpoint[] | null; counts?: { total: number } }>(
@@ -52,6 +59,10 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
           agentHubFetch<PipelineStats>("/agent-hub/pipeline/stats", { authHeaders: headers }).catch(() => null),
           agentHubFetch<FinancialsSummary>("/agent-hub/financials/summary", { authHeaders: headers }).catch(() => null),
           agentHubFetch<{ tasks: Task[] }>("/agent-hub/tasks?assigned_to=me&status=pending", { authHeaders: headers }).catch(() => ({ tasks: [] })),
+          agentHubFetch<{ runs: AutomationRun[] }>("/agent-hub/approval-queue", { authHeaders: headers }).catch(() => ({ runs: [] })),
+          agentHubFetch<{ postcards: Postcard[] }>("/agent-hub/postcard-queue?status=pending", { authHeaders: headers }).catch(() => ({ postcards: [] })),
+          agentHubFetch<{ config: SystemConfig }>("/agent-hub/system-config", { authHeaders: headers }).catch(() => ({ config: null as SystemConfig | null })),
+          agentHubFetch<{ replies: { still_flagged: boolean }[] }>("/agent-hub/replies", { authHeaders: headers }).catch(() => ({ replies: [] })),
         ]);
         if (cancel) return;
         setSummary(s);
@@ -66,6 +77,10 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
         setPipeline(ps);
         setFinancials(fs);
         setTasksToday(tasks.tasks);
+        setApprovals(approval.runs);
+        setPendingPostcards(postcards.postcards);
+        setSystemConfig(cfg.config);
+        setRepliesPending(replies.replies.filter((r) => r.still_flagged).length);
       } catch (e) {
         if (cancel) return;
         setErr(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -97,13 +112,20 @@ function DashboardInner({ perms }: { perms: HubPermissions }) {
         </div>
       </div>
 
+      {systemConfig?.kill_switch_enabled ? (
+        <div className={styles.error} style={{ marginBottom: "1rem", background: "#fee2e2" }}>
+          🔴 Kill switch is ENGAGED. All automated sends are paused.{" "}
+          <Link href="/agent-hub/system-config" className={styles.linkCell}>System Config →</Link>
+        </div>
+      ) : null}
+
       {summary ? (
         <div className={styles.statGrid}>
-          <StatCard label="Total" value={summary.total} href="/agent-hub/agents" />
-          <StatCard label="VIP + Partner" value={summary.vip + summary.partner} href="/agent-hub/agents?tier=partner" />
-          <StatCard label="Warm" value={summary.warm} href="/agent-hub/agents?tier=warm" />
-          <StatCard label="Prospect" value={summary.prospect} href="/agent-hub/agents?tier=prospect" />
+          <StatCard label="Total Agents" value={summary.total} href="/agent-hub/agents" />
           <StatCard label="Active Pipeline" value={pipeline?.total_in_pipeline ?? 0} href="/agent-hub/pipeline" />
+          <StatCard label="Approval Queue" value={approvals.length} href="/agent-hub/approval-queue" highlight={approvals.length > 0} />
+          <StatCard label="Replies pending" value={repliesPending} href="/agent-hub/replies" highlight={repliesPending > 0} />
+          <StatCard label="Postcards queued" value={pendingPostcards.length} href="/agent-hub/print-queue" />
           <StatCard label="Tasks due" value={tasksToday.length} href="/agent-hub/tasks" highlight={tasksToday.some((t) => t.priority === "urgent")} />
           <StatCard label="MTD fees" value={formatMoney(financials?.mtd_fees_paid)} href="/agent-hub/financials" />
           <StatCard label="Interactions (7d)" value={summary.interactions_7d} />

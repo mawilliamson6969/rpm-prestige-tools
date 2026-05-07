@@ -1,4 +1,11 @@
-# Agent Hub — Phase 1 (CRM Foundation) + Phase 2 (Pipeline)
+# Agent Hub — Phase 1 (CRM Foundation) + Phase 2 (Pipeline) + Phase 3 (Automation Engine)
+
+> **Phase 3 is now built and deployed** alongside Phases 1 + 2. Phase 3 adds
+> the automation engine: time- and event-based triggers, an action queue
+> with approval gating, the compliance layer (canSendTo + DNC + rate limits
+> + kill switch + unsubscribe), Microsoft Graph email + OpenPhone SMS
+> integration, the manual postcard print queue, reply detection, and
+> 5 starter automations + 10 templates.
 
 > **Phase 2 is now built and deployed** alongside Phase 1. Phase 2 adds the
 > referral pipeline, owners, properties, payments, monthly revenue tracking,
@@ -483,7 +490,187 @@ frontend/
 
 [Filled in by /codex:adversarial-review run]
 
-## Phase 3 backlog (don't sneak ahead)
+---
+
+# Phase 3 — Automation Engine (built)
+
+## Phase 3 scope (built)
+
+- **9 new tables**: `agent_hub_automations`, `agent_hub_automation_runs`,
+  `agent_hub_automation_action_queue`, `agent_hub_message_templates`,
+  `agent_hub_send_log`, `agent_hub_postcard_print_queue`,
+  `agent_hub_unsubscribe_tokens`, `agent_hub_dnc`,
+  `agent_hub_system_config`. Plus two new columns on `agent_hub_agents`
+  (`personal_outreach_flag`, `personal_outreach_flagged_at`).
+- **5 starter automations** seeded `is_system=true`, `enabled=false`:
+  birthday_touchpoint, new_partner_onboarding, dormant_re_engagement,
+  post_conversion_thank_you, quarterly_market_update.
+- **10 starter templates** seeded `is_system=true`. Email templates
+  enforce `{{unsubscribe_link}}` + `{{physical_address}}` (CAN-SPAM)
+  via DB CHECK constraint AND app-layer validateTemplate().
+- **5 engine workers**:
+  - `evaluateTriggers` — every 15 min — scans time-based automations
+    and creates eligible runs. Idempotent via `uq_agent_hub_runs_daily`.
+  - `executeActions` — every 5 min — drains the action queue.
+    Locks rows with `FOR UPDATE SKIP LOCKED` so concurrent crons
+    can't double-send.
+  - `reapApprovalWindow` — hourly — cancels expired pending_approval runs.
+  - `detectReplies` — every 15 min — polls Microsoft Graph for replies
+    and pauses outreach on the matching agent.
+  - `emitEvent` — inline — fires from referral stage changes + agent
+    tier/status changes. Idempotent via `uq_agent_hub_runs_event`.
+- **Compliance layer** in `lib/agentHub/compliance.js`:
+  - `canSendTo(agent, channel)` — single source of truth. Checks (in order):
+    kill switch, do_not_contact, status, channel-specific consent,
+    presence of email/phone/address, `agent_hub_dnc` table,
+    `personal_outreach_flag`, rate limits.
+  - `validateTemplate({ channel, subject, body, body_html })` — rejects
+    email templates without `{{unsubscribe_link}}` + `{{physical_address}}`.
+  - `processUnsubscribe(token)` — marks agent DNC across all channels,
+    cancels in-flight automations.
+- **Send adapters** in `lib/agentHub/sendChannels.js`:
+  - `sendEmail` — Microsoft Graph `/sendMail`. Mints a deterministic
+    `x-agent-hub-message-id` header so the reply detector can match.
+  - `sendSms` — OpenPhone `/messages`.
+  - `queuePostcard` — inserts into `agent_hub_postcard_print_queue`
+    with mailing-address snapshot. Lori marks mailed manually.
+- **Frontend pages**: approval-queue, automations (list + detail),
+  templates (list + detail with preview + test-send), print-queue,
+  send-log, replies, system-config, plus updates to the main dashboard
+  (kill-switch banner + 4 new stat cards).
+
+## Phase 3 NON-scope (intentionally deferred — do NOT build here)
+
+- HAR Matrix CSV upload, LinkedIn import (Phase 5)
+- Lob.com integration (postcards stay in manual print queue)
+- Inbound forms / public referral form (Phase 5)
+- Agent portal (Phase 6)
+- Predictive analytics (Phase 4)
+- Market data automated fetching (Phase 4)
+
+## How to safely launch automations
+
+1. Owner visits `/agent-hub/system-config` and fills in:
+   sender email + name, physical address (CAN-SPAM), referral fee
+   offer text, rate limits.
+2. Owner clicks each starter automation in `/agent-hub/automations` and
+   uses the **Simulate** button to see who would fire — no actual sends.
+3. Owner sends a **test send** of at least one template from
+   `/agent-hub/templates/:id` (uses real Graph/OpenPhone but with
+   a `[TEST]` subject prefix).
+4. Owner tests the **kill switch** (engage on system-config; verify
+   no sends fire; release).
+5. Owner clicks **Mark launch checklist complete** on the system-config
+   page. Until this is done, the engine refuses to flip any automation
+   to `enabled=true`.
+6. Owner enables one automation at a time. Each one starts with
+   `requires_approval=true` so every run waits in the approval queue.
+7. After 2-3 weeks of clean runs, owner can flip individual automations
+   to `requires_approval=false` for auto-send.
+
+## Compliance gates (read before adding any new send path)
+
+EVERY send call MUST go through `canSendTo(agent, channel)`. The
+compliance check enforces, in order:
+
+1. Kill switch → defer (resume when released)
+2. `agent.do_not_contact` → permanent skip
+3. `agent.status` ∈ {dnc, deleted} → permanent skip
+4. Channel consent: `consent_to_email` for email, `consent_to_sms` for SMS
+5. Presence: email/phone/mailing address as the channel needs
+6. `agent_hub_dnc` table — email/phone/agent-level
+7. `personal_outreach_flag` (set by reply detector)
+8. Rate limit (per-hour + per-day from `agent_hub_system_config`) → defer
+
+If `allowed=false, defer=true`: caller (action executor) reschedules
+the action for an hour later. If `allowed=false, defer=false`: caller
+marks the action `status='skipped'` with the reason logged.
+
+## Reply handling flow
+
+1. `detectReplies()` runs every 15 min, polling the latest 50 messages
+   in the configured sender mailbox via Microsoft Graph.
+2. Match by `In-Reply-To` header or our custom `x-agent-hub-message-id`
+   header against `agent_hub_send_log.external_id`.
+3. On match: update `send_log.replied_at`, cancel any in-flight
+   automation runs for the agent, set
+   `agent.personal_outreach_flag = TRUE`, log activity.
+4. The reply surfaces in `/agent-hub/replies` for Mike or Lori to
+   handle personally.
+5. After Mike responds personally outside the system, he clicks
+   "Mark handled" which clears `personal_outreach_flag` so future
+   automations can resume.
+
+## Kill switch usage
+
+- **Owner only.** Visit `/agent-hub/system-config`, click "Engage kill
+  switch" with a reason.
+- Effect: instantaneous halt of all automation sends. The trigger
+  evaluator returns early. The action executor returns early. Email,
+  SMS, and postcard sends all check `kill_switch_enabled` before
+  transmitting.
+- Pending action queue rows are NOT cancelled — they're paused. When
+  the switch is released, the action executor picks up where it left off.
+- The 30-second config cache means it can take up to 30s for a kill
+  switch engagement to fully propagate. For emergency use, call
+  `invalidateSystemConfigCache()` from a debugger if you can't wait.
+
+## Writing a custom automation
+
+1. POST `/agent-hub/automations` with name, slug, trigger_type,
+   trigger_config, conditions, actions, cooldown.
+2. Visit the detail page and click **Simulate** to verify the right
+   agents would fire.
+3. If conditions/actions look right, enable it (requires launch
+   checklist complete).
+4. Initial runs land in the approval queue. Approve one and watch
+   what happens via `/agent-hub/automation-runs/:id`.
+
+## Writing a custom template
+
+1. POST `/agent-hub/templates` with slug, channel, subject (email
+   only), body, optional body_html.
+2. **Email validation** rejects save if `{{unsubscribe_link}}` or
+   `{{physical_address}}` are missing.
+3. Visit the detail page and click **Preview** with an agent_id to
+   see the rendered output. Missing merge fields are flagged.
+4. Click **Test send** to send to your own email/phone with a
+   `[TEST]` prefix.
+
+## Files added in Phase 3
+
+```
+backend/
+  migrations/027_agent_hub_phase3.sql
+  lib/agentHubPhase3Schema.js
+  lib/agentHub/
+    compliance.js                       # canSendTo + validateTemplate + renderTemplate + unsubscribe
+    engine.js                           # 5 workers + run creation + condition eval
+    sendChannels.js                     # Graph + OpenPhone + postcard queue adapters
+  routes/
+    agentHubAutomations.js              # CRUD + simulate + manual trigger
+    agentHubAutomationRuns.js           # runs + approval queue
+    agentHubTemplates.js                # CRUD + preview + test-send
+    agentHubSendLog.js                  # send log + replies queue
+    agentHubPostcardQueue.js            # Lori's manual fulfillment UI
+    agentHubAdHoc.js                    # send from agent detail page
+    agentHubSystemConfig.js             # config + kill switch + launch checklist + public unsubscribe
+
+frontend/app/(protected)/agent-hub/
+  approval-queue/page.tsx
+  automations/page.tsx + [id]/page.tsx
+  templates/page.tsx + [id]/page.tsx
+  print-queue/page.tsx
+  send-log/page.tsx
+  replies/page.tsx
+  system-config/page.tsx
+```
+
+## Adversarial-review remaining items (Phase 3)
+
+[Filled in by /codex:adversarial-review run]
+
+## Phase 4 backlog (don't sneak ahead)
 
 - Automation engine (generic triggers + actions): birthday touchpoints,
   dormant-agent revival, "agent X has 3+ referrals this quarter" alerts.

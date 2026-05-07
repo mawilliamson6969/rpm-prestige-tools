@@ -471,6 +471,140 @@ export type FinancialsSummary = {
   roi_ratio: number | null;
 };
 
+// ============================================================
+// Phase 3 types
+// ============================================================
+
+export type Channel = "email" | "sms" | "postcard" | "letter";
+export type TriggerType = "time_based" | "event_based" | "manual";
+export type RunStatus = "pending_approval" | "approved" | "running" | "completed" | "failed" | "skipped" | "cancelled" | "simulator";
+export type ActionType =
+  | "wait" | "send_email" | "send_sms" | "queue_postcard" | "queue_letter"
+  | "log_activity" | "update_agent_field" | "create_task" | "notify_team"
+  | "branch" | "end_sequence";
+
+export type Automation = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  is_system: boolean;
+  trigger_type: TriggerType;
+  trigger_config: Record<string, unknown>;
+  conditions: Array<{ field: string; op: string; value: unknown }>;
+  actions: Array<{ type: ActionType; config: Record<string, unknown> }>;
+  cooldown_period_days: number | null;
+  max_runs_per_agent: number | null;
+  requires_approval: boolean;
+  approval_window_hours: number;
+  created_at: string;
+  updated_at: string;
+  runs_30d?: number;
+  completed_30d?: number;
+  skipped_30d?: number;
+  failed_30d?: number;
+};
+
+export type AutomationRun = {
+  id: number;
+  automation_id: number;
+  automation_name: string | null;
+  agent_id: number;
+  agent_name: string | null;
+  agent_tier?: Tier;
+  agent_photo_url?: string | null;
+  triggered_at: string;
+  triggered_by: "cron" | "event" | "manual" | "simulator";
+  triggered_by_event_id: string | null;
+  status: RunStatus;
+  skipped_reason: string | null;
+  approval_required_until: string | null;
+  approved_at: string | null;
+  approved_by: number | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
+  cancelled_reason: string | null;
+  completed_at: string | null;
+  actions_total: number;
+  actions_completed: number;
+  actions_failed: number;
+  error_log: unknown[];
+  action_preview?: Array<{ sequence_index: number; action_type: ActionType; action_config: Record<string, unknown>; scheduled_for: string }>;
+};
+
+export type Template = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  channel: Channel;
+  subject: string | null;
+  body: string;
+  body_html: string | null;
+  merge_fields_used: string[];
+  active: boolean;
+  is_system: boolean;
+  category: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SendLogEntry = {
+  id: number;
+  agent_id: number;
+  agent_name: string | null;
+  channel: Channel;
+  direction: "outbound" | "inbound";
+  automation_run_id: number | null;
+  template_id: number | null;
+  sent_at: string;
+  to_address: string;
+  subject: string | null;
+  body: string | null;
+  external_id: string | null;
+  delivery_status: "sent" | "delivered" | "opened" | "clicked" | "replied" | "bounced" | "failed" | "unknown";
+  opened_at: string | null;
+  clicked_at: string | null;
+  replied_at: string | null;
+  bounced_at: string | null;
+};
+
+export type Postcard = {
+  id: number;
+  agent_id: number;
+  agent_name: string | null;
+  template_id: number | null;
+  template_name: string | null;
+  rendered_subject: string | null;
+  rendered_body: string;
+  mailing_address: { address_1?: string; address_2?: string; city?: string; state?: string; zip?: string; name?: string };
+  generated_at: string;
+  printed_at: string | null;
+  mailed_at: string | null;
+  cancelled_at: string | null;
+  status: "pending" | "printed" | "mailed" | "cancelled";
+};
+
+export type SystemConfig = {
+  id: number;
+  kill_switch_enabled: boolean;
+  kill_switch_reason: string | null;
+  kill_switch_engaged_at: string | null;
+  rate_limit_emails_per_hour: number;
+  rate_limit_emails_per_day: number;
+  rate_limit_sms_per_hour: number;
+  rate_limit_sms_per_day: number;
+  default_sender_email: string | null;
+  default_sender_name: string | null;
+  physical_address: string | null;
+  referral_fee_offer_text: string | null;
+  referral_fee_landing_url: string | null;
+  launch_checklist_complete: boolean;
+  launch_checklist_completed_at: string | null;
+  updated_at: string;
+};
+
 // Stage badge color tokens.
 export const STAGE_META: Record<Stage, { bg: string; fg: string }> = {
   lead_received: { bg: "#e0f2fe", fg: "#0369a1" },

@@ -23,6 +23,7 @@ import { logAudit, logFieldDiff } from "../lib/agentHub/audit.js";
 import { mapAgent } from "../lib/agentHub/mappers.js";
 import { allowedAgentIdsFor, assertManagerRole, assertPermission } from "../lib/agentHub/permissions.js";
 import { clearAgentHubDashboardCache } from "./agentHubDashboard.js";
+import { emitEvent } from "../lib/agentHub/engine.js";
 import {
   vChannel,
   vDate,
@@ -588,6 +589,25 @@ export async function updateAgentHubAgent(req, res) {
 
     await logFieldDiff(req, "agent", id, oldRows[0], updated, Object.keys(updates));
     clearAgentHubDashboardCache();
+
+    // Phase 3: emit event for tier / status changes.
+    // Event id is keyed on (agent, field, new value, day) — same change
+    // on the same day is idempotent.
+    const today = new Date().toISOString().slice(0, 10);
+    if (updates.tier !== undefined && updates.tier !== oldRows[0].tier) {
+      emitEvent(
+        "agent_tier_changed",
+        { agent_id: id, from_tier: oldRows[0].tier, to_tier: updates.tier },
+        `agent_tier:${id}:${updates.tier}:${today}`
+      ).catch((e) => console.error("[agent-hub] emitEvent tier", e));
+    }
+    if (updates.status !== undefined && updates.status !== oldRows[0].status) {
+      emitEvent(
+        "agent_status_changed",
+        { agent_id: id, from_status: oldRows[0].status, to_status: updates.status },
+        `agent_status:${id}:${updates.status}:${today}`
+      ).catch((e) => console.error("[agent-hub] emitEvent status", e));
+    }
 
     res.json({ agent: mapAgent(updated) });
   } catch (e) {
