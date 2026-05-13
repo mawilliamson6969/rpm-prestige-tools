@@ -4,7 +4,7 @@ import { getPool } from "../lib/db.js";
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v6-mailers-routes-probe";
+export const BACKEND_VERSION = "v7-quote-fail-diag";
 import {
   submitMailer,
   confirmPreauth,
@@ -324,9 +324,23 @@ export async function postMailerQuote(req, res) {
       await pool.query(
         `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
          VALUES ($1, 'quote_failed', $2, $3, 'system')`,
-        [id, result.message || `LetterStream code ${result.code}`, JSON.stringify(result.data || {})]
+        [id, errString(result.message, `LetterStream code ${result.code}`).slice(0, 500), JSON.stringify(result.data || {})]
       );
-      return res.status(502).json({ error: errString(result.message, "Quote failed."), code: result.code });
+      // DIAGNOSTIC: include backendVersion + the raw LetterStream data so we can
+      // see exactly what made parseSubmitResponse return success=false.
+      return res.status(502).json({
+        backendVersion: BACKEND_VERSION,
+        error: errString(result.message, "Quote failed."),
+        code: result.code,
+        debug: {
+          dataKeys: result.data ? Object.keys(result.data) : null,
+          dataCode: result.data?.code ?? null,
+          dataDetails: typeof result.data?.details === "string"
+            ? result.data.details.slice(0, 300)
+            : (result.data?.details ?? null),
+          dataCodeType: typeof result.data?.code,
+        },
+      });
     }
 
     const data = result.data || {};
