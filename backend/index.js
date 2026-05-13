@@ -2270,78 +2270,64 @@ app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
 
 async function start() {
   if (process.env.DATABASE_URL) {
-    try {
-      await ensureOwnerTerminationSchema();
-      console.log("Database schema OK (owner_termination_requests).");
-      await ensureAnnouncementsSchema();
-      console.log("Database schema OK (announcements).");
-      await ensureCachedDashboardSchema();
-      console.log("Database schema OK (cached dashboard / sync_log).");
-      await ensureUsersSchema();
-      console.log("Database schema OK (users).");
-      await ensureEosSchema();
-      console.log("Database schema OK (EOS).");
-      await ensurePortfolioSnapshotsSchema();
-      console.log("Database schema OK (portfolio_snapshots).");
-      await ensureIndividualScorecardSchema();
-      console.log("Database schema OK (individual scorecards).");
-      await ensureAskAiSchema();
-      console.log("Database schema OK (ask_ai_history).");
-      await ensureInboxSchema();
-      console.log("Database schema OK (inbox / tickets).");
-      /** Video library: ensure folder table exists before videos.folder_id migration (see ensureVideosSchema). */
-      await ensureVideoFoldersTable();
-      console.log("Database schema OK (video_folders).");
-      await ensureVideosSchema();
-      console.log("Database schema OK (videos).");
-      await ensureWikiSchema();
-      console.log("Database schema OK (wiki).");
-      await ensurePlaybookSchema();
-      console.log("Database schema OK (playbooks).");
-      await ensureMaintenanceDashboardSchema();
-      console.log("Database schema OK (maintenance dashboard).");
-      await ensureFilesSchema();
-      console.log("Database schema OK (files / file_folders).");
-      await ensureWalkthruSchema();
-      console.log("Database schema OK (walkthru reports).");
-      await ensureMarketingSchema();
-      console.log("Database schema OK (marketing).");
-      await ensureAgentsSchema();
-      console.log("Database schema OK (agents).");
-      await ensureOperationsSchema();
-      console.log("Database schema OK (operations / tasks).");
-      await ensureFormsSchema();
-      console.log("Database schema OK (forms).");
-      await ensureFormsPhase3Schema();
-      console.log("Database schema OK (forms phase 3).");
-      await ensureFormsPhase4Schema();
-      console.log("Database schema OK (forms phase 4).");
-      await ensureFormTemplates();
-      console.log("Form starter templates seeded.");
-      await ensureLayoutPreferencesSchema();
-      console.log("Database schema OK (user_layout_preferences).");
-      await ensureReviewsSchema();
-      console.log("Database schema OK (reviews + templates + automations + leaderboard).");
-      await ensureEsignSchema();
-      console.log("Database schema OK (esign_requests).");
-      await ensureDocumentsSchema();
-      console.log("Database schema OK (documents).");
-      await ensureMailersSchema();
-      console.log("Database schema OK (mailers + mailer_events).");
-      await ensureAgentHubSchema();
-      console.log("Database schema OK (agent_hub_*).");
-      await ensureAgentHubPhase2Schema();
-      console.log("Database schema OK (agent_hub_* phase 2).");
-      await ensureAgentHubPhase3Schema();
-      console.log("Database schema OK (agent_hub_* phase 3).");
-      await ensureAgentHubPhase4Schema();
-      console.log("Database schema OK (agent_hub_* phase 4).");
-      await ensureMbSchema();
-      console.log("Database schema OK (mb_* monday-style boards).");
-      await ensureMbRenewalsSeed();
-      console.log("Database schema OK (mb_* renewals seed).");
-    } catch (e) {
-      console.error("Could not ensure database schema:", e.message);
+    // Each schema applier is wrapped in its own try/catch so a single
+    // failure does not skip every downstream applier. Prior behavior used
+    // a single try/catch and silently lost ~10 schemas downstream of the
+    // first failure (the symptom was missing mb_* and agent_hub_phase{3,4}
+    // tables even though Phase 1 had been merged — see PR fix landing
+    // alongside Phase 3).
+    const steps = [
+      ["owner_termination_requests", ensureOwnerTerminationSchema],
+      ["announcements", ensureAnnouncementsSchema],
+      ["cached dashboard / sync_log", ensureCachedDashboardSchema],
+      ["users", ensureUsersSchema],
+      ["EOS", ensureEosSchema],
+      ["portfolio_snapshots", ensurePortfolioSnapshotsSchema],
+      ["individual scorecards", ensureIndividualScorecardSchema],
+      ["ask_ai_history", ensureAskAiSchema],
+      ["inbox / tickets", ensureInboxSchema],
+      // Video library: folder table must exist before videos.folder_id migration.
+      ["video_folders", ensureVideoFoldersTable],
+      ["videos", ensureVideosSchema],
+      ["wiki", ensureWikiSchema],
+      ["playbooks", ensurePlaybookSchema],
+      ["maintenance dashboard", ensureMaintenanceDashboardSchema],
+      ["files / file_folders", ensureFilesSchema],
+      ["walkthru reports", ensureWalkthruSchema],
+      ["marketing", ensureMarketingSchema],
+      ["agents", ensureAgentsSchema],
+      ["operations / tasks", ensureOperationsSchema],
+      ["forms", ensureFormsSchema],
+      ["forms phase 3", ensureFormsPhase3Schema],
+      ["forms phase 4", ensureFormsPhase4Schema],
+      ["form starter templates", ensureFormTemplates],
+      ["user_layout_preferences", ensureLayoutPreferencesSchema],
+      ["reviews + templates + automations + leaderboard", ensureReviewsSchema],
+      ["esign_requests", ensureEsignSchema],
+      ["documents", ensureDocumentsSchema],
+      ["mailers + mailer_events", ensureMailersSchema],
+      ["agent_hub_*", ensureAgentHubSchema],
+      ["agent_hub_* phase 2", ensureAgentHubPhase2Schema],
+      ["agent_hub_* phase 3", ensureAgentHubPhase3Schema],
+      ["agent_hub_* phase 4", ensureAgentHubPhase4Schema],
+      ["mb_* monday-style boards", ensureMbSchema],
+      ["mb_* renewals seed", ensureMbRenewalsSeed],
+    ];
+    let failures = 0;
+    for (const [label, fn] of steps) {
+      try {
+        await fn();
+        console.log(`Database schema OK (${label}).`);
+      } catch (e) {
+        failures += 1;
+        const msg = e && e.message ? e.message : String(e);
+        console.error(`Database schema FAILED (${label}): ${msg}`);
+      }
+    }
+    if (failures > 0) {
+      console.error(
+        `Database schema: ${failures} of ${steps.length} applier(s) failed — see lines above.`
+      );
     }
   } else {
     console.warn("DATABASE_URL not set — owner termination routes may fail.");
