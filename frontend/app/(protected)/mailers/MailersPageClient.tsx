@@ -434,24 +434,37 @@ export default function MailersPageClient() {
         method: "POST",
         headers: authHeaders(),
       });
-      const d = await r.json();
-      if (!r.ok) {
-        const msg = errorText(d, "Failed to get quote.");
-        console.error("[mailer quote]", r.status, d);
-        setQuoteError(msg);
-        alert(msg);
+      const text = await r.text();
+      let d: Record<string, unknown> | null = null;
+      try { d = JSON.parse(text); } catch { d = null; }
+      console.log("[mailer quote] status=", r.status, "body=", d ?? text);
+
+      // Defensive: backend may have returned non-2xx because of a downstream
+      // DB hiccup, but if LetterStream gave us back a real authcode + cost,
+      // open the modal anyway — the user can still confirm-send.
+      const quoteData = (d && typeof d === "object" ? (d.quote as Record<string, unknown>) : null) || null;
+      const authcode = quoteData?.authcode ? String(quoteData.authcode) : null;
+      const costCents = typeof quoteData?.costCents === "number" ? (quoteData.costCents as number) : 0;
+
+      if (authcode && costCents > 0) {
+        setSelectedMailer((d?.mailer as Mailer | undefined) ?? null);
+        setQuote({
+          mailerId: id,
+          authcode,
+          costCents,
+          pageCount: typeof quoteData?.pageCount === "number" ? (quoteData.pageCount as number) : 1,
+          testMode: !!quoteData?.testMode,
+          code: String(quoteData?.code ?? ""),
+        });
+        await loadMailers();
         return;
       }
-      setSelectedMailer(d.mailer);
-      setQuote({
-        mailerId: id,
-        authcode: d.quote?.authcode || null,
-        costCents: d.quote?.costCents || 0,
-        pageCount: d.quote?.pageCount || 1,
-        testMode: !!d.quote?.testMode,
-        code: String(d.quote?.code || ""),
-      });
-      await loadMailers();
+
+      // No usable quote → real failure
+      const msg = errorText(d, "Failed to get quote.");
+      console.error("[mailer quote] failed", r.status, d ?? text);
+      setQuoteError(msg);
+      alert(msg);
     } finally {
       setActionLoading(false);
     }
@@ -465,19 +478,28 @@ export default function MailersPageClient() {
         method: "POST",
         headers: authHeaders(),
       });
-      const d = await r.json();
-      if (!r.ok) {
-        const msg = errorText(d, "Failed to send.");
-        console.error("[mailer confirm-send]", r.status, d);
-        setQuoteError(msg);
-        alert(msg);
+      const text = await r.text();
+      let d: Record<string, unknown> | null = null;
+      try { d = JSON.parse(text); } catch { d = null; }
+      console.log("[mailer confirm-send] status=", r.status, "body=", d ?? text);
+
+      // Defensive: if the mailer was updated on the server (status sent/sent_test),
+      // treat as success even if HTTP wrapping looks weird.
+      const updatedMailer = (d?.mailer as Mailer | undefined) ?? null;
+      const newStatus = updatedMailer?.status;
+      if (updatedMailer && (newStatus === "sent" || newStatus === "sent_test" || newStatus === "in_production" || newStatus === "mailed")) {
+        setSelectedMailer(updatedMailer);
+        setQuote(null);
+        await loadMailers();
+        await loadStats();
+        void loadBalance(true);
         return;
       }
-      setSelectedMailer(d.mailer);
-      setQuote(null);
-      await loadMailers();
-      await loadStats();
-      void loadBalance(true);
+
+      const msg = errorText(d, "Failed to send.");
+      console.error("[mailer confirm-send] failed", r.status, d ?? text);
+      setQuoteError(msg);
+      alert(msg);
     } finally {
       setActionLoading(false);
     }
