@@ -236,6 +236,18 @@ export default function MailersPageClient() {
   // LetterStream balance (in cents) + cached flag
   const [balance, setBalance] = useState<{ balanceCents: number | null; cached: boolean } | null>(null);
 
+  // LetterStream config health (creds + chromium present?)
+  type Health = {
+    ready: boolean;
+    testMode: boolean;
+    apiIdConfigured: boolean;
+    apiKeyConfigured: boolean;
+    webhookKeyConfigured: boolean;
+    chromiumAvailable: boolean;
+    issues: string[];
+  };
+  const [health, setHealth] = useState<Health | null>(null);
+
   // Quote → confirm modal
   type QuoteState = {
     mailerId: number;
@@ -514,6 +526,15 @@ export default function MailersPageClient() {
 
   useEffect(() => { loadBalance(); }, [loadBalance]);
 
+  const loadHealth = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/mailers/health"), { headers: authHeaders() });
+      if (!r.ok) { setHealth(null); return; }
+      setHealth(await r.json());
+    } catch { setHealth(null); }
+  }, [authHeaders]);
+  useEffect(() => { loadHealth(); }, [loadHealth]);
+
   // Auto-open the quote modal if compose redirected us here with ?openQuote=<id>.
   // We strip the param after firing so refreshes don't re-quote.
   const autoQuoteFiredRef = useRef(false);
@@ -755,6 +776,45 @@ export default function MailersPageClient() {
 
     return (
       <div className={styles.dashContent}>
+        {/* Config health banner — only shows when LetterStream isn't fully wired up */}
+        {health && !health.ready && (
+          <div
+            style={{
+              background: "#fef3c7",
+              border: "1px solid #fcd34d",
+              color: "#92400e",
+              padding: "0.85rem 1.1rem",
+              borderRadius: 8,
+              marginBottom: "1rem",
+              fontSize: "0.9rem",
+              lineHeight: 1.55,
+            }}
+          >
+            <strong>⚠ LetterStream not fully configured.</strong> Sending will fail until these are fixed on the server:
+            <ul style={{ margin: "0.5rem 0 0 1.25rem", padding: 0 }}>
+              {health.issues.map((iss, i) => <li key={i}>{iss}</li>)}
+            </ul>
+            <div style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "#78350f" }}>
+              Edit <code>/var/www/rpm-prestige-tools/.env</code> on the Linode and run <code>docker compose restart backend</code>.
+            </div>
+          </div>
+        )}
+        {health && health.ready && health.testMode && (
+          <div
+            style={{
+              background: "#ede9fe",
+              border: "1px solid #c4b5fd",
+              color: "#5b21b6",
+              padding: "0.6rem 1.1rem",
+              borderRadius: 8,
+              marginBottom: "1rem",
+              fontSize: "0.85rem",
+            }}
+          >
+            🧪 <strong>Test mode is ON.</strong> Submitted mailers will NOT actually be mailed — they'll sit in your LetterStream shopping cart for review. Flip <code>LETTERSTREAM_TEST_MODE=false</code> on the server to send for real.
+          </div>
+        )}
+
         {/* LetterStream balance */}
         {balance && (
           <div

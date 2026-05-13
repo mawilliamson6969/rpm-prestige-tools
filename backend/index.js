@@ -966,6 +966,7 @@ import {
   deleteMailer,
   getMailerAccountBalance,
   getMailerById,
+  getMailerHealth,
   getMailerSignature,
   getMailerStats,
   getMailerSuggestions,
@@ -1620,6 +1621,7 @@ app.post(
   postLetterStreamWebhook
 );
 
+app.get("/mailers/health", requireAuth, getMailerHealth);
 app.get("/mailers/stats", requireAuth, getMailerStats);
 app.get("/mailers/volume", requireAuth, getMailerVolumeByWeek);
 app.get("/mailers/suggestions", requireAuth, getMailerSuggestions);
