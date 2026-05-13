@@ -42,8 +42,15 @@ jobs:
             # Fast-forward to match origin/main (repo must be cloned once on the server).
             git fetch origin main
             git reset --hard origin/main
+            echo "→ Deployed commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
             # Rebuild images if Dockerfiles or app code changed, then restart containers.
-            docker compose build
-            docker compose up -d
-            # Remove dangling images to save disk on a small VPS (optional).
+            # --pull keeps base images fresh; --force-recreate ensures the running
+            # container is replaced even if the image hash happened to match.
+            docker compose build --pull backend frontend
+            docker compose up -d --force-recreate --remove-orphans backend frontend
+            # Show backend image build timestamp so we can see if it actually rebuilt
+            echo "→ Backend container info:"
+            docker compose ps backend
+            docker compose exec -T backend node -e "console.log('BACKEND_BUILD =', process.env.BACKEND_BUILD || '(unset)')"
+            # Remove dangling images to save disk on a small VPS.
             docker image prune -f
