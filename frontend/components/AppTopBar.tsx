@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Bell, HelpCircle, Menu } from "lucide-react";
 import { buildBreadcrumbs } from "../lib/breadcrumbs";
 import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
@@ -25,7 +26,7 @@ function BreadcrumbTrail() {
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
-          <span key={`${c.label}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+          <span key={`${c.label}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {i > 0 ? (
               <span className={styles.sep} aria-hidden>
                 /
@@ -53,7 +54,7 @@ export default function AppTopBar({ onMenuClick }: { onMenuClick: () => void }) 
   const [syncInProgress, setSyncInProgress] = useState(false);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
+    const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
 
@@ -81,18 +82,18 @@ export default function AppTopBar({ onMenuClick }: { onMenuClick: () => void }) 
 
   const lastSyncedText = useMemo(() => {
     const t = syncLatest?.completed_at ?? syncLatest?.started_at;
-    if (!t) return "Not synced yet";
+    if (!t) return "Not synced";
     try {
-      return new Date(t).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
+      return new Date(t).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
       });
     } catch {
       return String(t);
     }
   }, [syncLatest]);
 
-  const clockStr = now.toLocaleString("en-US", {
+  const dateStr = now.toLocaleString("en-US", {
     timeZone: "America/Chicago",
     weekday: "short",
     month: "short",
@@ -100,15 +101,19 @@ export default function AppTopBar({ onMenuClick }: { onMenuClick: () => void }) 
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    second: "2-digit",
   });
 
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
         {narrow ? (
-          <button type="button" className={styles.menuBtn} aria-label="Open navigation menu" onClick={onMenuClick}>
-            ☰
+          <button
+            type="button"
+            className={styles.menuBtn}
+            aria-label="Open navigation menu"
+            onClick={onMenuClick}
+          >
+            <Menu size={18} strokeWidth={2} />
           </button>
         ) : null}
         <Suspense
@@ -121,15 +126,23 @@ export default function AppTopBar({ onMenuClick }: { onMenuClick: () => void }) 
           <BreadcrumbTrail />
         </Suspense>
       </div>
+
       <div className={styles.right}>
-        <div className={styles.clock}>
-          <span className={styles.clockLabel}>Houston (CT)</span>
-          <span>{clockStr}</span>
+        <div className={styles.meta}>
+          <span className={styles.metaPrimary}>{dateStr} CT</span>
+          <span className={styles.metaSync}>
+            Last synced <strong>{lastSyncedText}</strong>
+            {syncInProgress ? " · syncing…" : ""}
+          </span>
         </div>
-        <div className={styles.sync}>
-          Last synced: <strong>{lastSyncedText}</strong>
-          {syncInProgress ? " · sync running…" : ""}
-        </div>
+        <button className={styles.iconBtn} title="Notifications" aria-label="Notifications">
+          <Bell size={16} strokeWidth={2} />
+          {/* TODO: wire to real unread-notification count once announcements/inbox unify. */}
+          <span className={styles.dot} aria-hidden />
+        </button>
+        <button className={styles.iconBtn} title="Help" aria-label="Help">
+          <HelpCircle size={16} strokeWidth={2} />
+        </button>
       </div>
     </header>
   );

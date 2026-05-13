@@ -2,6 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  ChevronDown,
+  ArrowUpRight,
+  Search,
+  Settings,
+  Eye,
+  EyeOff,
+  Pin,
+  PinOff,
+  X,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePasswordModal";
 import styles from "./sidebar.module.css";
@@ -9,50 +22,60 @@ import { useAuth } from "../context/AuthContext";
 import { apiUrl } from "../lib/api";
 import { useNarrowScreen } from "../hooks/useNarrowScreen";
 import { useLayoutPrefs } from "../hooks/useLayoutPrefs";
-import { DEFAULT_SIDEBAR_ITEMS, type SidebarNavItem } from "../lib/layoutPrefs";
+import {
+  ALL_NAV_ITEMS,
+  NAV_GROUPS,
+  NAV_ITEM_BY_ID,
+  NAV_PINNED,
+  navItemMatches,
+  resolveActiveNavId,
+  type NavGroup,
+  type NavItem,
+} from "../lib/nav-config";
 
 const LS_COLLAPSED = "rpm-prestige-sidebar-collapsed";
-const LS_SUB = "rpm-prestige-sidebar-submenu";
-const MAX_PINNED = 5;
+const LS_GROUP_OPEN = "rpm-prestige-sidebar-groups-v2";
+const MAX_USER_PINNED = 5;
 
-type SubState = { dashboard: boolean; eos: boolean; operations: boolean; agentHub: boolean };
+type GroupOpenState = Record<string, boolean>;
 
-function readSub(): SubState {
-  if (typeof window === "undefined") return { dashboard: true, eos: false, operations: false, agentHub: false };
+function defaultGroupOpenState(): GroupOpenState {
+  const o: GroupOpenState = {};
+  for (const g of NAV_GROUPS) o[g.id] = !g.defaultClosed;
+  return o;
+}
+
+function readGroupState(): GroupOpenState {
+  if (typeof window === "undefined") return defaultGroupOpenState();
   try {
-    const raw = localStorage.getItem(LS_SUB);
-    if (!raw) return { dashboard: true, eos: false, operations: false, agentHub: false };
-    const j = JSON.parse(raw) as Partial<SubState>;
-    return {
-      dashboard: typeof j.dashboard === "boolean" ? j.dashboard : true,
-      eos: typeof j.eos === "boolean" ? j.eos : false,
-      operations: typeof j.operations === "boolean" ? j.operations : false,
-      agentHub: typeof j.agentHub === "boolean" ? j.agentHub : false,
-    };
+    const raw = localStorage.getItem(LS_GROUP_OPEN);
+    if (!raw) return defaultGroupOpenState();
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const out = defaultGroupOpenState();
+    for (const k of Object.keys(out)) {
+      if (typeof j[k] === "boolean") out[k] = j[k] as boolean;
+    }
+    return out;
   } catch {
-    return { dashboard: true, eos: false, operations: false, agentHub: false };
+    return defaultGroupOpenState();
   }
 }
 
 function userInitials(displayName: string, username: string) {
   const n = (displayName || username || "?").trim();
   const parts = n.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return n.slice(0, 2).toUpperCase() || "?";
 }
 
-const EXTERNAL = [
-  { label: "AppFolio", href: "https://rpmtx033.appfolio.com" },
-  { label: "LeadSimple", href: "https://app.leadsimple.com" },
-  { label: "RentEngine", href: "https://app.rentengine.io/owner/default" },
-  { label: "Blanket", href: "https://rpmprestige.blankethomes.com/pm" },
-  { label: "Boom", href: "https://www.boompay.app/" },
-  { label: "RPM Intranet", href: "https://rpmintranet.com/login" },
-  { label: "Our Website", href: "https://www.prestigerpm.com/" },
-  { label: "OpenPhone", href: "https://app.openphone.com" },
-] as const;
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner / Operator",
+  admin: "Administrator",
+  csm: "Client Success Manager",
+  maintenance: "Maintenance Coordinator",
+  operations: "Operations",
+  staff: "Team Member",
+};
 
 type Props = {
   mobileDrawerOpen: boolean;
@@ -61,7 +84,12 @@ type Props = {
   onCollapsedChange: (collapsed: boolean) => void;
 };
 
-export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, collapsed, onCollapsedChange }: Props) {
+export default function Sidebar({
+  mobileDrawerOpen,
+  onMobileDrawerOpenChange,
+  collapsed,
+  onCollapsedChange,
+}: Props) {
   const pathname = usePathname() || "/";
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -70,31 +98,41 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const isMobile = narrow;
   const { prefs, update, saveNow, reset } = useLayoutPrefs();
 
-  const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false, operations: false, agentHub: false });
-  const [flyout, setFlyout] = useState<null | "dashboard" | "eos" | "operations" | "agentHub">(null);
+  const [groupOpen, setGroupOpen] = useState<GroupOpenState>(defaultGroupOpenState);
+  const [query, setQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
+  // Live badges
   const [unread, setUnread] = useState<number | null>(null);
   const [queued, setQueued] = useState<number | null>(null);
   const [formsBadge, setFormsBadge] = useState<number | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
 
   const userWrapRef = useRef<HTMLDivElement>(null);
-  const shellRef = useRef<HTMLElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setSubOpen(readSub());
+    setGroupOpen(readGroupState());
   }, []);
 
-  const persistSub = useCallback((next: SubState) => {
-    setSubOpen(next);
+  const persistGroup = useCallback((next: GroupOpenState) => {
+    setGroupOpen(next);
     try {
-      localStorage.setItem(LS_SUB, JSON.stringify(next));
+      localStorage.setItem(LS_GROUP_OPEN, JSON.stringify(next));
     } catch {
       /* ignore */
     }
   }, []);
+
+  const toggleGroup = useCallback(
+    (id: string) => {
+      persistGroup({ ...groupOpen, [id]: !groupOpen[id] });
+    },
+    [groupOpen, persistGroup]
+  );
+
+  /* ---------- Live badge fetching (preserved from previous Sidebar) ---------- */
 
   const loadBadges = useCallback(async () => {
     if (!token) return;
@@ -128,185 +166,49 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     return () => clearInterval(t);
   }, [loadBadges]);
 
+  /* ---------- ⌘K shortcut ---------- */
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (collapsed && !isMobile) onCollapsedChange(false);
+        if (isMobile) onMobileDrawerOpenChange(true);
+        setTimeout(() => searchRef.current?.focus(), 50);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapsed, isMobile, onCollapsedChange, onMobileDrawerOpenChange]);
+
+  /* ---------- Click outside user menu ---------- */
+
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!userWrapRef.current?.contains(e.target as Node)) setUserMenuOpen(false);
-      if (flyout && shellRef.current && !shellRef.current.contains(e.target as Node)) {
-        setFlyout(null);
-      }
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [flyout]);
-
-  const dashboardTab = searchParams?.get("tab") || "executive";
-
-  const hubActive = pathname === "/";
-  const dashboardActive = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
-  const inboxActive = pathname === "/inbox" || pathname.startsWith("/inbox/");
-  const agentsActive = pathname === "/agents" || pathname.startsWith("/agents/");
-  const eosSectionActive = pathname.startsWith("/eos");
-  const operationsSectionActive = pathname.startsWith("/operations");
-  const agentHubSectionActive = pathname === "/agent-hub" || pathname.startsWith("/agent-hub/");
-
-  const showLabels = isMobile || !collapsed;
-  const narrowColumn = !isMobile && collapsed;
-
-  useEffect(() => {
-    if (!narrowColumn) setFlyout(null);
-  }, [narrowColumn]);
-
-  const onSignOut = () => {
-    setUserMenuOpen(false);
-    logout();
-    router.replace("/login");
-  };
-
-  const toggleCollapse = () => {
-    if (isMobile) {
-      onMobileDrawerOpenChange(false);
-      return;
-    }
-    const next = !collapsed;
-    onCollapsedChange(next);
-    try {
-      localStorage.setItem(LS_COLLAPSED, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-    setFlyout(null);
-  };
-
-  const toggleDashboardSub = () => {
-    if (narrowColumn) {
-      setFlyout((f) => (f === "dashboard" ? null : "dashboard"));
-      return;
-    }
-    persistSub({ ...subOpen, dashboard: !subOpen.dashboard });
-  };
-  const toggleEosSub = () => {
-    if (narrowColumn) {
-      setFlyout((f) => (f === "eos" ? null : "eos"));
-      return;
-    }
-    persistSub({ ...subOpen, eos: !subOpen.eos });
-  };
-  const toggleOperationsSub = () => {
-    if (narrowColumn) {
-      setFlyout((f) => (f === "operations" ? null : "operations"));
-      return;
-    }
-    persistSub({ ...subOpen, operations: !subOpen.operations });
-  };
-  const toggleAgentHubSub = () => {
-    if (narrowColumn) {
-      setFlyout((f) => (f === "agentHub" ? null : "agentHub"));
-      return;
-    }
-    persistSub({ ...subOpen, agentHub: !subOpen.agentHub });
-  };
-
-  const closeMobileIfNav = () => {
-    if (isMobile) onMobileDrawerOpenChange(false);
-    setFlyout(null);
-  };
-
-  const dashSubLinks = useMemo(
-    () =>
-      [
-        { tab: "executive", label: "Executive" },
-        { tab: "maintenance", label: "Maintenance" },
-        { tab: "finance", label: "Finance" },
-        { tab: "portfolio", label: "Portfolio" },
-        { tab: "leasing", label: "Leasing" },
-      ] as const,
-    []
-  );
-
-  const eosSubLinks = useMemo(
-    () =>
-      [
-        { href: "/eos/scorecard", label: "Scorecard" },
-        { href: "/eos/scorecards", label: "Individual Scorecards" },
-        { href: "/eos/rocks", label: "Rocks" },
-        { href: "/eos/l10", label: "L10 Meetings" },
-      ] as const,
-    []
-  );
-
-  const agentHubSubLinks = useMemo(
-    () =>
-      [
-        { href: "/agent-hub", label: "Dashboard" },
-        { href: "/agent-hub/insights", label: "Insights" },
-        { href: "/agent-hub/pipeline", label: "Pipeline" },
-        { href: "/agent-hub/approval-queue", label: "Approval Queue" },
-        { href: "/agent-hub/agents", label: "Agents" },
-        { href: "/agent-hub/owners", label: "Owners" },
-        { href: "/agent-hub/properties", label: "Properties" },
-        { href: "/agent-hub/brokerages", label: "Brokerages" },
-        { href: "/agent-hub/tasks", label: "Tasks" },
-        { href: "/agent-hub/automations", label: "Automations" },
-        { href: "/agent-hub/templates", label: "Templates" },
-        { href: "/agent-hub/print-queue", label: "Print Queue" },
-        { href: "/agent-hub/send-log", label: "Send Log" },
-        { href: "/agent-hub/replies", label: "Replies" },
-        { href: "/agent-hub/financials", label: "Financials" },
-        { href: "/agent-hub/leaderboard", label: "Leaderboard" },
-        { href: "/agent-hub/cohorts", label: "Cohorts" },
-        { href: "/agent-hub/market", label: "Market Data" },
-        { href: "/agent-hub/system-config", label: "System Config" },
-        { href: "/agent-hub/search", label: "Search" },
-      ] as const,
-    []
-  );
-
-  const operationsSubLinks = useMemo(
-    () =>
-      isAdmin
-        ? ([
-            { href: "/operations/tasks", label: "Tasks" },
-            { href: "/operations/projects", label: "Projects" },
-            { href: "/operations/processes", label: "Processes" },
-            { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
-            { href: "/operations/boards/manage", label: "Manage Boards" },
-            { href: "/operations/templates", label: "Templates" },
-          ] as const)
-        : ([
-            { href: "/operations/tasks", label: "Tasks" },
-            { href: "/operations/projects", label: "Projects" },
-            { href: "/operations/processes", label: "Processes" },
-            { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
-          ] as const),
-    [isAdmin]
-  );
-
-  const showCollapsedTooltips = narrowColumn;
-
-  /* ========== Edit-mode: reorder/pin/hide ========== */
-
-  const itemById = useMemo(() => {
-    const m = new Map<string, SidebarNavItem>();
-    for (const i of DEFAULT_SIDEBAR_ITEMS) m.set(i.id, i);
-    return m;
   }, []);
 
-  const orderedIds = useMemo(() => {
-    const base = prefs.sidebarOrder.length > 0 ? prefs.sidebarOrder : DEFAULT_SIDEBAR_ITEMS.map((i) => i.id);
-    const seen = new Set(base);
-    for (const i of DEFAULT_SIDEBAR_ITEMS) if (!seen.has(i.id)) base.push(i.id);
-    return base.filter((id) => itemById.has(id));
-  }, [prefs.sidebarOrder, itemById]);
+  /* ---------- Active item resolution ---------- */
 
-  const pinnedIds = useMemo(
-    () => prefs.sidebarPinned.filter((id) => itemById.has(id)).slice(0, MAX_PINNED),
-    [prefs.sidebarPinned, itemById]
+  const tab = searchParams?.get("tab") ?? null;
+  const activeId = useMemo(() => resolveActiveNavId(pathname, tab), [pathname, tab]);
+
+  /* ---------- Pin / hide prefs ---------- */
+
+  const validIds = useMemo(() => new Set(ALL_NAV_ITEMS.map((it) => it.id)), []);
+  const userPinnedIds = useMemo(
+    () => prefs.sidebarPinned.filter((id) => validIds.has(id)).slice(0, MAX_USER_PINNED),
+    [prefs.sidebarPinned, validIds]
   );
   const hiddenIds = useMemo(
-    () => new Set(prefs.sidebarHidden.filter((id) => itemById.has(id))),
-    [prefs.sidebarHidden, itemById]
+    () => new Set(prefs.sidebarHidden.filter((id) => validIds.has(id))),
+    [prefs.sidebarHidden, validIds]
   );
-  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+  const userPinnedSet = useMemo(() => new Set(userPinnedIds), [userPinnedIds]);
+  const defaultPinnedSet = useMemo(() => new Set(NAV_PINNED.map((it) => it.id)), []);
 
   const togglePin = useCallback(
     (id: string) => {
@@ -315,11 +217,11 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         if (current.has(id)) {
           current.delete(id);
         } else {
-          if (current.size >= MAX_PINNED) return p;
+          if (current.size >= MAX_USER_PINNED) return p;
           current.add(id);
         }
         return { ...p, sidebarPinned: Array.from(current) };
-      }, 1000);
+      }, 800);
     },
     [update]
   );
@@ -331,297 +233,218 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         if (current.has(id)) current.delete(id);
         else current.add(id);
         return { ...p, sidebarHidden: Array.from(current) };
-      }, 1000);
+      }, 800);
     },
     [update]
   );
 
-  const reorderItem = useCallback(
-    (fromId: string, toId: string) => {
-      if (fromId === toId) return;
-      update((p) => {
-        const base =
-          p.sidebarOrder.length > 0 ? [...p.sidebarOrder] : DEFAULT_SIDEBAR_ITEMS.map((i) => i.id);
-        for (const i of DEFAULT_SIDEBAR_ITEMS) if (!base.includes(i.id)) base.push(i.id);
-        const fromIdx = base.indexOf(fromId);
-        const toIdx = base.indexOf(toId);
-        if (fromIdx < 0 || toIdx < 0) return p;
-        base.splice(fromIdx, 1);
-        base.splice(toIdx, 0, fromId);
-        return { ...p, sidebarOrder: base };
-      }, 1000);
-    },
-    [update]
-  );
-
-  const onReset = useCallback(async () => {
-    if (!window.confirm("Reset sidebar layout to defaults?")) return;
+  const onResetPrefs = useCallback(async () => {
+    if (!window.confirm("Reset sidebar pin/hide preferences to defaults?")) return;
     await reset();
   }, [reset]);
 
-  const onDoneEdit = async () => {
-    await saveNow(prefs);
-    setEditMode(false);
+  /* ---------- Render-state helpers ---------- */
+
+  const showLabels = isMobile || !collapsed;
+  const narrowColumn = !isMobile && collapsed;
+
+  const closeMobileIfNav = useCallback(() => {
+    if (isMobile) onMobileDrawerOpenChange(false);
+  }, [isMobile, onMobileDrawerOpenChange]);
+
+  const toggleCollapse = useCallback(() => {
+    if (isMobile) {
+      onMobileDrawerOpenChange(false);
+      return;
+    }
+    const next = !collapsed;
+    onCollapsedChange(next);
+    try {
+      localStorage.setItem(LS_COLLAPSED, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed, isMobile, onCollapsedChange, onMobileDrawerOpenChange]);
+
+  const onSignOut = () => {
+    setUserMenuOpen(false);
+    logout();
+    router.replace("/login");
   };
 
-  /* ========== Render primary rows ========== */
-
-  const renderDropdownSub = (key: "dashboard" | "eos" | "operations" | "agentHub") => {
-    if (!showLabels) return null;
-    if (key === "dashboard" && subOpen.dashboard) {
-      return (
-        <div className={styles.subWrap} style={{ maxHeight: 320 }}>
-          <div className={styles.subList}>
-            {dashSubLinks.map(({ tab, label }) => {
-              const href = `/dashboard?tab=${tab}`;
-              const active = dashboardActive && dashboardTab === tab;
-              return (
-                <Link
-                  key={tab}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    if (key === "eos" && subOpen.eos) {
-      return (
-        <div className={styles.subWrap} style={{ maxHeight: 200 }}>
-          <div className={styles.subList}>
-            {eosSubLinks.map(({ href, label }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    if (key === "operations" && subOpen.operations) {
-      return (
-        <div className={styles.subWrap} style={{ maxHeight: 200 }}>
-          <div className={styles.subList}>
-            {operationsSubLinks.map(({ href, label }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    if (key === "agentHub" && subOpen.agentHub) {
-      return (
-        <div className={styles.subWrap} style={{ maxHeight: 400 }}>
-          <div className={styles.subList}>
-            {agentHubSubLinks.map(({ href, label }) => {
-              const active =
-                href === "/agent-hub"
-                  ? pathname === "/agent-hub"
-                  : pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                  onClick={closeMobileIfNav}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
+  const badgeForItem = (item: NavItem): number | null => {
+    if (!item.badge) return null;
+    if (item.badge === "inbox-unread") return unread;
+    if (item.badge === "agents-queue") return queued;
+    if (item.badge === "forms-pending") return formsBadge;
     return null;
   };
 
-  const renderNormalRow = (item: SidebarNavItem, opts: { isPinnedDisplay?: boolean } = {}) => {
-    const pinMark = opts.isPinnedDisplay ? <span className={styles.pinStar}>★</span> : null;
-    if (item.type === "dropdown") {
-      const activeCheck =
-        item.id === "dashboard"
-          ? dashboardActive
-          : item.id === "eos"
-          ? eosSectionActive
-          : item.id === "agentHub"
-          ? agentHubSectionActive
-          : operationsSectionActive;
-      const toggle =
-        item.id === "dashboard"
-          ? toggleDashboardSub
-          : item.id === "eos"
-          ? toggleEosSub
-          : item.id === "agentHub"
-          ? toggleAgentHubSub
-          : toggleOperationsSub;
-      const openState =
-        item.id === "dashboard"
-          ? subOpen.dashboard
-          : item.id === "eos"
-          ? subOpen.eos
-          : item.id === "agentHub"
-          ? subOpen.agentHub
-          : subOpen.operations;
+  /* ---------- Filter + visibility ---------- */
+
+  const q = query.trim().toLowerCase();
+  const isFiltering = q.length > 0;
+
+  const itemVisible = (item: NavItem): boolean => {
+    if (item.adminOnly && !isAdmin) return false;
+    if (hiddenIds.has(item.id) && !editMode) return false;
+    if (isFiltering && !navItemMatches(item, query)) return false;
+    return true;
+  };
+
+  /* ---------- Pinned section content ----------
+     Default pinned (NAV_PINNED) plus any user-pinned items that aren't
+     already pinned by default. Hidden + filter rules apply. */
+  const pinnedRendered: NavItem[] = useMemo(() => {
+    const out: NavItem[] = [];
+    for (const it of NAV_PINNED) {
+      if (itemVisible(it)) out.push(it);
+    }
+    for (const id of userPinnedIds) {
+      if (defaultPinnedSet.has(id)) continue;
+      const it = NAV_ITEM_BY_ID.get(id);
+      if (it && itemVisible(it)) out.push(it);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFiltering, query, hiddenIds, userPinnedIds, isAdmin, editMode]);
+
+  /* ---------- Render row ---------- */
+
+  const renderItem = (item: NavItem) => {
+    const Icon = item.icon;
+    const isActive = activeId === item.id;
+    const badgeVal = badgeForItem(item);
+    const cn = `${styles.item} ${isActive ? styles.itemActive : ""}`;
+    const tooltip = narrowColumn ? <span className={styles.tooltip}>{item.label}</span> : null;
+
+    if (item.external) {
       return (
-        <div key={`row-${item.id}`}>
-          <button
-            type="button"
-            className={`${styles.row} ${activeCheck ? styles.rowActive : ""}`}
-            onClick={toggle}
-            title={showCollapsedTooltips ? item.label : undefined}
+        <a
+          key={item.id}
+          href={item.external}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn}
+          title={narrowColumn ? item.label : undefined}
+          onClick={closeMobileIfNav}
+        >
+          <span
+            className={styles.iconWrap}
+            style={item.brandColor ? { color: item.brandColor } : undefined}
           >
-            <span className={styles.icon} aria-hidden>
-              {item.icon}
-            </span>
-            {showLabels ? (
-              <>
-                {pinMark}
-                <span className={styles.label}>{item.label}</span>
-                <span className={`${styles.chevron} ${openState ? styles.chevronOpen : ""}`} aria-hidden>
-                  ▸
-                </span>
-              </>
-            ) : null}
-          </button>
-          {renderDropdownSub(item.id as "dashboard" | "eos" | "operations" | "agentHub")}
-        </div>
+            <Icon size={16} strokeWidth={2} />
+          </span>
+          {showLabels ? (
+            <>
+              <span className={styles.label}>{item.label}</span>
+              <span className={styles.extArrow} aria-hidden>
+                <ArrowUpRight size={12} strokeWidth={2.2} />
+              </span>
+            </>
+          ) : null}
+          {tooltip}
+        </a>
       );
     }
+
     const href = item.href || "/";
-    const active = pathname === href || pathname.startsWith(`${href}/`);
-    const badge =
-      item.id === "inbox" && unread != null && unread > 0
-        ? unread
-        : item.id === "agents" && queued != null && queued > 0
-        ? queued
-        : item.id === "forms" && formsBadge && formsBadge > 0
-        ? formsBadge
-        : null;
     return (
       <Link
-        key={`row-${item.id}`}
+        key={item.id}
         href={href}
-        className={`${styles.row} ${active ? styles.rowActive : ""}`}
+        className={cn}
         onClick={closeMobileIfNav}
-        title={showCollapsedTooltips ? item.label : undefined}
+        title={narrowColumn ? item.label : undefined}
       >
-        <span className={styles.icon} aria-hidden>
-          {item.icon}
+        <span className={styles.iconWrap}>
+          <Icon size={16} strokeWidth={2} />
         </span>
-        {showLabels ? (
-          <>
-            {pinMark}
-            <span className={styles.label}>{item.label}</span>
-          </>
-        ) : null}
-        {badge ? (
-          <span className={`${styles.badge} ${styles.badgePulse}`} aria-label={`${badge}`}>
-            {badge > 99 ? "99+" : badge}
+        {showLabels ? <span className={styles.label}>{item.label}</span> : null}
+        {showLabels && badgeVal !== null && badgeVal > 0 ? (
+          <span className={styles.badge} aria-label={`${badgeVal}`}>
+            {badgeVal > 99 ? "99+" : badgeVal}
           </span>
         ) : null}
+        {tooltip}
       </Link>
     );
   };
 
-  /* ========== Edit mode rows ========== */
+  /* ---------- Render group (or fully filtered out) ---------- */
 
-  const renderEditableRow = (item: SidebarNavItem) => {
-    const pinned = pinnedSet.has(item.id);
-    const hidden = hiddenIds.has(item.id);
-    const dragging = dragId === item.id;
+  const renderGroup = (group: NavGroup) => {
+    const visible = group.items.filter(itemVisible);
+    if (isFiltering && visible.length === 0) return null;
+    const isOpen = isFiltering ? true : groupOpen[group.id] !== false;
     return (
       <div
-        key={`edit-${item.id}`}
-        className={`${styles.editableRow} ${hidden ? styles.editableRowGhost : ""} ${
-          dragging ? styles.editableRowDragging : ""
-        }`}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", item.id);
-          setDragId(item.id);
-        }}
-        onDragOver={(e) => {
-          if (dragId && dragId !== item.id) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-          }
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          const fromId = e.dataTransfer.getData("text/plain") || dragId;
-          setDragId(null);
-          if (fromId && fromId !== item.id) reorderItem(fromId, item.id);
-        }}
-        onDragEnd={() => setDragId(null)}
+        key={group.id}
+        className={`${styles.group} ${isOpen ? "" : styles.groupClosed}`}
       >
-        <span className={styles.editableDragHandle} aria-hidden>
-          ⋮⋮
+        {showLabels ? (
+          <button
+            type="button"
+            className={styles.groupHeader}
+            onClick={() => !isFiltering && toggleGroup(group.id)}
+            aria-expanded={isOpen}
+          >
+            <span className={styles.groupLabel}>{group.label}</span>
+            <span className={styles.groupChevron} aria-hidden>
+              <ChevronDown size={12} strokeWidth={2.2} />
+            </span>
+          </button>
+        ) : null}
+        <div className={styles.items}>{visible.map(renderItem)}</div>
+      </div>
+    );
+  };
+
+  /* ---------- Edit-mode row (pin / hide) ---------- */
+
+  const renderEditableItem = (item: NavItem) => {
+    const Icon = item.icon;
+    const isPinned = userPinnedSet.has(item.id) || defaultPinnedSet.has(item.id);
+    const isHidden = hiddenIds.has(item.id);
+    const canPin = !defaultPinnedSet.has(item.id);
+    return (
+      <div
+        key={item.id}
+        className={`${styles.editRow} ${isHidden ? styles.editRowGhost : ""}`}
+      >
+        <span className={styles.iconWrap}>
+          <Icon size={14} strokeWidth={2} />
         </span>
-        <span className={styles.icon} aria-hidden>
-          {item.icon}
-        </span>
-        <span className={styles.editableLabel}>{item.label}</span>
+        <span className={styles.editLabel}>{item.label}</span>
+        {canPin ? (
+          <button
+            type="button"
+            className={`${styles.editBtn} ${isPinned ? styles.editBtnActive : ""}`}
+            onClick={() => togglePin(item.id)}
+            disabled={!isPinned && userPinnedIds.length >= MAX_USER_PINNED}
+            title={isPinned ? "Unpin from top" : "Pin to top"}
+            aria-label={isPinned ? "Unpin" : "Pin"}
+          >
+            {isPinned ? <PinOff size={13} strokeWidth={2} /> : <Pin size={13} strokeWidth={2} />}
+          </button>
+        ) : null}
         <button
           type="button"
-          className={`${styles.editableBtn} ${pinned ? styles.editableBtnPinned : ""}`}
-          onClick={() => togglePin(item.id)}
-          title={pinned ? "Unpin" : `Pin to top${pinnedIds.length >= MAX_PINNED && !pinned ? " (max 5 reached)" : ""}`}
-          aria-label={pinned ? "Unpin item" : "Pin item"}
-          disabled={!pinned && pinnedIds.length >= MAX_PINNED}
-        >
-          {pinned ? "★" : "☆"}
-        </button>
-        <button
-          type="button"
-          className={styles.editableBtn}
+          className={styles.editBtn}
           onClick={() => toggleHidden(item.id)}
-          title={hidden ? "Show" : "Hide"}
-          aria-label={hidden ? "Show item" : "Hide item"}
+          title={isHidden ? "Show in sidebar" : "Hide from sidebar"}
+          aria-label={isHidden ? "Show" : "Hide"}
         >
-          {hidden ? "🙈" : "👁"}
+          {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
         </button>
       </div>
     );
   };
 
-  /* ========== Final render ========== */
-
-  const visibleOrderedIds = orderedIds.filter((id) => !pinnedSet.has(id) && !hiddenIds.has(id));
-  const pinnedItems = pinnedIds.map((id) => itemById.get(id)).filter(Boolean) as SidebarNavItem[];
-  const hiddenItems = Array.from(hiddenIds).map((id) => itemById.get(id)).filter(Boolean) as SidebarNavItem[];
-  const nonHiddenOrderedItems = orderedIds
-    .filter((id) => !hiddenIds.has(id) || editMode)
-    .map((id) => itemById.get(id))
-    .filter(Boolean) as SidebarNavItem[];
+  /* ---------- Final render ---------- */
 
   return (
     <aside
-      ref={shellRef}
       className={styles.shell}
       data-collapsed={collapsed && !isMobile ? "true" : "false"}
       data-mobile={isMobile ? "true" : "false"}
@@ -629,285 +452,137 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
       data-edit-mode={editMode ? "true" : "false"}
       aria-label="Main navigation"
     >
-      <div className={styles.topRow}>
+      <div className={styles.brand}>
+        <Link
+          href="/"
+          className={styles.brandMark}
+          onClick={closeMobileIfNav}
+          title="RPM Prestige"
+          aria-label="RPM Prestige Home"
+        >
+          <span>R</span>
+        </Link>
+        {showLabels ? (
+          <Link href="/" className={styles.brandText} onClick={closeMobileIfNav}>
+            <span className={styles.brandT1}>RPM Prestige</span>
+            <span className={styles.brandT2}>Houston · CT</span>
+          </Link>
+        ) : null}
         <button
           type="button"
-          className={styles.toggle}
+          className={styles.collapseBtn}
           onClick={toggleCollapse}
           aria-label={isMobile ? "Close menu" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={isMobile ? "Close menu" : collapsed ? "Expand" : "Collapse"}
         >
-          {isMobile ? "✕" : collapsed ? "»" : "«"}
-        </button>
-        <div className={styles.logoBlock}>
-          {showLabels ? (
-            <Link href="/" className={styles.logoMark} onClick={closeMobileIfNav} title="RPM Prestige">
-              RPM Prestige
-            </Link>
+          {isMobile ? (
+            <X size={14} strokeWidth={2.2} />
+          ) : collapsed ? (
+            <ChevronRight size={14} strokeWidth={2.2} />
           ) : (
-            <Link href="/" className={styles.logoMarkCompact} onClick={closeMobileIfNav} title="RPM Prestige">
-              R
-            </Link>
+            <ChevronLeft size={14} strokeWidth={2.2} />
           )}
-        </div>
+        </button>
       </div>
+
+      {showLabels && !editMode ? (
+        <div className={styles.search}>
+          <span className={styles.searchIcon} aria-hidden>
+            <Search size={14} strokeWidth={2.2} />
+          </span>
+          <input
+            ref={searchRef}
+            type="text"
+            placeholder="Search Hub…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search navigation"
+          />
+          <span className={styles.kbd} aria-hidden>
+            ⌘K
+          </span>
+        </div>
+      ) : null}
 
       {editMode && showLabels ? (
         <div className={styles.editToolbar}>
-          <span className={styles.editToolbarTitle}>Edit Sidebar</span>
-          <button
-            type="button"
-            className={styles.editToolbarBtn}
-            onClick={onReset}
-            title="Reset to default"
-          >
+          <span className={styles.editToolbarTitle}>Customize</span>
+          <button type="button" className={styles.editToolbarBtn} onClick={onResetPrefs}>
             Reset
           </button>
           <button
             type="button"
             className={`${styles.editToolbarBtn} ${styles.editToolbarBtnPrimary}`}
-            onClick={onDoneEdit}
+            onClick={async () => {
+              await saveNow(prefs);
+              setEditMode(false);
+            }}
           >
             Done
           </button>
         </div>
       ) : null}
 
-      <nav className={styles.scroll} aria-label="Primary">
+      <nav className={styles.nav} aria-label="Primary">
         {editMode && showLabels ? (
           <>
-            <div className={styles.pinnedLabel}>Order · Pin · Hide</div>
-            {nonHiddenOrderedItems.map((item) => renderEditableRow(item))}
-            {hiddenItems.length > 0 ? (
-              <>
-                <div className={styles.hiddenLabel}>Hidden</div>
-                {hiddenItems.map((item) => renderEditableRow(item))}
-              </>
-            ) : null}
+            <div className={styles.editSectionLabel}>Pinned (default)</div>
+            {NAV_PINNED.map(renderEditableItem)}
+            {NAV_GROUPS.map((g) => {
+              const visibleByRole = g.items.filter((it) => !it.adminOnly || isAdmin);
+              if (visibleByRole.length === 0) return null;
+              return (
+                <div key={g.id}>
+                  <div className={styles.editSectionLabel}>{g.label}</div>
+                  {visibleByRole.map(renderEditableItem)}
+                </div>
+              );
+            })}
           </>
         ) : (
           <>
-            {pinnedItems.length > 0 && showLabels ? (
-              <>
-                <div className={styles.pinnedLabel}>
-                  <span aria-hidden>★</span> Pinned
-                </div>
-                {pinnedItems.map((item) => renderNormalRow(item, { isPinnedDisplay: true }))}
-                <div className={styles.pinnedDivider} aria-hidden />
-              </>
-            ) : null}
-
-            {visibleOrderedIds.map((id) => {
-              const item = itemById.get(id);
-              if (!item) return null;
-              if (item.section === "tools" && visibleOrderedIds.indexOf(id) > 0) {
-                const prevId = visibleOrderedIds[visibleOrderedIds.indexOf(id) - 1];
-                const prevItem = itemById.get(prevId);
-                if (prevItem?.section !== "tools") {
-                  return (
-                    <div key={`tools-anchor-${id}`}>
-                      {showLabels ? <div className={styles.sectionLabel}>Tools</div> : null}
-                      {renderNormalRow(item)}
-                    </div>
-                  );
-                }
-              }
-              return renderNormalRow(item);
-            })}
-
-            {/* Narrow-column dropdown flyouts */}
-            {narrowColumn && flyout === "dashboard" ? (
-              <div
-                className={styles.subList}
-                style={{
-                  position: "fixed",
-                  left: 60,
-                  top: 96,
-                  zIndex: 1300,
-                  background: "#1b2856",
-                  borderRadius: 12,
-                  padding: "0.5rem 0",
-                  minWidth: 200,
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                {dashSubLinks.map(({ tab, label }) => {
-                  const href = `/dashboard?tab=${tab}`;
-                  const active = dashboardActive && dashboardTab === tab;
-                  return (
-                    <Link
-                      key={tab}
-                      href={href}
-                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                      style={{ color: "#fff" }}
-                      onClick={closeMobileIfNav}
-                    >
-                      {label}
-                    </Link>
-                  );
-                })}
+            {pinnedRendered.length > 0 ? (
+              <div className={styles.group}>
+                <div className={styles.items}>{pinnedRendered.map(renderItem)}</div>
               </div>
             ) : null}
-
-            {narrowColumn && flyout === "eos" ? (
-              <div
-                className={styles.subList}
-                style={{
-                  position: "fixed",
-                  left: 60,
-                  top: 200,
-                  zIndex: 1300,
-                  background: "#1b2856",
-                  borderRadius: 12,
-                  padding: "0.5rem 0",
-                  minWidth: 200,
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                {eosSubLinks.map(({ href, label }) => {
-                  const active = pathname === href || pathname.startsWith(`${href}/`);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                      style={{ color: "#fff" }}
-                      onClick={closeMobileIfNav}
-                    >
-                      {label}
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {narrowColumn && flyout === "operations" ? (
-              <div
-                className={styles.subList}
-                style={{
-                  position: "fixed",
-                  left: 60,
-                  top: 240,
-                  zIndex: 1300,
-                  background: "#1b2856",
-                  borderRadius: 12,
-                  padding: "0.5rem 0",
-                  minWidth: 200,
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                {operationsSubLinks.map(({ href, label }) => {
-                  const active = pathname === href || pathname.startsWith(`${href}/`);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
-                      style={{ color: "#fff" }}
-                      onClick={closeMobileIfNav}
-                    >
-                      {label}
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {/* External section (always shown) */}
-            {showLabels ? <div className={styles.sectionLabel}>External</div> : null}
-            {EXTERNAL.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.row}
-                title={item.label}
-              >
-                <span className={styles.icon} aria-hidden>
-                  {showLabels ? "\u00a0" : "↗"}
-                </span>
-                {showLabels ? (
-                  <>
-                    <span className={styles.label}>{item.label}</span>
-                    <span className={styles.externalMark} aria-hidden>
-                      ↗
-                    </span>
-                  </>
-                ) : null}
-              </a>
-            ))}
-
-            {isAdmin ? (
-              <>
-                {showLabels ? <div className={styles.sectionLabel}>Admin</div> : null}
-                <Link
-                  href="/admin/users"
-                  className={`${styles.row} ${pathname.startsWith("/admin/users") ? styles.rowActive : ""}`}
-                  onClick={closeMobileIfNav}
-                  title={showCollapsedTooltips ? "User Management" : undefined}
-                >
-                  <span className={styles.icon} aria-hidden>
-                    👥
-                  </span>
-                  {showLabels ? <span className={styles.label}>User Management</span> : null}
-                </Link>
-                <Link
-                  href="/admin/forms"
-                  className={`${styles.row} ${pathname.startsWith("/admin/forms") ? styles.rowActive : ""}`}
-                  onClick={closeMobileIfNav}
-                  title={showCollapsedTooltips ? "Form Submissions" : undefined}
-                >
-                  <span className={styles.icon} aria-hidden>
-                    📋
-                  </span>
-                  {showLabels ? <span className={styles.label}>Form Submissions</span> : null}
-                </Link>
-                <Link
-                  href="/admin/walkthru"
-                  className={`${styles.row} ${pathname.startsWith("/admin/walkthru") ? styles.rowActive : ""}`}
-                  onClick={closeMobileIfNav}
-                  title={showCollapsedTooltips ? "Walk-Thru Reports" : undefined}
-                >
-                  <span className={styles.icon} aria-hidden>
-                    📝
-                  </span>
-                  {showLabels ? <span className={styles.label}>Walk-Thru Reports</span> : null}
-                </Link>
-              </>
-            ) : null}
+            {NAV_GROUPS.map(renderGroup)}
           </>
         )}
       </nav>
 
-      {!editMode && showLabels ? (
-        <button
-          type="button"
-          className={styles.sidebarEditGear}
-          onClick={() => setEditMode(true)}
-          aria-label="Edit sidebar layout"
-        >
-          ⚙ Customize sidebar
-        </button>
-      ) : null}
-
       <div className={styles.userFooter}>
-        <div className={styles.userWrap} ref={userWrapRef}>
+        {!editMode && showLabels ? (
+          <button type="button" className={styles.gear} onClick={() => setEditMode(true)}>
+            <Settings size={13} strokeWidth={2} />
+            <span className={styles.gearLabel}>Customize sidebar</span>
+          </button>
+        ) : null}
+
+        <div ref={userWrapRef} style={{ position: "relative" }}>
           <button
             type="button"
-            className={styles.userBtn}
+            className={styles.user}
             aria-expanded={userMenuOpen}
             aria-haspopup="menu"
             onClick={() => setUserMenuOpen((o) => !o)}
-            title={showCollapsedTooltips ? (user?.displayName || user?.username || "Account") : undefined}
+            title={narrowColumn ? user?.displayName || user?.username || "Account" : undefined}
           >
-            <span className={styles.avatar}>{userInitials(user?.displayName || "", user?.username || "")}</span>
+            <span className={styles.avatar}>
+              {userInitials(user?.displayName || "", user?.username || "")}
+            </span>
             {showLabels ? (
-              <span className={styles.label}>{user?.displayName?.trim() || user?.username || "Account"}</span>
+              <span className={styles.userMeta}>
+                <span className={styles.userName}>
+                  {user?.displayName?.trim() || user?.username || "Account"}
+                </span>
+                <span className={styles.userRole}>
+                  {ROLE_LABELS[user?.role || "staff"] ?? "Team Member"}
+                </span>
+              </span>
             ) : null}
           </button>
+
           {userMenuOpen ? (
             <div className={styles.userMenu} role="menu">
               <button
@@ -920,13 +595,19 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
               >
                 Change password
               </button>
-              <button type="button" role="menuitem" className={styles.userMenuDanger} onClick={onSignOut}>
+              <button
+                type="button"
+                role="menuitem"
+                className={styles.userMenuDanger}
+                onClick={onSignOut}
+              >
                 Sign out
               </button>
             </div>
           ) : null}
         </div>
       </div>
+
       <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />
     </aside>
   );

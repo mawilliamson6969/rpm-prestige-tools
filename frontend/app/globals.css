@@ -1,3 +1,84 @@
+/* ============================================================
+   RPM Prestige Hub — design tokens
+   Source of truth: improve-hub-ux-and-ui/project/styles.css :root
+   ============================================================ */
+
+:root {
+  /* ---- Brand (from styleguide) ---- */
+  --rpm-navy: #1B2856;       /* PMS 655C — primary */
+  --rpm-red:  #B32317;       /* PMS 187C — alert / accent */
+  --rpm-blue: #0098D0;       /* PMS 639C — secondary */
+  --rpm-gray: #6A737B;       /* PMS 431C — secondary */
+
+  /* ---- Neutrals (modern, calibrated against navy) ---- */
+  --ink-900: #0E1430;
+  --ink-800: #1F2747;
+  --ink-700: #353D5C;
+  --ink-600: #525A75;
+  --ink-500: #6B7388;
+  --ink-400: #8B92A4;
+  --ink-300: #B8BDC9;
+  --ink-200: #D7DAE2;
+  --ink-150: #E5E7ED;
+  --ink-100: #EEF0F4;
+  --ink-50:  #F6F7F9;
+  --paper:   #FFFFFF;
+
+  /* ---- Semantic ---- */
+  --bg-app:        #F4F5F8;
+  --bg-sidebar:    #FAFAFB;
+  --bg-card:       #FFFFFF;
+  --bg-subtle:     #F4F5F8;
+  --border:        #E5E7ED;
+  --border-strong: #D7DAE2;
+  --text-primary:  var(--ink-900);
+  --text-secondary:var(--ink-600);
+  --text-muted:    var(--ink-400);
+  --accent:        var(--rpm-navy);
+  --accent-soft:   #ECEEF7;
+  --accent-2:      var(--rpm-blue);
+  --success:       #1F8A5B;
+  --warning:       #C77800;
+  --danger:        var(--rpm-red);
+
+  /* ---- Type ----
+     `--font-display`     → Barlow Condensed (next/font/google, set on <html>)
+     `--font-geist-sans`  → Geist Sans       (geist/font/sans, set on <html>)
+     `--font-geist-mono`  → Geist Mono       (geist/font/mono, set on <html>)
+     The body / mono aliases below give us short, neutral names while still
+     providing a graceful fallback chain when the font fails to load. */
+  --font-body: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* ---- Radius ---- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm: 0 1px 2px rgba(14, 20, 48, 0.04), 0 0 0 1px rgba(14, 20, 48, 0.04);
+  --shadow-md: 0 4px 12px rgba(14, 20, 48, 0.06), 0 0 0 1px rgba(14, 20, 48, 0.04);
+  --shadow-lg: 0 12px 32px rgba(14, 20, 48, 0.10), 0 0 0 1px rgba(14, 20, 48, 0.04);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* ---- Layout ---- */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 56px;
+}
+
+/* Default body type so global pages pick up Geist without per-component opt-in. */
+html, body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
 /* Forms Hub + shared utilities */
 .forms-hub-card-live {
   transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
