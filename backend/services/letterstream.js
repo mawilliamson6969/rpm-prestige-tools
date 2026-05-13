@@ -161,10 +161,26 @@ function parseSubmitResponse(resp) {
     const snippet = (resp.text || "").slice(0, 200);
     return { success: false, code: "PARSE", message: `Non-JSON response: ${snippet}`, data: null };
   }
-  const data = resp.data || {};
+  let data = resp.data || {};
+
+  // LetterStream's JSON response can be wrapped under a `details` key when their
+  // SimpleXMLElement → JSON converter sees a <details> root in their XML.
+  // The real response then sits at data.details (with its own `code`, `details`,
+  // `batch`, `doc`, etc). Unwrap so the rest of our code can stay shape-agnostic.
+  if (data && typeof data === "object" && data.code == null
+      && data.details && typeof data.details === "object" && data.details.code != null) {
+    data = data.details;
+  }
+
   const code = data.code != null ? String(data.code) : "UNKNOWN";
-  // `details` is normally a string but with debug=3 LetterStream can return an object — flatten it.
-  const message = stringifyMessage(data.details ?? data.message);
+  // After unwrap, `data.details` is normally a string description like
+  // 'SuccessTestMode' / 'Successful preauth: …'. Fall back to data.message
+  // for older API versions.
+  const message = stringifyMessage(
+    typeof data.details === "string" ? data.details
+    : typeof data.message === "string" ? data.message
+    : ""
+  );
   const ok = ["-100", "-105", "-200"].includes(code);
   return { success: ok, code, message, data };
 }
