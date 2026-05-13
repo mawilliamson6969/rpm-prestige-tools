@@ -1037,6 +1037,23 @@ async function migrateInboxSlaTagPausing(p) {
   // broader "SLA at risk" definition (sla_at_risk = open & not paused &
   // due within 2h or already breached). The shell sidebar's hardcoded
   // SLA-at-risk item uses the same filter on the API.
+  //
+  // Earlier versions of this migration tried to UPDATE both 'SLA breached'
+  // and 'SLA at risk' rows to the same name in a single statement. When
+  // both already existed (which happened the second time the runtime
+  // boots, because migrateSlaPolicies's seed kept re-inserting 'SLA
+  // breached' until the seed was updated to use the new name above), that
+  // tripped the partial unique index uq_saved_views_shared_name and
+  // aborted the rest of ensureInboxSchema. Drop the legacy row first if
+  // both versions are present, then rename anything that's left.
+  await p.query(`
+    DELETE FROM saved_views
+     WHERE is_shared = TRUE
+       AND name = 'SLA breached'
+       AND EXISTS (
+         SELECT 1 FROM saved_views WHERE is_shared = TRUE AND name = 'SLA at risk'
+       )
+  `);
   await p.query(`
     UPDATE saved_views
        SET name = 'SLA at risk',
@@ -1216,8 +1233,8 @@ async function migrateSavedViews(p) {
       ('Unassigned', '👤', NULL, TRUE,
         '{"unassigned":true,"status":"open"}'::jsonb,
         '{"sort":"newest"}'::jsonb, 6),
-      ('SLA breached', '⏰', NULL, TRUE,
-        '{"sla_breached":true}'::jsonb,
+      ('SLA at risk', '⏰', NULL, TRUE,
+        '{"sla_at_risk":true}'::jsonb,
         '{"sort":"priority"}'::jsonb, 7)
     ON CONFLICT DO NOTHING
   `);
