@@ -11,10 +11,21 @@ export async function ensureMailersSchema() {
 
     DO $$ BEGIN
       CREATE TYPE mail_status AS ENUM (
-        'draft', 'queued', 'sent', 'in_transit', 'out_for_delivery', 'delivered',
-        'attempted', 'returned', 'failed', 'cancelled'
+        'draft', 'queued', 'preauth_pending', 'sent', 'sent_test',
+        'in_production', 'mailed', 'in_transit', 'out_for_delivery', 'delivered',
+        'attempted', 'returned', 'failed', 'failed_funding', 'needs_attention',
+        'address_warning', 'cancelled'
       );
     EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+    -- Backfill: ensure new statuses are available even if the type was created in a previous deploy
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'preauth_pending'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'sent_test'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'in_production'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'mailed'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'failed_funding'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'needs_attention'; EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TYPE mail_status ADD VALUE IF NOT EXISTS 'address_warning'; EXCEPTION WHEN others THEN NULL; END $$;
 
     CREATE TABLE IF NOT EXISTS mailers (
       id SERIAL PRIMARY KEY,
@@ -53,6 +64,22 @@ export async function ensureMailersSchema() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- LetterStream API additions
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS provider_doc_id VARCHAR(30);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS provider_authcode VARCHAR(64);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS provider_batch_id VARCHAR(30);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS quoted_cost_cents INTEGER;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS page_count INTEGER;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS current_scan_status VARCHAR(80);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS current_scan_code VARCHAR(10);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS last_scanned_at TIMESTAMPTZ;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS last_scan_facility VARCHAR(255);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS last_scan_zip VARCHAR(10);
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS test_mode BOOLEAN DEFAULT false;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS include_return_envelope BOOLEAN DEFAULT false;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS signature_file_path TEXT;
+
     CREATE TABLE IF NOT EXISTS mailer_events (
       id SERIAL PRIMARY KEY,
       mailer_id INTEGER REFERENCES mailers(id) ON DELETE CASCADE,
@@ -63,15 +90,28 @@ export async function ensureMailersSchema() {
       created_by TEXT DEFAULT 'system'
     );
 
+    -- Webhook scan event columns
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_batch_id VARCHAR(30);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_job_id VARCHAR(30);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_doc_id VARCHAR(30);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_tracking_id VARCHAR(40);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_date TIMESTAMPTZ;
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_zip VARCHAR(10);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_facility VARCHAR(255);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_code VARCHAR(10);
+    ALTER TABLE mailer_events ADD COLUMN IF NOT EXISTS scan_status VARCHAR(80);
+
     CREATE INDEX IF NOT EXISTS mailers_property_address_idx ON mailers (property_address);
     CREATE INDEX IF NOT EXISTS mailers_owner_name_idx ON mailers (owner_name);
     CREATE INDEX IF NOT EXISTS mailers_tenant_name_idx ON mailers (tenant_name);
     CREATE INDEX IF NOT EXISTS mailers_letter_category_idx ON mailers (letter_category);
     CREATE INDEX IF NOT EXISTS mailers_status_idx ON mailers (status);
     CREATE INDEX IF NOT EXISTS mailers_sent_at_idx ON mailers (sent_at);
+    CREATE INDEX IF NOT EXISTS mailers_provider_doc_id_idx ON mailers (provider_doc_id);
+    CREATE INDEX IF NOT EXISTS mailers_provider_job_id_idx ON mailers (provider_job_id);
+    CREATE INDEX IF NOT EXISTS mailer_events_scan_doc_id_idx ON mailer_events (scan_doc_id);
   `);
 
-  // Trigger (separate statement — CREATE OR REPLACE is not transactional-safe inside DO)
   await pool.query(`
     CREATE OR REPLACE FUNCTION update_mailer_timestamp()
     RETURNS TRIGGER AS $$

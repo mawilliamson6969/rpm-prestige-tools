@@ -1,283 +1,379 @@
 /**
- * LetterStream integration service.
- * Handles PDF generation (Puppeteer/chromium) and LetterStream API calls.
+ * LetterStream API integration.
+ *
+ * Auth pattern (per LetterStream API docs):
+ *   unique_id (`t`) is a 10–18 digit, single-use integer (we use Date.now() in ms, 13 digits).
+ *   hash (`h`) is md5(base64(last6(t) + api_key + first6(t))).
+ *
+ * Every API call POSTs application/x-www-form-urlencoded (or multipart when uploading a file)
+ * with a, h, t plus call-specific fields. We force JSON responses with responseformat=json.
+ *
+ * All functions return { success, code, message, data } so callers can handle uniformly.
+ * On network error or non-JSON parse failure (signature PDF stream excepted): success=false, code='NETWORK'.
  */
-import { createRequire } from "module";
-import { getPool } from "../lib/db.js";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const BASE_URL = process.env.LETTERSTREAM_BASE_URL || "https://api.letterstream.com";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SIGNATURES_DIR = path.join(__dirname, "..", "uploads", "signatures");
+
+const BASE_URL = () =>
+  (process.env.LETTERSTREAM_BASE_URL || "https://www.letterstream.com/apis/").replace(/\/?$/, "/");
+const API_ID = () => process.env.LETTERSTREAM_API_ID || "";
 const API_KEY = () => process.env.LETTERSTREAM_API_KEY || "";
-const ACCOUNT_ID = () => process.env.LETTERSTREAM_ACCOUNT_ID || "";
+const TEST_MODE = () => String(process.env.LETTERSTREAM_TEST_MODE || "true").toLowerCase() === "true";
 
-// LetterStream mail_type → their API mail class codes
-const MAIL_CLASS_MAP = {
-  certified: "USPS_CERTIFIED",
-  certified_return_receipt: "USPS_CERTIFIED_RR",
-  first_class: "USPS_FIRST_CLASS",
-  priority: "USPS_PRIORITY",
-  postcard: "USPS_POSTCARD",
-  marketing: "USPS_MARKETING",
-};
+/* ----------------------------- auth ----------------------------- */
 
-// LetterStream status → our mail_status enum
-const STATUS_MAP = {
-  created: "queued",
-  accepted: "queued",
-  mailed: "sent",
-  "in-transit": "in_transit",
-  "in-local-area": "out_for_delivery",
-  delivered: "delivered",
-  "delivery-attempted": "attempted",
-  returned: "returned",
-  error: "failed",
-};
-
-function authHeaders() {
-  const key = `${ACCOUNT_ID()}:${API_KEY()}`;
-  return {
-    Authorization: `Basic ${Buffer.from(key).toString("base64")}`,
-    "Content-Type": "application/json",
-  };
+let lastUniqueId = 0;
+function nextUniqueId() {
+  // LetterStream: 10–18 digit integer, must be unique per request.
+  let id = Date.now();
+  if (id <= lastUniqueId) id = lastUniqueId + 1;
+  lastUniqueId = id;
+  return String(id);
 }
 
-/**
- * Generate PDF buffer from letter HTML, wrapped in RPM Prestige letterhead.
- * Requires puppeteer-core + chromium on the system ($CHROMIUM_PATH).
- */
-export async function wrapLetterForMail(html, mailer) {
-  const fullHtml = buildLetterHtml(html, mailer);
+export function buildAuth() {
+  const uniqueId = nextUniqueId();
+  const last6 = uniqueId.slice(-6);
+  const first6 = uniqueId.slice(0, 6);
+  const stringToHash = last6 + API_KEY() + first6;
+  const base64 = Buffer.from(stringToHash, "utf8").toString("base64");
+  const hash = crypto.createHash("md5").update(base64).digest("hex");
+  return { a: API_ID(), h: hash, t: uniqueId };
+}
 
-  let browser;
+/* ------------------------ status code mapping ------------------------ */
+
+export const CODE_MAP = {
+  "-100": { status: "sent", message: "Submitted successfully (live)" },
+  "-105": { status: "sent_test", message: "Submitted successfully (TEST mode — will not mail)" },
+  "-200": { status: "preauth_pending", message: "Preauthorization quoted, awaiting confirmation" },
+  "-101": { status: "failed_funding", message: "Insufficient account funds" },
+  "-911": { status: "failed_funding", message: "Account billing error" },
+  "1":    { status: "delivered", message: "Delivered" },
+  "0":    { status: "in_production", message: "Queued / in production" },
+  "-104": { status: "in_production", message: "In production" },
+  "-150": { status: "mailed", message: "Mailed (handed to USPS)" },
+  "-1":   { status: "needs_attention", message: "Needs attention" },
+  "-2":   { status: "deleted", message: "Deleted on LetterStream" },
+  "-300": { status: "address_warning", message: "Address warning" },
+};
+
+export function codeToStatus(code) {
+  const c = String(code ?? "");
+  if (CODE_MAP[c]) return CODE_MAP[c];
+  if (/^-9/.test(c) && c !== "-911") return { status: "failed", message: `LetterStream error ${c}` };
+  return { status: "needs_attention", message: `Unknown LetterStream code ${c}` };
+}
+
+/* Map USPS scan codes from webhook payload to a higher-level mail_status enum value.
+   See https://about.usps.com/publications/pub97/pub97_appi.htm */
+export function uspsScanCodeToStatus(scanCode) {
+  const c = String(scanCode || "").trim();
+  // delivered
+  if (c === "01" || c === "1" || c === "OF") return "delivered";
+  // out for delivery / arrival at unit
+  if (["07", "17", "AR", "OD"].includes(c)) return "out_for_delivery";
+  // returns & undeliverables
+  if (["21", "22", "23", "24", "25", "26", "27", "28", "30"].includes(c)) return "returned";
+  // attempted but no recipient
+  if (["02", "03", "53", "55"].includes(c)) return "attempted";
+  // failure / problem (anything starting with E, 1x exception range)
+  if (/^E/i.test(c)) return "failed";
+  // accepted / mailed
+  if (["MA", "PU", "AC"].includes(c)) return "mailed";
+  // in transit otherwise
+  return "in_transit";
+}
+
+/* ----------------------------- HTTP core ----------------------------- */
+
+async function postForm(fields, { multipartFile = null } = {}) {
+  const url = BASE_URL();
+  let body;
+  let headers = {};
+
+  if (multipartFile) {
+    // node 18+ has global FormData/Blob via undici
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined || v === null) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) fd.append(k, String(item));
+      } else {
+        fd.append(k, String(v));
+      }
+    }
+    const blob = new Blob([multipartFile.buffer], { type: multipartFile.type || "application/pdf" });
+    fd.append(multipartFile.fieldName || "single_file", blob, multipartFile.filename || "letter.pdf");
+    body = fd;
+    // fetch sets Content-Type with boundary automatically
+  } else {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined || v === null) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) params.append(k, String(item));
+      } else {
+        params.append(k, String(v));
+      }
+    }
+    body = params;
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+  }
+
   try {
-    // Dynamic import so startup doesn't fail when puppeteer isn't installed
-    const { default: puppeteer } = await import("puppeteer-core");
-    const chromiumPath =
-      process.env.CHROMIUM_PATH ||
-      "/usr/bin/chromium-browser" ||
-      "/usr/bin/chromium";
-    browser = await puppeteer.launch({
-      executablePath: chromiumPath,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-      headless: "new",
-    });
-    const page = await browser.newPage();
-    await page.setContent(fullHtml, { waitUntil: "networkidle0" });
-    const pdfBuffer = await page.pdf({
-      format: "Letter",
-      margin: { top: "0.5in", right: "0.75in", bottom: "0.75in", left: "0.75in" },
-      printBackground: true,
-    });
-    return pdfBuffer;
-  } finally {
-    if (browser) await browser.close().catch(() => {});
+    const resp = await fetch(url, { method: "POST", body, headers });
+    const text = await resp.text();
+
+    // Some endpoints (signature download) stream PDF; signal raw to caller
+    if (text.startsWith("%PDF")) {
+      return { __raw: true, buffer: Buffer.from(text, "binary"), text };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return { __raw: false, data, text };
+    } catch (_e) {
+      // Could be base64-encoded binary, or XML if responseformat=json was missed
+      return { __raw: true, buffer: Buffer.from(text, "utf8"), text };
+    }
+  } catch (e) {
+    console.error("[letterstream] network", e.message);
+    return { __error: e.message || "Network error" };
   }
 }
 
-function buildLetterHtml(bodyHtml, mailer) {
-  const date = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const recipientBlock = [
-    mailer.recipient_name,
-    mailer.recipient_address,
-    `${mailer.recipient_city}, ${mailer.recipient_state} ${mailer.recipient_zip}`,
-  ]
-    .filter(Boolean)
-    .join("<br>");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11pt; color: #222; background: #fff; }
-  .letterhead { border-bottom: 3px solid #1B2856; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
-  .lh-brand { font-size: 17pt; font-weight: bold; color: #1B2856; letter-spacing: -0.5px; }
-  .lh-address { font-size: 9pt; color: #6A737B; margin-top: 4px; line-height: 1.4; }
-  .lh-date { font-size: 10pt; color: #6A737B; text-align: right; white-space: nowrap; }
-  .recipient { margin-bottom: 24px; font-size: 11pt; line-height: 1.6; }
-  .body { line-height: 1.6; }
-  .body h1, .body h2, .body h3 { color: #1B2856; margin-top: 16px; margin-bottom: 8px; }
-  .body p { margin-bottom: 10px; }
-  .body ul, .body ol { padding-left: 20px; margin-bottom: 10px; }
-  .body li { margin-bottom: 4px; }
-  .body blockquote { border-left: 3px solid #0098D0; padding-left: 12px; color: #555; margin: 12px 0; }
-  .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 9pt; color: #6A737B; text-align: center; }
-</style>
-</head>
-<body>
-<div class="letterhead">
-  <div>
-    <div class="lh-brand">Real Property Management Prestige</div>
-    <div class="lh-address">
-      ${mailer.sender_address || "4811 Hwy 6 N, Suite B"}<br>
-      ${mailer.sender_city || "Houston"}, ${mailer.sender_state || "TX"} ${mailer.sender_zip || "77084"}
-    </div>
-  </div>
-  <div class="lh-date">${date}</div>
-</div>
-<div class="recipient">${recipientBlock}</div>
-<div class="body">${bodyHtml}</div>
-<div class="footer">Real Property Management Prestige &nbsp;|&nbsp; Houston, TX &nbsp;|&nbsp; (281) 984-7463</div>
-</body>
-</html>`;
+function parseSubmitResponse(resp) {
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  const data = resp.data || {};
+  const code = data.code != null ? String(data.code) : "UNKNOWN";
+  const message = data.details || data.message || "";
+  const ok = ["-100", "-105", "-200"].includes(code);
+  return { success: ok, code, message, data };
 }
 
+/* ----------------------------- public API ----------------------------- */
+
+/** Build "Name1:Name2:Addr1:Addr2:City:State:Zip" with empty slots preserved. */
+function fmtAddress({ name1 = "", name2 = "", addr1 = "", addr2 = "", city = "", state = "", zip = "" } = {}) {
+  // Per LetterStream: each Name field max 20 chars.
+  const trim20 = (s) => String(s || "").slice(0, 20);
+  return [trim20(name1), trim20(name2), addr1, addr2, city, state, zip]
+    .map((s) => String(s ?? "").replace(/:/g, " "))
+    .join(":");
+}
+
+function shortIdSafe(prefix, value, maxTotal = 20) {
+  const cleaned = String(value).replace(/-/g, "").replace(/[^a-zA-Z0-9]/g, "");
+  const allowedLen = Math.max(1, maxTotal - prefix.length);
+  return `${prefix}${cleaned.slice(0, allowedLen)}`;
+}
+
+const LS_MAIL_TYPE_MAP = {
+  certified_return_receipt: "certified",      // certified WITH electronic return receipt
+  certified: "certnoerr",                     // certified WITHOUT return receipt
+  first_class: "firstclass",
+  first_class_hse: "firstclass_hse",
+  flat: "flat",
+  priority: "firstclass",                     // LS doesn't have a priority class — closest is firstclass
+  postcard: "postcard",
+  marketing: "firstclass",                    // marketing class uses firstclass with bulk
+};
+
 /**
- * Send a mailer via LetterStream API.
- * Updates the mailers row and inserts a mailer_events record on success.
+ * submitMailer — submit a mailer to LetterStream.
+ *
+ * @param {Object} mailer — the mailers row (snake_case)
+ * @param {Object} opts
+ * @param {Buffer} opts.pdfBuffer — generated PDF for the letter
+ * @param {number} opts.pageCount — page count of the PDF (LetterStream requires)
+ * @param {boolean} [opts.preauth] — if true, requests a price quote instead of mailing immediately
+ *
+ * On -100/-105/-200 success, returns parsed `data` with code, batch, quantity, cost, doc[], authcode.
  */
-export async function sendLetter(mailer) {
-  const key = API_KEY();
-  if (!key) throw new Error("LETTERSTREAM_API_KEY is not configured.");
+export async function submitMailer(mailer, { pdfBuffer, pageCount, preauth = false } = {}) {
+  if (!API_ID() || !API_KEY()) {
+    return { success: false, code: "NOT_CONFIGURED", message: "LetterStream API credentials missing.", data: null };
+  }
+  if (!pdfBuffer || !pageCount) {
+    return { success: false, code: "BAD_REQUEST", message: "pdfBuffer and pageCount are required.", data: null };
+  }
 
-  // 1. Generate PDF
-  const pdfBuffer = await wrapLetterForMail(mailer.letter_html, mailer);
-  const pdfBase64 = pdfBuffer.toString("base64");
+  const auth = buildAuth();
+  const jobName = shortIdSafe("pd_", mailer.id, 20);
+  const docName = shortIdSafe("d", mailer.id, 20);
 
-  // 2. POST to LetterStream
-  const mailClass = MAIL_CLASS_MAP[mailer.mail_type] || "USPS_CERTIFIED";
-  const payload = {
-    mail_class: mailClass,
-    electronic_return_receipt: mailer.mail_type === "certified_return_receipt",
-    recipient: {
-      name: mailer.recipient_name,
-      address1: mailer.recipient_address,
+  const fromStr = fmtAddress({
+    name1: mailer.sender_name || "Real Property Management Prestige",
+    name2: "",
+    addr1: mailer.sender_address || "4811 Hwy 6 N, Suite B",
+    addr2: "",
+    city: mailer.sender_city || "Houston",
+    state: mailer.sender_state || "TX",
+    zip: mailer.sender_zip || "77084",
+  });
+
+  const toStr =
+    `${docName}:` +
+    fmtAddress({
+      name1: mailer.recipient_name,
+      name2: "",
+      addr1: mailer.recipient_address,
+      addr2: "",
       city: mailer.recipient_city,
       state: mailer.recipient_state,
       zip: mailer.recipient_zip,
-    },
-    sender: {
-      name: mailer.sender_name || "Real Property Management Prestige",
-      address1: mailer.sender_address || "4811 Hwy 6 N, Suite B",
-      city: mailer.sender_city || "Houston",
-      state: mailer.sender_state || "TX",
-      zip: mailer.sender_zip || "77084",
-    },
-    file: pdfBase64,
-    file_type: "pdf",
-    description: mailer.letter_title,
+    });
+
+  const mailtype = LS_MAIL_TYPE_MAP[mailer.mail_type] || "firstclass";
+
+  const fields = {
+    ...auth,
+    job: jobName,
+    from: fromStr,
+    "to[]": [toStr],
+    pages: pageCount,
+    mailtype,
+    coversheet: "Y",
+    duplex: pageCount > 1 ? "Y" : "N",
+    ink: "B",
+    paper: "W",
+    returnenv: mailer.include_return_envelope ? "9RWS" : "N",
+    debug: process.env.NODE_ENV === "production" ? "" : "3",
+    responseformat: "json",
   };
+  if (preauth) fields.preauth = "1";
+  if (TEST_MODE()) fields.test = "1";
 
-  const resp = await fetch(`${BASE_URL}/v1/letters`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify(payload),
+  const resp = await postForm(fields, {
+    multipartFile: {
+      fieldName: "single_file",
+      buffer: pdfBuffer,
+      filename: `${jobName}.pdf`,
+      type: "application/pdf",
+    },
   });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`LetterStream API error ${resp.status}: ${text}`);
-  }
-
-  const data = await resp.json();
-  const jobId = data.id || data.job_id || data.letter_id;
-  const trackingNum = data.tracking_number || data.usps_tracking_number || null;
-  const expectedDelivery = data.expected_delivery_date || null;
-  const costCents = data.price_cents || data.cost_cents || null;
-
-  // 3. Update mailers row
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `UPDATE mailers SET
-       status = 'sent',
-       provider_job_id = $1,
-       provider_tracking_number = $2,
-       provider_expected_delivery = $3,
-       cost_cents = $4,
-       sent_at = NOW(),
-       last_status_check = NOW()
-     WHERE id = $5
-     RETURNING *`,
-    [jobId, trackingNum, expectedDelivery, costCents, mailer.id]
-  );
-
-  // 4. Insert event
-  await pool.query(
-    `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
-     VALUES ($1, 'sent', 'Letter submitted to LetterStream', $2, 'system')`,
-    [mailer.id, JSON.stringify(data)]
-  );
-
-  return rows[0];
+  return parseSubmitResponse(resp);
 }
 
 /**
- * Poll LetterStream for the current status of a mailer.
- * Called by cron — updates mailers table and inserts event if status changed.
+ * confirmPreauth — release a preauthorized job into production using the authcode.
  */
-export async function pollTrackingStatus(mailer) {
-  const key = API_KEY();
-  if (!key || !mailer.provider_job_id) return null;
-
-  const resp = await fetch(`${BASE_URL}/v1/letters/${mailer.provider_job_id}`, {
-    headers: authHeaders(),
+export async function confirmPreauth(authcode) {
+  if (!authcode) return { success: false, code: "BAD_REQUEST", message: "authcode is required.", data: null };
+  const auth = buildAuth();
+  const resp = await postForm({
+    ...auth,
+    doauth: authcode,
+    responseformat: "json",
+    debug: process.env.NODE_ENV === "production" ? "" : "3",
   });
+  return parseSubmitResponse(resp);
+}
 
-  if (!resp.ok) {
-    console.warn(`[letterstream] poll ${mailer.id} → HTTP ${resp.status}`);
-    return null;
-  }
+export async function getJobStatus(jobId) {
+  if (!jobId) return { success: false, code: "BAD_REQUEST", message: "jobId is required.", data: null };
+  const auth = buildAuth();
+  const resp = await postForm({ ...auth, jobstatus: jobId, responseformat: "json" });
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  const data = resp.data || {};
+  return { success: true, code: String(data.code ?? ""), message: data.details || "", data };
+}
 
-  const data = await resp.json();
-  const rawStatus = (data.status || "").toLowerCase().replace(/_/g, "-");
-  const newStatus = STATUS_MAP[rawStatus] || null;
-  const trackingNum = data.tracking_number || data.usps_tracking_number || mailer.provider_tracking_number;
-  const expectedDelivery = data.expected_delivery_date || mailer.provider_expected_delivery;
+export async function getDocStatus(docId) {
+  if (!docId) return { success: false, code: "BAD_REQUEST", message: "docId is required.", data: null };
+  const auth = buildAuth();
+  const resp = await postForm({ ...auth, docstatus: docId, responseformat: "json" });
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  const data = resp.data || {};
+  return { success: true, code: String(data.code ?? ""), message: data.details || "", data };
+}
 
-  const pool = getPool();
-  const statusChanged = newStatus && newStatus !== mailer.status;
-
-  const { rows } = await pool.query(
-    `UPDATE mailers SET
-       last_status_check = NOW(),
-       provider_tracking_number = COALESCE($1, provider_tracking_number),
-       provider_expected_delivery = COALESCE($2::date, provider_expected_delivery)
-       ${statusChanged ? `, status = $3::mail_status` : ""}
-       ${newStatus === "delivered" ? ", delivered_at = NOW()" : ""}
-     WHERE id = $${statusChanged ? 4 : 3}
-     RETURNING *`,
-    statusChanged
-      ? [trackingNum, expectedDelivery, newStatus, mailer.id]
-      : [trackingNum, expectedDelivery, mailer.id]
-  );
-
-  if (statusChanged) {
-    await pool.query(
-      `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
-       VALUES ($1, $2, $3, $4, 'system')`,
-      [mailer.id, newStatus, `Status updated: ${mailer.status} → ${newStatus}`, JSON.stringify(data)]
-    );
-  }
-
-  return rows[0] || null;
+export async function getTracking(docId) {
+  if (!docId) return { success: false, code: "BAD_REQUEST", message: "docId is required.", data: null };
+  const auth = buildAuth();
+  const resp = await postForm({
+    ...auth,
+    doc_id: docId,
+    getinfo: "trackx",
+    responseformat: "json",
+  });
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  const data = resp.data || {};
+  return { success: true, code: String(data.code ?? ""), message: data.details || "", data };
 }
 
 /**
- * Poll all mailers that need a status check (called by cron every 4 hours).
+ * getSignatureFile — fetch signature PDF for delivered certified mail.
+ * Saves to /uploads/signatures/<trackingNumber>.pdf and returns the file path.
+ *
+ * IMPORTANT: this endpoint returns RAW binary PDF data — do NOT request json format.
  */
-export async function pollAllPendingMailers() {
-  const pool = getPool();
-  const { rows } = await pool.query(`
-    SELECT * FROM mailers
-    WHERE status IN ('sent', 'in_transit', 'out_for_delivery')
-      AND (last_status_check IS NULL OR last_status_check < NOW() - INTERVAL '4 hours')
-    ORDER BY sent_at ASC
-    LIMIT 100
-  `);
+export async function getSignatureFile(trackingNumber) {
+  if (!trackingNumber) {
+    return { success: false, code: "BAD_REQUEST", message: "tracking number required.", data: null };
+  }
+  const auth = buildAuth();
+  // Do NOT set responseformat=json here — endpoint streams binary
+  const resp = await postForm({ ...auth, cert: trackingNumber, getinfo: "sig" });
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
 
-  let updated = 0;
-  for (const mailer of rows) {
+  let pdfBuffer = null;
+  if (resp.__raw && resp.buffer && resp.text?.startsWith("%PDF")) {
+    pdfBuffer = resp.buffer;
+  } else if (resp.text && resp.text.length > 200 && !resp.text.startsWith("{")) {
+    // Likely base64 encoded
     try {
-      await pollTrackingStatus(mailer);
-      await pool.query(`UPDATE mailers SET last_status_check = NOW() WHERE id = $1`, [mailer.id]);
-      updated++;
-    } catch (e) {
-      console.error(`[letterstream] poll error mailer ${mailer.id}:`, e.message);
+      const decoded = Buffer.from(resp.text, "base64");
+      if (decoded.slice(0, 4).toString() === "%PDF") pdfBuffer = decoded;
+    } catch (_e) {
+      /* ignore */
     }
+  } else if (resp.data && resp.data.code) {
+    return {
+      success: false,
+      code: String(resp.data.code),
+      message: resp.data.details || "Signature not available",
+      data: resp.data,
+    };
   }
-  console.log(`[letterstream] polled ${rows.length} mailers, updated ${updated}`);
+
+  if (!pdfBuffer) {
+    return { success: false, code: "PARSE", message: "Could not parse signature PDF.", data: null };
+  }
+
+  await fs.promises.mkdir(SIGNATURES_DIR, { recursive: true });
+  const filename = `${String(trackingNumber).replace(/[^a-zA-Z0-9]/g, "")}.pdf`;
+  const filePath = path.join(SIGNATURES_DIR, filename);
+  await fs.promises.writeFile(filePath, pdfBuffer);
+
+  return {
+    success: true,
+    code: "OK",
+    message: "Signature saved.",
+    data: { path: filePath, filename, relativePath: `/uploads/signatures/${filename}` },
+  };
+}
+
+export async function getAccountBalance() {
+  if (!API_ID() || !API_KEY()) {
+    return { success: false, code: "NOT_CONFIGURED", message: "LetterStream credentials missing.", data: null };
+  }
+  const auth = buildAuth();
+  const resp = await postForm({ ...auth, accountstatus: "1", responseformat: "json" });
+  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  const data = resp.data || {};
+  // LetterStream returns balance in dollars (string); normalize to cents.
+  const balanceCents = data.balance != null ? Math.round(parseFloat(String(data.balance)) * 100) : null;
+  return {
+    success: true,
+    code: String(data.code ?? "0"),
+    message: data.details || "",
+    data: { ...data, balanceCents },
+  };
 }

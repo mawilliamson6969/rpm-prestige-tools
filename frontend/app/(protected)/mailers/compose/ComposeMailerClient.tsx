@@ -202,19 +202,12 @@ export default function ComposeMailerClient() {
 
       const mailer = createData.mailer;
 
-      // 2. Optionally send
+      // 2. Optionally start the quote → confirm flow.
+      //    We don't auto-send; we redirect to the mailers list with a hint so the
+      //    quote modal opens automatically. User must explicitly confirm the cost.
       if (sendNow) {
-        const sendResp = await fetch(apiUrl(`/mailers/${mailer.id}/send`), {
-          method: "POST",
-          headers: authHeaders(),
-        });
-        const sendData = await sendResp.json();
-        if (!sendResp.ok) {
-          // Saved as draft, but send failed
-          setError(`Saved as draft, but send failed: ${sendData.error}`);
-          router.push("/mailers");
-          return;
-        }
+        router.push(`/mailers?openQuote=${mailer.id}`);
+        return;
       }
 
       router.push("/mailers");

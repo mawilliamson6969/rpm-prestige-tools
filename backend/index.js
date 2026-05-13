@@ -964,19 +964,24 @@ import {
 import { ensureMailersSchema } from "./lib/mailers-schema.js";
 import {
   deleteMailer,
+  getMailerAccountBalance,
   getMailerById,
-  getMailers,
+  getMailerSignature,
   getMailerStats,
   getMailerSuggestions,
+  getMailerTracking,
   getMailerVolumeByWeek,
+  getMailers,
+  postLetterStreamWebhook,
   postMailer,
   postMailerCancel,
+  postMailerConfirmSend,
   postMailerNote,
+  postMailerQuote,
   postMailerResend,
   postMailerSend,
   putMailer,
 } from "./routes/mailers.js";
-import { pollAllPendingMailers } from "./services/letterstream.js";
 import { ensureEsignSchema } from "./lib/esign-schema.js";
 import {
   deleteRequest as deleteEsignRequest,
@@ -1608,18 +1613,32 @@ app.get("/playbooks/attachments/:id", requireAuth, getPlaybookAttachment);
 app.delete("/playbooks/attachments/:id", requireAuth, deletePlaybookAttachment);
 
 /** Mailers — physical mail via LetterStream */
+// Webhook is PUBLIC (LetterStream calls it server-to-server, key in body) and uses form parsing.
+app.post(
+  "/mailers/webhook/letterstream",
+  express.urlencoded({ extended: true, limit: "4mb" }),
+  postLetterStreamWebhook
+);
+
 app.get("/mailers/stats", requireAuth, getMailerStats);
 app.get("/mailers/volume", requireAuth, getMailerVolumeByWeek);
 app.get("/mailers/suggestions", requireAuth, getMailerSuggestions);
+app.get("/mailers/account-balance", requireAuth, getMailerAccountBalance);
 app.get("/mailers", requireAuth, getMailers);
 app.post("/mailers", requireAuth, postMailer);
 app.get("/mailers/:id", requireAuth, getMailerById);
 app.put("/mailers/:id", requireAuth, putMailer);
 app.delete("/mailers/:id", requireAuth, deleteMailer);
+// Two-step send flow: /quote returns price + authcode, /confirm-send releases the job.
+app.post("/mailers/:id/quote", requireAuth, postMailerQuote);
+app.post("/mailers/:id/confirm-send", requireAuth, postMailerConfirmSend);
+// Legacy alias (deprecated): /send → behaves as /quote, frontend should follow up with /confirm-send.
 app.post("/mailers/:id/send", requireAuth, postMailerSend);
 app.post("/mailers/:id/cancel", requireAuth, postMailerCancel);
 app.post("/mailers/:id/resend", requireAuth, postMailerResend);
 app.post("/mailers/:id/note", requireAuth, postMailerNote);
+app.get("/mailers/:id/tracking", requireAuth, getMailerTracking);
+app.get("/mailers/:id/signature", requireAuth, getMailerSignature);
 
 /** Documents — standalone rich-text docs (notes, SOPs, owner letters, wikis) */
 app.post("/documents/ai-assist", requireAuth, postDocumentAiAssist);
@@ -2436,12 +2455,9 @@ async function start() {
     });
     console.log("Scheduled recycle-bin purge: 30 3 * * * (daily 3:30 AM).");
 
-    cron.schedule("0 */4 * * *", () => {
-      pollAllPendingMailers().catch((e) =>
-        console.error("[mailers tracking cron]", e.message || e)
-      );
-    });
-    console.log("Scheduled mailer tracking poll: 0 */4 * * * (every 4 hours).");
+    // Mailer tracking is now pushed by LetterStream's webhook every ~4 hours
+    // (POST /api/mailers/webhook/letterstream). No cron poll needed; on-demand
+    // refresh is available via GET /api/mailers/:id/tracking.
 
     cron.schedule("*/30 * * * *", () => {
       syncGoogleReviews({ trigger: "cron" }).catch((e) =>
