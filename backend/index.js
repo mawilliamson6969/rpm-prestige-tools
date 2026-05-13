@@ -324,7 +324,9 @@ import {
   patchInboxThread,
   postInboxThreadMarkRead,
   postInboxThreadReply,
+  postInboxThreadSnooze,
   postInboxThreadSync,
+  postInboxThreadTags,
 } from "./routes/inboxThreads.js";
 import {
   deleteInboxView,
@@ -1229,6 +1231,8 @@ app.patch("/inbox/threads/:thread_id", requireAuth, patchInboxThread);
 app.post("/inbox/threads/:thread_id/messages", requireAuth, postInboxThreadReply);
 app.post("/inbox/threads/:thread_id/read", requireAuth, postInboxThreadMarkRead);
 app.post("/inbox/threads/:thread_id/sync", requireAuth, postInboxThreadSync);
+app.post("/inbox/threads/:thread_id/snooze", requireAuth, postInboxThreadSnooze);
+app.post("/inbox/threads/:thread_id/tags", requireAuth, postInboxThreadTags);
 
 // Phase 2 saved views.
 app.get("/inbox/views", requireAuth, getInboxViews);

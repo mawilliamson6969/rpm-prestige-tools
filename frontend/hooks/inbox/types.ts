@@ -116,13 +116,24 @@ export type ComposeMode = "reply" | "note";
 
 export type ListSort = "newest" | "oldest" | "priority" | "updated";
 
+/** D0-aligned: status is one of three values. The legacy `waiting_on_*`
+ *  values have been collapsed into `open` + a matching tag. The union
+ *  still accepts them as input so existing code paths compile, but the
+ *  backend will normalize them on PATCH. */
 export type ThreadStatus =
   | "open"
+  | "snoozed"
+  | "closed"
   | "waiting_on_tenant"
   | "waiting_on_owner"
-  | "waiting_on_vendor"
-  | "snoozed"
-  | "closed";
+  | "waiting_on_vendor";
+
+export type ThreadChannel =
+  | "email"
+  | "sms"
+  | "whatsapp"
+  | "voicemail"
+  | "webchat";
 
 export type ThreadPriority = "emergency" | "high" | "normal" | "low";
 
@@ -143,6 +154,15 @@ export type ThreadRow = {
   message_count: number;
   unread_count: number;
   has_attachments: boolean;
+  /** D0: distinct sender count on the thread. Default 1. */
+  participant_count?: number;
+  /** D0: user ids who have been @-mentioned anywhere in the thread. */
+  mentions_users?: number[];
+  /** D0: free-form labels. Includes the migrated waiting:tenant / waiting:owner
+   *  / waiting:vendor tags from the legacy status values. */
+  tags?: string[];
+  /** D0: communication channel — email | sms | whatsapp | voicemail | webchat. */
+  channel?: ThreadChannel;
   first_message_at: string;
   last_message_at: string;
   last_inbound_at: string | null;
