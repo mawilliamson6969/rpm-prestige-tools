@@ -427,6 +427,7 @@ export default function MailersPageClient() {
 
   // Two-step send flow: /quote gets price + authcode, /confirm-send releases the job.
   async function handleQuote(id: number) {
+    console.log("[mailer quote] CLICKED id=", id);
     setActionLoading(true);
     setQuoteError(null);
     try {
@@ -460,11 +461,15 @@ export default function MailersPageClient() {
         return;
       }
 
-      // No usable quote → real failure. Show inline only (NO alert) so we can
-      // tell whether any popup is from our code or from a browser extension.
+      // No usable quote → real failure. Show inline at the top of the page
+      // (NOT an alert) so we can tell whether any popup is from our code or
+      // from a browser extension.
       const msg = errorText(d, "Failed to get quote.");
       console.error("[mailer quote] failed", r.status, d ?? text);
-      setQuoteError(`[v3] ${msg}`);
+      setQuoteError(`[v4 status=${r.status}] ${msg}`);
+    } catch (fetchErr) {
+      console.error("[mailer quote] fetch threw:", fetchErr);
+      setQuoteError(`[v4 fetch error] ${String((fetchErr as Error)?.message || fetchErr)}`);
     } finally {
       setActionLoading(false);
     }
@@ -822,7 +827,7 @@ export default function MailersPageClient() {
       <div className={styles.dashContent}>
         {/* Build marker — confirms which version of the bundle is loaded */}
         <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginBottom: "0.5rem", textAlign: "right" }}>
-          mailers UI build: v3-defensive-no-alert
+          mailers UI build: v4-error-banner
         </div>
         {/* Config health banner — only shows when LetterStream isn't fully wired up */}
         {health && !health.ready && (
@@ -1168,6 +1173,46 @@ export default function MailersPageClient() {
       </main>
 
       {renderSlideOver()}
+
+      {/* Top-level error banner — visible regardless of modal state */}
+      {quoteError && (
+        <div
+          style={{
+            position: "fixed",
+            top: 8,
+            right: 8,
+            zIndex: 2000,
+            maxWidth: 480,
+            padding: "0.85rem 1rem",
+            background: "#B32317",
+            color: "#fff",
+            borderRadius: 8,
+            boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
+            fontSize: "0.9rem",
+            lineHeight: 1.45,
+            wordBreak: "break-word",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Mailer error</div>
+          <div>{quoteError}</div>
+          <button
+            type="button"
+            onClick={() => setQuoteError(null)}
+            style={{
+              marginTop: "0.5rem",
+              background: "rgba(255,255,255,0.2)",
+              color: "#fff",
+              border: "none",
+              padding: "0.25rem 0.65rem",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: "0.8rem",
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Quote confirmation modal */}
       {quote && selectedMailer && (
