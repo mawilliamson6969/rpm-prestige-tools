@@ -464,6 +464,8 @@ export async function ensureInboxSchema() {
 
   await migrateInboxAnalyticsColumns(p);
 
+  await migrateInboxContextNotes(p);
+
   await migrateAutomationRules(p);
 
   await migrateInboxAttachments(p);
@@ -1178,6 +1180,31 @@ async function migrateInboxAnalyticsColumns(p) {
     END;
     $$ LANGUAGE plpgsql
   `);
+}
+
+/**
+ * Phase 6: free-form notes attached to AI Context panel entities
+ * (property / tenant / owner). Keyed by (entity_kind, entity_key) since
+ * threads link by name, not ID. Idempotent. Mirrored in
+ * migrations/033_inbox_context_notes.sql.
+ */
+async function migrateInboxContextNotes(p) {
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS thread_entity_notes (
+      id            SERIAL PRIMARY KEY,
+      entity_kind   TEXT NOT NULL,
+      entity_key    TEXT NOT NULL,
+      body          TEXT NOT NULL,
+      author_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (entity_kind IN ('property', 'tenant', 'owner'))
+    )
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_thread_entity_notes_entity
+       ON thread_entity_notes(entity_kind, entity_key, created_at DESC)`
+  );
 }
 
 /**

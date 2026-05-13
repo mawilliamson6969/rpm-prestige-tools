@@ -657,3 +657,14 @@ export async function getPropertySearch(req, res) {
     res.status(500).json({ error: "Could not search properties." });
   }
 }
+
+/**
+ * Phase 6: lib-style entrypoint so other route files (inbox context) can
+ * pull the same payload without re-implementing the cached_* joins.
+ * Returns null when the property isn't found in the cache.
+ */
+export async function fetchPropertyContextForName(pool, propertyName) {
+  const resolved = await resolveProperty(pool, { propertyName });
+  if (!resolved) return null;
+  return buildContext(pool, resolved);
+}
