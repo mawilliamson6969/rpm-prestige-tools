@@ -974,6 +974,7 @@ import {
 } from "./routes/agents.js";
 import { ensureMailersSchema } from "./lib/mailers-schema.js";
 import {
+  BACKEND_VERSION as ROUTES_MAILERS_VERSION,
   deleteMailer,
   getMailerAccountBalance,
   getMailerById,
@@ -1669,10 +1670,14 @@ app.post(
   postLetterStreamWebhook
 );
 
-// Public version probe — confirms which build of the backend is running. No secrets.
+// Public version probe — proves which build of routes/mailers.js was loaded.
+// The dockerfileEnv comes from the Docker image env var (set during build).
+// The routesMailersVersion comes from the actual JS file loaded at runtime.
+// If they differ, Docker is serving a cached COPY layer with stale source.
 app.get("/mailers/_version", (_req, res) => {
   res.json({
     backendVersion: process.env.BACKEND_BUILD || "(BACKEND_BUILD env not set)",
+    routesMailersVersion: ROUTES_MAILERS_VERSION || "(not exported)",
     nodeEnv: process.env.NODE_ENV || null,
     timestamp: new Date().toISOString(),
   });
