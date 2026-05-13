@@ -460,11 +460,11 @@ export default function MailersPageClient() {
         return;
       }
 
-      // No usable quote → real failure
+      // No usable quote → real failure. Show inline only (NO alert) so we can
+      // tell whether any popup is from our code or from a browser extension.
       const msg = errorText(d, "Failed to get quote.");
       console.error("[mailer quote] failed", r.status, d ?? text);
-      setQuoteError(msg);
-      alert(msg);
+      setQuoteError(`[v3] ${msg}`);
     } finally {
       setActionLoading(false);
     }
@@ -498,8 +498,7 @@ export default function MailersPageClient() {
 
       const msg = errorText(d, "Failed to send.");
       console.error("[mailer confirm-send] failed", r.status, d ?? text);
-      setQuoteError(msg);
-      alert(msg);
+      setQuoteError(`[v3] ${msg}`);
     } finally {
       setActionLoading(false);
     }
@@ -821,6 +820,10 @@ export default function MailersPageClient() {
 
     return (
       <div className={styles.dashContent}>
+        {/* Build marker — confirms which version of the bundle is loaded */}
+        <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginBottom: "0.5rem", textAlign: "right" }}>
+          mailers UI build: v3-defensive-no-alert
+        </div>
         {/* Config health banner — only shows when LetterStream isn't fully wired up */}
         {health && !health.ready && (
           <div
