@@ -48,7 +48,24 @@ type Props = {
   onToggleStar: (e: React.MouseEvent, t: ThreadRow) => void;
   density: Density;
   onDensityChange: (next: Density) => void;
+  /** Phase 7: bulk-action state + handlers. Optional so the list still
+   *  renders when bulk mode isn't wired by the parent. */
+  bulk?: import("../../../hooks/inbox/useBulkActions").UseBulkActions | null;
+  /** Phase 7: parent renders the action popovers (Assign / Tag / Snooze
+   *  / ...) outside the list. We just call back when a button is hit. */
+  onBulkActionClick?: (action: BulkActionKey) => void;
 };
+
+export type BulkActionKey =
+  | "assign"
+  | "status"
+  | "tag"
+  | "snooze"
+  | "close"
+  | "reopen"
+  | "mark_read"
+  | "mark_unread"
+  | "more";
 
 const SORT_LABELS: Record<ListSort, string> = {
   newest: "Newest",
@@ -67,6 +84,8 @@ export default function ConversationList({
   onToggleStar,
   density,
   onDensityChange,
+  bulk = null,
+  onBulkActionClick,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState<boolean>(!!list.filters.search);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -213,6 +232,17 @@ export default function ConversationList({
               </button>
             ))}
           </div>
+          {bulk ? (
+            <button
+              type="button"
+              className={styles.clLink}
+              onClick={() => bulk.setBulkMode(!bulk.bulkMode)}
+              title={bulk.bulkMode ? "Exit selection mode" : "Enter selection mode"}
+              aria-pressed={bulk.bulkMode}
+            >
+              {bulk.bulkMode ? "✕ Cancel" : "✓ Select"}
+            </button>
+          ) : null}
         </div>
         {searchOpen ? (
           <div className={styles.clSearchRow}>
@@ -227,6 +257,33 @@ export default function ConversationList({
           </div>
         ) : null}
       </header>
+
+      {bulk && bulk.bulkMode && bulk.selectedCount > 0 ? (
+        <div className={styles.clBulkbar}>
+          <span>{bulk.selectedCount} selected</span>
+          <BulkActionButton label="Assign" onClick={() => onBulkActionClick?.("assign")} disabled={bulk.busy} />
+          <BulkActionButton label="Status" onClick={() => onBulkActionClick?.("status")} disabled={bulk.busy} />
+          <BulkActionButton label="Tag" onClick={() => onBulkActionClick?.("tag")} disabled={bulk.busy} />
+          <BulkActionButton label="Snooze" onClick={() => onBulkActionClick?.("snooze")} disabled={bulk.busy} />
+          <BulkActionButton label="Close" onClick={() => onBulkActionClick?.("close")} disabled={bulk.busy} />
+          <BulkActionButton
+            label="⋯"
+            onClick={() => onBulkActionClick?.("more")}
+            disabled={bulk.busy}
+            title="More actions"
+          />
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            className={styles.clLink}
+            onClick={() => bulk.clear()}
+            disabled={bulk.busy}
+            title="Clear selection"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       <div className={`${styles.clScroll} ${densityClass}`}>
         {loading && empty ? (
@@ -266,9 +323,17 @@ export default function ConversationList({
             key={t.thread_id}
             thread={t}
             selected={t.thread_id === selectedThreadId}
-            onSelect={() => onSelect(t.thread_id)}
+            onSelect={() => {
+              if (bulk?.bulkMode) {
+                bulk.toggleSelected(t.thread_id);
+                return;
+              }
+              onSelect(t.thread_id);
+            }}
             onToggleStar={(e) => onToggleStar(e, t)}
             density={density}
+            bulkMode={!!bulk?.bulkMode}
+            bulkChecked={bulk?.isSelected(t.thread_id) ?? false}
           />
         ))}
 
@@ -290,12 +355,16 @@ function ThreadRowCard({
   onSelect,
   onToggleStar,
   density,
+  bulkMode,
+  bulkChecked,
 }: {
   thread: ThreadRow;
   selected: boolean;
   onSelect: () => void;
   onToggleStar: (e: React.MouseEvent) => void;
   density: Density;
+  bulkMode: boolean;
+  bulkChecked: boolean;
 }) {
   const unread = (t.unread_count ?? 0) > 0;
   const fromName =
@@ -326,16 +395,32 @@ function ThreadRowCard({
       data-selected={selected ? "true" : "false"}
       data-unread={unread ? "true" : "false"}
     >
-      {selected ? <span className={styles.clSelBar} aria-hidden /> : null}
+      {selected && !bulkMode ? <span className={styles.clSelBar} aria-hidden /> : null}
       <div className={styles.clRowL}>
-        <div className={styles.clAvatarWrap}>
-          <span className={styles.clAvatar} style={{ background: fromColor }}>
-            {fromInitials}
-          </span>
-          <span className={styles.clChannel} aria-hidden>
-            <ChannelBadge channel={t.channel} />
-          </span>
-        </div>
+        {bulkMode ? (
+          <button
+            type="button"
+            className={styles.clCheck}
+            data-on={bulkChecked ? "true" : "false"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            aria-pressed={bulkChecked}
+            aria-label={bulkChecked ? "Deselect conversation" : "Select conversation"}
+          >
+            {bulkChecked ? "✓" : ""}
+          </button>
+        ) : (
+          <div className={styles.clAvatarWrap}>
+            <span className={styles.clAvatar} style={{ background: fromColor }}>
+              {fromInitials}
+            </span>
+            <span className={styles.clChannel} aria-hidden>
+              <ChannelBadge channel={t.channel} />
+            </span>
+          </div>
+        )}
       </div>
 
       <div className={styles.clRowM}>
@@ -494,3 +579,27 @@ function ThreadRowCard({
   );
 }
 
+
+function BulkActionButton({
+  label,
+  onClick,
+  disabled,
+  title,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.clBulkbtn}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+    >
+      {label}
+    </button>
+  );
+}
