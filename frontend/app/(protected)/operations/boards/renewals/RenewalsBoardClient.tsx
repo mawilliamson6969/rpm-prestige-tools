@@ -68,8 +68,24 @@ export default function RenewalsBoardClient() {
   });
   const [drawerItemId, setDrawerItemId] = useState<number | null>(null);
   const [editBoardOpen, setEditBoardOpen] = useState(false);
+  const [unseenMentions, setUnseenMentions] = useState<Record<number, number>>({});
 
   // ----- load -----
+
+  const loadUnseenMentions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/mb/mentions/unseen"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setUnseenMentions(body.by_item || {});
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, token]);
 
   const loadBoard = useCallback(async () => {
     if (!token) return;
@@ -157,6 +173,15 @@ export default function RenewalsBoardClient() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+  useEffect(() => {
+    loadUnseenMentions();
+    // Refresh the badge map when the tab regains focus (covers the
+    // "open detail page in new tab, return, badges should clear"
+    // flow). Detail page POSTs to mark-mentions-seen on visit.
+    const onFocus = () => loadUnseenMentions();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadUnseenMentions]);
 
   // ----- value mutations -----
 
@@ -373,6 +398,7 @@ export default function RenewalsBoardClient() {
                         onSort={onSort}
                         onOpenItem={setDrawerItemId}
                         onSaveValue={saveValue}
+                        mentionCountByItem={unseenMentions}
                       />
                     ) : null}
                   </div>

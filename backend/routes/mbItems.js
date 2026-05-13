@@ -11,6 +11,7 @@ import {
   vJson,
   vStringOpt,
 } from "../lib/mb/validators.js";
+import { recordValueChangeSystemEvents } from "./mbItemDetail.js";
 
 /**
  * GET /mb/boards/:boardId/items
@@ -183,11 +184,74 @@ export async function updateItem(req, res) {
     vals.push(id);
 
     const pool = getPool();
+
+    // Phase 4: snapshot the BEFORE values so we can diff and emit
+    // system-event entries for the updates feed. We only do this when
+    // the caller is touching `values` — title/position/group_id changes
+    // are intentionally not logged (they're noise; can revisit later).
+    let beforeValues = null;
+    if (body.values !== undefined) {
+      const { rows: prev } = await pool.query(
+        `SELECT values FROM mb_items WHERE id = $1`,
+        [id]
+      );
+      beforeValues = prev[0]?.values ?? {};
+    }
+
     const { rows } = await pool.query(
       `UPDATE mb_items SET ${sets.join(", ")} WHERE id = $${n} RETURNING *`,
       vals
     );
     if (!rows.length) return res.status(404).json({ error: "Item not found." });
+
+    if (beforeValues != null) {
+      const afterValues = rows[0].values ?? {};
+      const changedKeys = new Set([
+        ...Object.keys(beforeValues),
+        ...Object.keys(afterValues),
+      ]);
+      const changes = [];
+      for (const k of changedKeys) {
+        const before = beforeValues[k];
+        const after = afterValues[k];
+        if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) continue;
+        changes.push({ key: k, before, after });
+      }
+      if (changes.length > 0) {
+        // Fetch column meta so the system entry can render with human names.
+        const { rows: cols } = await pool.query(
+          `SELECT key, name, column_type, config
+             FROM mb_board_columns
+            WHERE board_id = $1`,
+          [rows[0].board_id]
+        );
+        // For status columns, resolve option value → label so the entry
+        // reads "Status: Not Started → In Progress" instead of raw values.
+        const colByKey = new Map(cols.map((c) => [c.key, c]));
+        const resolved = changes.map((ch) => {
+          const c = colByKey.get(ch.key);
+          if (c && (c.column_type === "status" || c.column_type === "dropdown")) {
+            const cfg = typeof c.config === "string" ? JSON.parse(c.config) : c.config || {};
+            const options = Array.isArray(cfg.options) ? cfg.options : [];
+            const label = (v) =>
+              options.find((o) => String(o.value) === String(v))?.label ?? v;
+            return { ...ch, before: label(ch.before), after: label(ch.after) };
+          }
+          return ch;
+        });
+        // Fire and forget — don't block the response on logging.
+        recordValueChangeSystemEvents({
+          pool,
+          itemId: id,
+          userId: req.user.id,
+          changes: resolved,
+          columns: cols,
+        }).catch((e) =>
+          console.error("[mb] record value-change system events failed:", e.message)
+        );
+      }
+    }
+
     res.json({ item: rows[0] });
   } catch (e) {
     if (e.http) return res.status(e.http).json({ error: e.message });
