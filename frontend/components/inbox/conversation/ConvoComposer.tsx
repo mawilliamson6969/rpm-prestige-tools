@@ -12,6 +12,10 @@ import type { ThreadRow } from "../../../hooks/inbox/types";
 import type { UseAIDraft } from "../../../hooks/inbox/useAIDraft";
 import type { UseCompose } from "../../../hooks/inbox/useCompose";
 import type { UseThreadAutomations } from "../../../hooks/inbox/useThreadAutomations";
+import type {
+  AiSuggestionKind,
+  UseAiSuggestions,
+} from "../../../hooks/inbox/useAiSuggestions";
 import { hasNoAiContext } from "../inboxConstants";
 
 type Props = {
@@ -27,6 +31,10 @@ type Props = {
   /** Called after a suggestion is accepted (so the parent can refetch
    *  detail + stats and re-paint the banner / status / assignee). */
   onAutomationActed?: () => void | Promise<void>;
+  /** Phase 6: AI follow-up suggestions for the "AI suggest" tab. */
+  aiSuggestions?: UseAiSuggestions | null;
+  /** Phase 6: handler invoked when an AI-suggest chip is clicked. */
+  onAiSuggestionAction?: (s: { label: string; kind: AiSuggestionKind }) => void;
 };
 
 export default function ConvoComposer({
@@ -39,12 +47,26 @@ export default function ConvoComposer({
   onSend,
   automations = null,
   onAutomationActed,
+  aiSuggestions = null,
+  onAiSuggestionAction,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isNote = compose.mode === "note";
   const allowAttachments = compose.mode === "reply" && canReply;
   const hasFiles = compose.attachments.length > 0;
   const sendDisabled = compose.sending || (!compose.body.trim() && !hasFiles);
+
+  // Phase 6: "AI suggest" tab. We don't add a fourth compose.mode (that
+  // would force every consumer to handle it); instead a local boolean
+  // swaps the composer body for the chip picker. Reply/note state stays
+  // intact underneath.
+  const [aiTabOpen, setAiTabOpen] = useState(false);
+  const onOpenAiTab = useCallback(() => {
+    setAiTabOpen(true);
+    if (aiSuggestions && aiSuggestions.suggestions.length === 0 && !aiSuggestions.loading) {
+      void aiSuggestions.refresh(thread.thread_id);
+    }
+  }, [aiSuggestions, thread.thread_id]);
 
   const sigRow =
     compose.selectedSigId !== "none" && compose.selectedSigId !== null
@@ -149,15 +171,41 @@ export default function ConvoComposer({
         {canReply ? (
           <button
             type="button"
+            role="tab"
+            aria-selected={aiTabOpen}
+            data-active={aiTabOpen ? "true" : "false"}
+            className={styles.cvCompTab}
+            onClick={() => (aiTabOpen ? setAiTabOpen(false) : onOpenAiTab())}
+            title="AI suggest follow-up actions"
+          >
+            ✨ AI suggest
+          </button>
+        ) : null}
+        <span style={{ flex: 1 }} />
+        {canReply && !aiTabOpen ? (
+          <button
+            type="button"
             className={styles.cvCompSuggest}
             onClick={onRunAiDraft}
             disabled={aiDraft.loading}
+            title="Draft a reply with AI"
           >
-            ✨ {aiDraft.loading ? "Drafting…" : "AI suggest"}
+            ✨ {aiDraft.loading ? "Drafting…" : "AI draft reply"}
           </button>
         ) : null}
       </div>
 
+      {aiTabOpen ? (
+        <AiSuggestPanel
+          suggestions={aiSuggestions}
+          threadId={thread.thread_id}
+          onAction={onAiSuggestionAction}
+          onClose={() => setAiTabOpen(false)}
+        />
+      ) : null}
+
+      {aiTabOpen ? null : (
+      <>
       {!canReply ? (
         <div
           style={{
@@ -445,8 +493,173 @@ export default function ConvoComposer({
           </button>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
+}
+
+function AiSuggestPanel({
+  suggestions,
+  threadId,
+  onAction,
+  onClose,
+}: {
+  suggestions: UseAiSuggestions | null;
+  threadId: string;
+  onAction?: (s: { label: string; kind: AiSuggestionKind }) => void;
+  onClose: () => void;
+}) {
+  const loading = suggestions?.loading ?? false;
+  const error = suggestions?.error ?? null;
+  const items = suggestions?.suggestions ?? [];
+  const sourceTag =
+    suggestions?.source === "fallback"
+      ? "Showing fallback suggestions — model unavailable."
+      : suggestions?.source === "model"
+        ? "AI-generated · review before acting."
+        : "";
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: 14,
+        background: "var(--panel-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+          ✨ Suggested follow-ups
+        </span>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => void suggestions?.refresh(threadId)}
+          disabled={loading}
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: "4px 9px",
+            fontSize: 11.5,
+            color: "var(--text-2)",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: "4px 9px",
+            fontSize: 11.5,
+            color: "var(--text-2)",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      {loading && items.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "10px 0" }}>
+          Thinking…
+        </div>
+      ) : null}
+
+      {error ? (
+        <div style={{ fontSize: 12, color: "var(--inbox-sla-late, #B32317)", padding: "8px 0" }}>
+          {error}
+        </div>
+      ) : null}
+
+      {!loading && items.length === 0 && !error ? (
+        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "8px 0" }}>
+          No suggestions available for this thread.
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {items.map((s, i) => (
+          <button
+            key={`${s.kind}-${i}`}
+            type="button"
+            onClick={() => onAction?.({ label: s.label, kind: s.kind })}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background:
+                "linear-gradient(180deg, rgba(122, 90, 224, 0.04), rgba(0, 152, 208, 0.04))",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              fontSize: 12,
+              color: "var(--text-2)",
+              fontWeight: 500,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            title={`${suggestionKindLabel(s.kind)} action`}
+          >
+            <span aria-hidden style={{ color: suggestionKindColor(s.kind) }}>
+              {suggestionKindGlyph(s.kind)}
+            </span>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {sourceTag ? (
+        <div style={{ marginTop: 10, fontSize: 10.5, color: "var(--text-4)" }}>{sourceTag}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function suggestionKindLabel(k: AiSuggestionKind): string {
+  return k === "task"
+    ? "Create task"
+    : k === "work_order"
+      ? "Open work order"
+      : k === "sms"
+        ? "Send SMS"
+        : k === "checklist"
+          ? "Insert checklist"
+          : "Info";
+}
+
+function suggestionKindGlyph(k: AiSuggestionKind): string {
+  return k === "task"
+    ? "✓"
+    : k === "work_order"
+      ? "🔧"
+      : k === "sms"
+        ? "💬"
+        : k === "checklist"
+          ? "☑"
+          : "ℹ";
+}
+
+function suggestionKindColor(k: AiSuggestionKind): string {
+  return k === "task"
+    ? "#1F8A5B"
+    : k === "work_order"
+      ? "#B45309"
+      : k === "sms"
+        ? "#0098D0"
+        : k === "checklist"
+          ? "var(--accent)"
+          : "var(--text-3)";
 }
 
 function formatComposerFileSize(bytes: number | null | undefined): string {

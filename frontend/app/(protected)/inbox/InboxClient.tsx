@@ -19,8 +19,10 @@ import { useNotificationCenter } from "../../../hooks/inbox/useNotificationCente
 import { useToast } from "../../../hooks/inbox/useToast";
 import useSLA from "../../../hooks/inbox/useSLA";
 import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
+import useAiSuggestions from "../../../hooks/inbox/useAiSuggestions";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadAutomations from "../../../hooks/inbox/useThreadAutomations";
+import useThreadContext from "../../../hooks/inbox/useThreadContext";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
 import type { SavedViewFilters } from "../../../hooks/inbox/useSavedViews";
@@ -168,6 +170,88 @@ function InboxOrchestrator() {
   const slaView = useSLA(detail.thread);
   // Phase 4: pending suggested actions + recent auto firings on this thread.
   const automations = useThreadAutomations(selectedThreadId);
+  // Phase 6: right-hand context panel + AI suggest tab.
+  const threadContext = useThreadContext(selectedThreadId);
+  const aiSuggestions = useAiSuggestions();
+  const [showContextPanel, setShowContextPanel] = useState<boolean>(true);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("rpm-inbox-context-panel");
+      if (v === "0") setShowContextPanel(false);
+      else if (v === "1") setShowContextPanel(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const onToggleContextPanel = useCallback(() => {
+    setShowContextPanel((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("rpm-inbox-context-panel", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+  // Reset AI suggestions when the user switches threads.
+  useEffect(() => {
+    aiSuggestions.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThreadId]);
+
+  const onAiSuggestionAction = useCallback(
+    (s: { label: string; kind: "task" | "work_order" | "sms" | "checklist" | "info" }) => {
+      if (s.kind === "work_order") {
+        const propertyName = detail.thread?.linked_property_name;
+        const url = propertyName
+          ? `https://rpmtx033.appfolio.com/work_orders/new?property=${encodeURIComponent(propertyName)}`
+          : "https://rpmtx033.appfolio.com/work_orders/new";
+        window.open(url, "_blank", "noopener");
+        toast.push({ variant: "info", message: "Opened AppFolio in a new tab." });
+        return;
+      }
+      if (s.kind === "task") {
+        // Operations task creation lives at /operations/tasks. We don't
+        // have a prefill API yet, so we drop the suggestion into the
+        // composer as a TODO-style checklist line and let the operator
+        // either send it as a note or convert to a task manually.
+        const lineToAppend = `\n- [ ] ${s.label}`;
+        compose.setBody(compose.body + lineToAppend);
+        compose.setMode("note");
+        compose.setExpanded(true);
+        toast.push({
+          variant: "info",
+          message: `Added "${s.label}" as a checklist item — convert to a task in /operations/tasks if needed.`,
+        });
+        return;
+      }
+      if (s.kind === "checklist") {
+        const lineToAppend = `\n- [ ] ${s.label}`;
+        compose.setBody(compose.body + lineToAppend);
+        compose.setExpanded(true);
+        toast.push({ variant: "info", message: "Checklist item inserted into the reply." });
+        return;
+      }
+      if (s.kind === "sms") {
+        // Quo / outbound-SMS isn't wired into the inbox yet; degrade
+        // gracefully by inserting the text and telling the operator.
+        const lineToAppend = `\n${s.label}`;
+        compose.setBody(compose.body + lineToAppend);
+        compose.setExpanded(true);
+        toast.push({
+          variant: "info",
+          message: "SMS pipeline not yet wired — text inserted into the reply for now.",
+        });
+        return;
+      }
+      // info: insert as a plain reminder line
+      const lineToAppend = `\n- ${s.label}`;
+      compose.setBody(compose.body + lineToAppend);
+      compose.setExpanded(true);
+    },
+    [compose, detail.thread, toast]
+  );
 
   const canMetaMailbox =
     !!detail.thread &&
@@ -445,7 +529,14 @@ function InboxOrchestrator() {
             onPatchThreadRefresh={async () => {
               await detail.refetch();
               await stats.refetch();
+              await threadContext.refetch();
             }}
+            context={threadContext}
+            showContextPanel={showContextPanel}
+            onToggleContextPanel={onToggleContextPanel}
+            onSelectPastThread={actions.openThread}
+            aiSuggestions={aiSuggestions}
+            onAiSuggestionAction={onAiSuggestionAction}
           />
         </ErrorBoundary>
       </div>

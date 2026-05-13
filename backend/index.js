@@ -362,6 +362,12 @@ import {
   postInboxAutomationRule,
 } from "./routes/inboxAutomations.js";
 import {
+  deleteInboxThreadNote,
+  getInboxThreadContext,
+  postInboxThreadAiSuggestions,
+  postInboxThreadNote,
+} from "./routes/inboxContext.js";
+import {
   getInboxAttachmentDownload,
   getInboxAttachmentPreview,
   inboxAttachmentUpload,
@@ -1303,6 +1309,16 @@ app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, post
 // Phase 4 (D0-aligned) additions.
 app.get("/inbox/automation-stats", requireAuth, getInboxAutomationStats);
 app.get("/inbox/threads/:thread_id/automations", requireAuth, getInboxThreadAutomations);
+
+// Phase 6 — context panel + AI suggestions.
+app.get("/inbox/threads/:thread_id/context", requireAuth, getInboxThreadContext);
+app.post("/inbox/threads/:thread_id/notes", requireAuth, postInboxThreadNote);
+app.delete("/inbox/threads/notes/:note_id", requireAuth, deleteInboxThreadNote);
+app.post(
+  "/inbox/threads/:thread_id/ai-suggestions",
+  requireAuth,
+  postInboxThreadAiSuggestions
+);
 
 // Phase 5 attachments. Download + preview accept ?token= so plain
 // <a download> + <img src> work without bespoke client fetch logic.

@@ -22,6 +22,9 @@ import type {
   AutomationAutoFiring,
   UseThreadAutomations,
 } from "../../../hooks/inbox/useThreadAutomations";
+import type { UseThreadContext } from "../../../hooks/inbox/useThreadContext";
+import type { AiSuggestionKind, UseAiSuggestions } from "../../../hooks/inbox/useAiSuggestions";
+import InboxContextPanel from "../context/InboxContextPanel";
 import rulesStyles from "../rules/rules.module.css";
 import {
   ChannelBadge,
@@ -76,6 +79,17 @@ type Props = {
   /** Called after an automation acts on or reverts the thread. Lets the
    *  parent refetch detail + stats. */
   onPatchThreadRefresh?: () => void | Promise<void>;
+  /** Phase 6: right-hand context panel. Controlled by the parent so the
+   *  toggle state persists across thread switches. */
+  context?: UseThreadContext | null;
+  showContextPanel?: boolean;
+  onToggleContextPanel?: () => void;
+  /** Phase 6: clicking a past-conversation row in the context panel. */
+  onSelectPastThread?: (threadId: string) => void;
+  /** Phase 6: AI Suggest tab in the composer. */
+  aiSuggestions?: UseAiSuggestions | null;
+  /** Phase 6: fire the chip's action. */
+  onAiSuggestionAction?: (s: { label: string; kind: AiSuggestionKind }) => void;
 };
 
 type ConversationEntry =
@@ -121,6 +135,12 @@ export default function ConversationView({
   onNextThread,
   automations = null,
   onPatchThreadRefresh,
+  context = null,
+  showContextPanel = false,
+  onToggleContextPanel,
+  onSelectPastThread,
+  aiSuggestions = null,
+  onAiSuggestionAction,
 }: Props) {
   const t = detail.thread;
   const [assigneeOpen, setAssigneeOpen] = useState(false);
@@ -226,6 +246,7 @@ export default function ConversationView({
       : null;
 
   return (
+    <>
     <section className={styles.convoView}>
       <div className={styles.cvMobileBack}>
         <button
@@ -289,6 +310,19 @@ export default function ConversationView({
           >
             {t.starred ? "★" : "☆"}
           </button>
+          {onToggleContextPanel ? (
+            <button
+              type="button"
+              className={styles.cvIconBtn}
+              data-on={showContextPanel ? "true" : "false"}
+              onClick={() => onToggleContextPanel()}
+              title={showContextPanel ? "Hide context" : "Show context"}
+              aria-pressed={!!showContextPanel}
+              aria-label="Toggle context panel"
+            >
+              ⌂
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -503,6 +537,8 @@ export default function ConversationView({
         onSend={onSend}
         automations={automations}
         onAutomationActed={onPatchThreadRefresh}
+        aiSuggestions={aiSuggestions}
+        onAiSuggestionAction={onAiSuggestionAction}
       />
 
       {/* Popovers */}
@@ -609,6 +645,13 @@ export default function ConversationView({
         </Popover>
       ) : null}
     </section>
+    {showContextPanel && context ? (
+      <InboxContextPanel
+        context={context}
+        onSelectPastThread={onSelectPastThread}
+      />
+    ) : null}
+    </>
   );
 }
 
