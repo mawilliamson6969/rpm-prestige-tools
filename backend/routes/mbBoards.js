@@ -82,10 +82,14 @@ export async function getBoard(req, res) {
     const { rows } = await pool.query(`SELECT * FROM mb_boards WHERE id = $1`, [id]);
     if (!rows.length) return res.status(404).json({ error: "Board not found." });
 
+    const includeArchivedColumns = req.query.include_archived_columns === "true";
+    const colFilter = includeArchivedColumns
+      ? "WHERE board_id = $1"
+      : "WHERE board_id = $1 AND archived_at IS NULL";
     const [columns, groups] = await Promise.all([
       pool.query(
         `SELECT * FROM mb_board_columns
-          WHERE board_id = $1
+          ${colFilter}
           ORDER BY position ASC, id ASC`,
         [id]
       ),
@@ -132,13 +136,54 @@ export async function updateBoard(req, res) {
         vals.push(fn(body[k]));
       }
     }
+
+    // Phase 3.5: special-case "archived" toggle. PATCH with archived = false
+    // is the canonical restore path; archived = true is equivalent to DELETE
+    // and respects the system-board guard.
+    const pool = getPool();
+    if (body.archived !== undefined) {
+      const archived = Boolean(body.archived);
+      // Check system flag first for the archive case.
+      if (archived) {
+        const { rows: existing } = await pool.query(
+          `SELECT is_system FROM mb_boards WHERE id = $1`,
+          [id]
+        );
+        if (!existing.length) {
+          return res.status(404).json({ error: "Board not found." });
+        }
+        if (existing[0].is_system) {
+          return res.status(403).json({
+            error: "System boards cannot be archived.",
+          });
+        }
+      }
+      sets.push(`archived_at = ${archived ? "NOW()" : "NULL"}`);
+    }
+
     if (!sets.length) {
       return res.status(400).json({ error: "No valid fields to update." });
     }
+
+    // Phase 3.5: lock name/slug on system boards.
+    if (body.name !== undefined || body.slug !== undefined) {
+      const { rows: existing } = await pool.query(
+        `SELECT is_system FROM mb_boards WHERE id = $1`,
+        [id]
+      );
+      if (!existing.length) {
+        return res.status(404).json({ error: "Board not found." });
+      }
+      if (existing[0].is_system) {
+        return res.status(403).json({
+          error: "System boards cannot be renamed.",
+        });
+      }
+    }
+
     sets.push(`updated_at = NOW()`);
     vals.push(id);
 
-    const pool = getPool();
     const { rows } = await pool.query(
       `UPDATE mb_boards SET ${sets.join(", ")} WHERE id = $${n} RETURNING *`,
       vals
@@ -161,16 +206,26 @@ export async function deleteBoard(req, res) {
   try {
     const id = vIntId(req.params.id, "board id");
     const pool = getPool();
-    const { rowCount } = await pool.query(
-      `UPDATE mb_boards SET archived_at = NOW(), updated_at = NOW()
-         WHERE id = $1 AND archived_at IS NULL`,
+    // Phase 3.5: system boards (Renewals) are protected.
+    const { rows: existing } = await pool.query(
+      `SELECT is_system, archived_at FROM mb_boards WHERE id = $1`,
       [id]
     );
-    if (!rowCount) {
-      return res
-        .status(404)
-        .json({ error: "Board not found or already archived." });
+    if (!existing.length) {
+      return res.status(404).json({ error: "Board not found." });
     }
+    if (existing[0].is_system) {
+      return res.status(403).json({
+        error: "System boards cannot be archived.",
+      });
+    }
+    if (existing[0].archived_at) {
+      return res.status(404).json({ error: "Board already archived." });
+    }
+    await pool.query(
+      `UPDATE mb_boards SET archived_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
     res.json({ ok: true });
   } catch (e) {
     if (e.http) return res.status(e.http).json({ error: e.message });

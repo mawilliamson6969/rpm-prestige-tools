@@ -1,0 +1,520 @@
+/* Phase 3.5: shared styles for board customization UI. */
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  max-width: 200px;
+}
+
+.swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+  padding: 0;
+  font: inherit;
+}
+
+.swatch:hover {
+  transform: scale(1.06);
+}
+
+.swatchSelected {
+  border-color: #1b2856;
+  box-shadow: 0 0 0 2px rgba(0, 152, 208, 0.35);
+}
+
+.swatchCheck {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 1rem;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+/* ----- Confirm dialog ----- */
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.dialog {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 16px 40px rgba(27, 40, 86, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.dialogHeader {
+  padding: 1rem 1.25rem 0.5rem;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1b2856;
+}
+
+.dialogBody {
+  padding: 0.5rem 1.25rem 1rem;
+  color: #6a737b;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.dialogFooter {
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(27, 40, 86, 0.12);
+}
+
+/* ----- Edit board drawer ----- */
+
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.4);
+  z-index: 100;
+}
+
+.drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(620px, 100vw);
+  background: #fff;
+  z-index: 101;
+  box-shadow: -8px 0 30px rgba(27, 40, 86, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.12);
+}
+
+.drawerTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1b2856;
+}
+
+.drawerClose {
+  background: transparent;
+  border: none;
+  color: #6a737b;
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+
+.drawerClose:hover {
+  background: rgba(27, 40, 86, 0.06);
+  color: #1b2856;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 1.25rem 0;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.12);
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #6a737b;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabActive {
+  color: #0086c0;
+  border-bottom-color: #0086c0;
+}
+
+.drawerBody {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+  flex: 1;
+}
+
+.section {
+  margin-bottom: 1.25rem;
+}
+
+.sectionTitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6a737b;
+  margin: 0 0 0.5rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 0.45rem;
+}
+
+.rowArchived {
+  background: rgba(27, 40, 86, 0.03);
+  color: #6a737b;
+}
+
+.rowDragging {
+  opacity: 0.5;
+}
+
+.rowDropTarget {
+  outline: 2px dashed #0086c0;
+  outline-offset: 2px;
+}
+
+.dragHandle {
+  cursor: grab;
+  color: #6a737b;
+  font-size: 1.1rem;
+  user-select: none;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.rowName {
+  flex: 1;
+  font-weight: 600;
+  color: #1b2856;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+.rowEditableName {
+  flex: 1;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  color: #1b2856;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.rowEditableName:focus {
+  outline: none;
+  border-color: #0086c0;
+  background: #fff;
+}
+
+.rowMeta {
+  font-size: 0.78rem;
+  color: #6a737b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.iconBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  color: #6a737b;
+  font-size: 0.82rem;
+}
+
+.iconBtn:hover {
+  background: rgba(0, 152, 208, 0.08);
+  color: #0086c0;
+  border-color: rgba(0, 152, 208, 0.2);
+}
+
+.iconBtnDanger:hover {
+  background: rgba(179, 35, 23, 0.08);
+  color: #b32317;
+  border-color: rgba(179, 35, 23, 0.25);
+}
+
+.colorDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.colorDotBtn {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  cursor: pointer;
+  padding: 0;
+}
+
+.expandable {
+  margin-top: 0.4rem;
+  padding: 0.6rem;
+  background: rgba(0, 152, 208, 0.04);
+  border: 1px solid rgba(0, 152, 208, 0.2);
+  border-radius: 8px;
+}
+
+.addRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.input {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  background: #fff;
+  color: #1b2856;
+  font-family: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btnPrimary {
+  background: #0086c0;
+  color: #fff;
+}
+
+.btnPrimary:disabled {
+  background: #c4c4c4;
+  cursor: not-allowed;
+}
+
+.btnGhost {
+  background: #fff;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  color: #1b2856;
+}
+
+.btnGhost:hover {
+  border-color: #0086c0;
+}
+
+.btnDanger {
+  background: #fff;
+  border: 1px solid #b32317;
+  color: #b32317;
+}
+
+.btnDanger:hover {
+  background: rgba(179, 35, 23, 0.08);
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+}
+
+.optionChip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.errorBanner {
+  background: rgba(179, 35, 23, 0.08);
+  border: 1px solid rgba(179, 35, 23, 0.3);
+  color: #b32317;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+
+.lockedNote {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #92400e;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ----- Type picker grid ----- */
+
+.typeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.typeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: #fff;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+  gap: 0.2rem;
+}
+
+.typeCard:hover {
+  border-color: #0086c0;
+}
+
+.typeCardActive {
+  border-color: #0086c0;
+  background: rgba(0, 152, 208, 0.06);
+}
+
+.typeName {
+  font-weight: 700;
+  color: #1b2856;
+  font-size: 0.9rem;
+}
+
+.typeDesc {
+  font-size: 0.78rem;
+  color: #6a737b;
+}
+
+/* ----- Manage boards page ----- */
+
+.boardCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: #fff;
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.boardCard:hover {
+  border-color: #0086c0;
+}
+
+.boardIcon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.boardCardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.boardCardName {
+  font-weight: 700;
+  color: #1b2856;
+  font-size: 1rem;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.boardCardDescription {
+  font-size: 0.85rem;
+  color: #6a737b;
+  margin: 0.2rem 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.systemBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.archivedBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(27, 40, 86, 0.08);
+  color: #6a737b;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.boardCardArchived {
+  opacity: 0.7;
+}

@@ -269,6 +269,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             { href: "/operations/projects", label: "Projects" },
             { href: "/operations/processes", label: "Processes" },
             { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
+            { href: "/operations/boards/manage", label: "Manage Boards" },
             { href: "/operations/templates", label: "Templates" },
           ] as const)
         : ([

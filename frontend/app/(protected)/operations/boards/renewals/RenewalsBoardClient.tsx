@@ -8,6 +8,7 @@ import BoardTable from "./components/BoardTable";
 import BoardToolbar from "./components/BoardToolbar";
 import GroupHeader from "./components/GroupHeader";
 import ItemDrawer from "./components/ItemDrawer";
+import EditBoardDrawer from "../components/EditBoardDrawer";
 import {
   COUNTDOWN_BUCKETS,
   bucketForItem,
@@ -48,7 +49,7 @@ async function describeFailure(res: Response): Promise<string> {
 }
 
 export default function RenewalsBoardClient() {
-  const { authHeaders, token } = useAuth();
+  const { authHeaders, token, isAdmin } = useAuth();
   const [data, setData] = useState<RenewalsBoardData | null>(null);
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,7 @@ export default function RenewalsBoardClient() {
     "91_plus": false,
   });
   const [drawerItemId, setDrawerItemId] = useState<number | null>(null);
+  const [editBoardOpen, setEditBoardOpen] = useState(false);
 
   // ----- load -----
 
@@ -311,6 +313,17 @@ export default function RenewalsBoardClient() {
               Lease renewal pipeline. Items group automatically by lease-end countdown.
             </p>
           </div>
+          {isAdmin ? (
+            <div style={{ marginLeft: "auto" }}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnGhost}`}
+                onClick={() => setEditBoardOpen(true)}
+              >
+                Edit board
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
@@ -383,6 +396,14 @@ export default function RenewalsBoardClient() {
           users={users}
           onClose={() => setDrawerItemId(null)}
           onSaveValue={saveValue}
+        />
+      ) : null}
+
+      {editBoardOpen && data ? (
+        <EditBoardDrawer
+          boardId={data.board.id}
+          onClose={() => setEditBoardOpen(false)}
+          onChanged={loadBoard}
         />
       ) : null}
     </div>
