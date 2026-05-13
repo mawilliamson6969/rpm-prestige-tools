@@ -1,7 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Barlow_Condensed } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import PwaRegister from "../components/PwaRegister";
 import { AuthProvider } from "../context/AuthContext";
+
+// Display font (--font-display) — used for h1, KPI values, brand mark.
+const barlowCondensed = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-display",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -33,19 +44,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        {/* Geist powers the Shared Inbox shell (D0). The font is scoped to
-            .inbox-root via inbox-tokens.css so it won't override the rest
-            of the app. Preconnect avoids a render-blocking handshake. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;550;600;700&family=Geist+Mono:wght@400;500&display=swap"
-        />
-      </head>
-      <body style={{ margin: 0, backgroundColor: "#F5F5F5" }}>
+    <html
+      lang="en"
+      className={`${barlowCondensed.variable} ${GeistSans.variable} ${GeistMono.variable}`}
+    >
+      <body style={{ margin: 0, backgroundColor: "var(--bg-app)" }}>
         <AuthProvider>{children}</AuthProvider>
         <PwaRegister />
       </body>

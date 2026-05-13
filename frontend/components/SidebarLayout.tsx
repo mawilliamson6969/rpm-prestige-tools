@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import AppTopBar from "./AppTopBar";
 import Sidebar from "./Sidebar";
 import styles from "./sidebar-layout.module.css";
@@ -10,7 +9,6 @@ import { useNarrowScreen } from "../hooks/useNarrowScreen";
 const LS_COLLAPSED = "rpm-prestige-sidebar-collapsed";
 
 export default function SidebarLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname() || "";
   const narrow = useNarrowScreen();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -29,15 +27,7 @@ export default function SidebarLayout({ children }: { children: ReactNode }) {
     setCollapsed(next);
   }, []);
 
-  // The Shared Inbox (D0) provides its own full-bleed shell. Bypass the
-  // global app sidebar/top bar for /inbox routes so the inbox layout owns
-  // the viewport — the inbox layout still renders inside RequireAuth.
-  const isInboxRoute = pathname === "/inbox" || pathname.startsWith("/inbox/");
-  if (isInboxRoute) {
-    return <>{children}</>;
-  }
-
-  const marginLeft = !hydrated ? 240 : narrow ? 0 : collapsed ? 60 : 240;
+  const marginLeft = !hydrated ? 248 : narrow ? 0 : collapsed ? 64 : 248;
 
   return (
     <div className={styles.root}>

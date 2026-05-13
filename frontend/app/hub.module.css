@@ -1,0 +1,632 @@
+/* ============================================================
+   Hub page — greeting + KPIs + 2/1 column layout.
+   Matches improve-hub-ux-and-ui/project/styles.css ".page",
+   ".kpi-grid", ".col-2-1", ".tool-grid", etc.
+   ============================================================ */
+
+.page {
+  padding: 24px 32px 48px;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 16px 32px;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: 0.005em;
+  color: var(--ink-900);
+  line-height: 1.05;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---------- BUTTONS ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+
+.btn:active {
+  transform: translateY(0.5px);
+}
+
+.btnPrimary {
+  background: var(--rpm-navy);
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: #131c3f;
+}
+
+.btnSecondary {
+  background: var(--paper);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.btnSecondary:hover {
+  background: var(--bg-subtle);
+}
+
+.btnSm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+/* ---------- KPI GRID ---------- */
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpiLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kpiValue {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em;
+}
+
+.kpiValueNegative {
+  color: var(--rpm-red);
+}
+
+.kpiValuePositive {
+  color: var(--success);
+}
+
+.kpiFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.kpiDelta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.kpiDeltaUp {
+  color: var(--success);
+  background: rgba(31, 138, 91, 0.10);
+}
+
+.kpiDeltaDown {
+  color: var(--rpm-red);
+  background: rgba(179, 35, 23, 0.08);
+}
+
+.kpiDeltaFlat {
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+
+.kpiSpark {
+  height: 28px;
+  margin-top: 4px;
+}
+
+.kpiPlaceholder {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--ink-300);
+}
+
+/* ---------- LAYOUT GRIDS ---------- */
+
+.col2_1 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 1024px) {
+  .col2_1 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stack20 {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.stack12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- CARDS / SECTIONS ---------- */
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 20px;
+}
+
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--ink-900);
+  letter-spacing: 0.01em;
+}
+
+.sectionAction {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-body);
+}
+
+.sectionAction:hover {
+  text-decoration: underline;
+}
+
+/* ---------- TASK ROWS ---------- */
+
+.taskRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.taskRow:last-child {
+  border-bottom: 0;
+}
+
+.taskCheck {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--ink-300);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  transition: border-color 0.12s, background 0.12s;
+  background: transparent;
+  padding: 0;
+  color: #fff;
+}
+
+.taskCheck:hover {
+  border-color: var(--rpm-navy);
+}
+
+.taskCheckDone {
+  background: var(--rpm-navy);
+  border-color: var(--rpm-navy);
+}
+
+.taskText {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--ink-900);
+  min-width: 0;
+}
+
+.taskTextDone {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.taskMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 60px;
+  text-align: right;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pillUrgent {
+  background: rgba(179, 35, 23, 0.10);
+  color: var(--rpm-red);
+}
+
+.pillWarn {
+  background: rgba(199, 120, 0, 0.10);
+  color: var(--warning);
+}
+
+.pillSuccess {
+  background: rgba(31, 138, 91, 0.10);
+  color: var(--success);
+}
+
+.pillInfo {
+  background: rgba(0, 152, 208, 0.10);
+  color: var(--rpm-blue);
+}
+
+.pillNeutral {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 18px 0;
+  text-align: center;
+}
+
+/* ---------- TOOL GRID ---------- */
+
+.toolGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 1024px) {
+  .toolGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .toolGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.toolCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.05s, box-shadow 0.12s;
+  text-align: left;
+  position: relative;
+  text-decoration: none;
+}
+
+.toolCard:hover {
+  border-color: var(--ink-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.toolCard:active {
+  transform: translateY(0.5px);
+}
+
+.toolIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.toolMeta {
+  min-width: 0;
+  flex: 1;
+}
+
+.toolName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-900);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolExt {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.liveTag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--success);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(31, 138, 91, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ---------- LIST ITEMS (announcements, directory, links) ---------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+}
+
+.listItem:last-child {
+  border-bottom: 0;
+}
+
+.listMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.listT1 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listT2 {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- ACTIVITY ICON CHIP ---------- */
+
+.activityChip {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* ---------- ANNOUNCEMENT ITEM ---------- */
+
+.announcement {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.announcement:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.announcementHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.announcementTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.announcementTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-900);
+  margin-bottom: 4px;
+}
+
+.announcementBody {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- TEAM AVATAR DOT ---------- */
+
+.teamAvatarWrap {
+  position: relative;
+}
+
+.teamStatusDot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--paper);
+  background: var(--ink-300);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 11.5px;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+}
+
+/* ---------- ANIMATION ---------- */
+
+@keyframes hubFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeIn {
+  animation: hubFadeIn 0.18s ease both;
+}
