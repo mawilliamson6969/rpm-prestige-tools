@@ -326,44 +326,71 @@ export async function postMailerQuote(req, res) {
     }
 
     const data = result.data || {};
+    console.log("[mailers] LetterStream preauth response:", JSON.stringify(data));
+
+    // LetterStream returns `doc` as either an object (single recipient) or an array (batch).
+    // Normalize to an array.
+    let docArr;
+    if (Array.isArray(data.doc)) docArr = data.doc;
+    else if (data.doc && typeof data.doc === "object") docArr = [data.doc];
+    else docArr = [];
+    const docEntry = docArr[0] || {};
+
     const authcode = data.authcode || null;
     const batchId = data.batch || null;
-    const docArr = Array.isArray(data.doc) ? data.doc : [];
-    const docEntry = docArr[0] || {};
     const docId = docEntry.id || docEntry.doc_id || null;
     const jobId = docEntry.job || data.job || null;
+    const trackingNum = docEntry.tracking || docEntry.tracking_number || null;
     const costDollars = parseFloat(String(data.cost ?? docEntry.cost ?? "0")) || 0;
     const costCents = Math.round(costDollars * 100);
 
-    const { rows: updated } = await pool.query(
-      `UPDATE mailers SET
-         status = 'preauth_pending',
-         provider_authcode = $1,
-         provider_batch_id = $2,
-         provider_doc_id = $3,
-         provider_job_id = $4,
-         quoted_cost_cents = $5,
-         quoted_at = NOW(),
-         page_count = $6,
-         test_mode = $7
-       WHERE id = $8
-       RETURNING *`,
-      [authcode, batchId, docId, jobId, costCents, pageCount, result.code === "-105", id]
-    );
+    // Persist quote details. Wrap in try/catch so we don't lose the authcode if DB save fails.
+    let savedMailer = null;
+    try {
+      const { rows: updated } = await pool.query(
+        `UPDATE mailers SET
+           status = 'preauth_pending',
+           provider_authcode = $1,
+           provider_batch_id = $2,
+           provider_doc_id = $3,
+           provider_job_id = $4,
+           provider_tracking_number = COALESCE($5, provider_tracking_number),
+           quoted_cost_cents = $6,
+           quoted_at = NOW(),
+           page_count = $7,
+           test_mode = $8
+         WHERE id = $9
+         RETURNING *`,
+        [authcode, batchId, docId, jobId, trackingNum, costCents, pageCount, result.code === "-105", id]
+      );
+      savedMailer = updated[0];
+    } catch (dbErr) {
+      console.error("[mailers] quote DB UPDATE failed:", dbErr.message);
+    }
 
-    await pool.query(
-      `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
-       VALUES ($1, 'quoted', $2, $3, $4)`,
-      [
-        id,
-        `Quoted at $${(costCents / 100).toFixed(2)} (${pageCount} page${pageCount === 1 ? "" : "s"})`,
-        JSON.stringify(data),
-        asUser(req),
-      ]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
+         VALUES ($1, 'quoted', $2, $3::jsonb, $4)`,
+        [
+          id,
+          `Quoted at $${(costCents / 100).toFixed(2)} (${pageCount} page${pageCount === 1 ? "" : "s"})`,
+          JSON.stringify(data),
+          asUser(req),
+        ]
+      );
+    } catch (evErr) {
+      console.error("[mailers] quote event log failed:", evErr.message);
+    }
+
+    // Fall back to refetching the mailer if the UPDATE returning failed.
+    if (!savedMailer) {
+      const { rows } = await pool.query(`SELECT * FROM mailers WHERE id = $1`, [id]).catch(() => ({ rows: [] }));
+      savedMailer = rows[0] || mailer;
+    }
 
     res.json({
-      mailer: rowToMailer(updated[0]),
+      mailer: rowToMailer(savedMailer),
       quote: {
         authcode,
         costCents,
@@ -378,7 +405,7 @@ export async function postMailerQuote(req, res) {
     await pool.query(
       `INSERT INTO mailer_events (mailer_id, event_type, event_detail, created_by)
        VALUES ($1, 'quote_failed', $2, 'system')`,
-      [id, e.message || "Quote failed"]
+      [id, errString(e?.message, "Quote failed").slice(0, 500)]
     ).catch(() => {});
     res.status(502).json({ error: errString(e?.message, "Failed to quote mailer.") });
   }
