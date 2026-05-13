@@ -216,8 +216,12 @@ function InboxOrchestrator() {
           list.setCategory(null);
           list.setTeamUserId(null);
         } else if (section.key === "sla-at-risk") {
+          // Phase 3: real filter — open, not paused, due within 2h or
+          // already breached. Highest-priority first to bubble emergency
+          // threads up.
           list.applyPreset("open");
-          list.setSort("oldest");
+          list.setSlaAtRisk(true);
+          list.setSort("priority");
         }
         setSelectedViewId(null);
         break;

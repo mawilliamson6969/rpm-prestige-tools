@@ -99,43 +99,22 @@ export function TagPill({ tag }: { tag: string }) {
 
 /* ──────────────────────── SLA chip ──────────────────────── */
 
+import type { ThreadRow } from "../../../hooks/inbox/types";
+import { deriveSlaView, slaChipColor, type SlaView } from "../../../hooks/inbox/useSLA";
+
 export type SlaChipSpec = { label: string; color: string; bg: string } | null;
 
-/** Derive a placeholder SLA chip from sla_due_at. Phase 3 will replace this
- *  with the real policy-driven colors. For Phase 1 we render a neutral
- *  chip whenever a due date is set. */
-export function deriveSlaChip(
-  slaDueAt: string | null | undefined,
-  slaPaused: boolean | null | undefined,
-  status: string | null | undefined
-): SlaChipSpec {
-  if (!slaDueAt || slaPaused || status !== "open") return null;
-  const due = new Date(slaDueAt).getTime();
-  if (!Number.isFinite(due)) return null;
-  const diffMin = Math.round((due - Date.now()) / 60000);
-  if (diffMin < 0) {
-    const h = Math.ceil(-diffMin / 60);
-    return { label: `SLA breached · ${h}h ago`, color: "#B32317", bg: "rgba(179,35,23,0.08)" };
-  }
-  if (diffMin <= 30) {
-    return { label: `SLA in ${diffMin}m`, color: "#B45309", bg: "rgba(180,83,9,0.10)" };
-  }
-  if (diffMin <= 120) {
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    return {
-      label: `SLA in ${h ? `${h}h ` : ""}${m}m`,
-      color: "#0F766E",
-      bg: "rgba(15,118,110,0.08)",
-    };
-  }
-  if (diffMin <= 600) {
-    const h = Math.floor(diffMin / 60);
-    return { label: `SLA in ${h}h`, color: "#475569", bg: "rgba(71,85,105,0.07)" };
-  }
-  const d = Math.floor(diffMin / 1440);
-  return { label: `SLA in ${d}d`, color: "#475569", bg: "rgba(71,85,105,0.07)" };
+/** Derive the SLA chip spec for a thread row, using the Phase 3 tier
+ *  palette. Returns `null` for threads with no policy assigned. */
+export function deriveSlaChip(thread: ThreadRow | null): SlaChipSpec {
+  const view = deriveSlaView(thread);
+  if (!view) return null;
+  const palette = slaChipColor(view.variant);
+  if (!palette) return null;
+  return { label: view.label, color: palette.color, bg: palette.bg };
 }
+
+export type { SlaView };
 
 /* ──────────────────────── Snooze tag extractor ──────────────────────── */
 

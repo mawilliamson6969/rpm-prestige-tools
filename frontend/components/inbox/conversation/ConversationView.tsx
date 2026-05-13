@@ -23,11 +23,11 @@ import {
   TagPill,
   avatarColor,
   avatarInitials,
-  deriveSlaChip,
   extractSnoozeUntil,
   formatAbsoluteTime,
   formatRelativeTime,
 } from "./chips";
+import { slaChipColor } from "../../../hooks/inbox/useSLA";
 import ConvoComposer from "./ConvoComposer";
 import AttachmentChip from "../AttachmentChip";
 
@@ -194,23 +194,8 @@ export default function ConversationView({
     );
   }
 
-  const sla = slaView ?? deriveSlaChip(t.sla_due_at, t.sla_paused, t.status);
-  const slaChipStyle =
-    sla && typeof sla === "object" && "label" in sla
-      ? (() => {
-          const variant = (sla as SlaView)?.variant;
-          if (!variant) {
-            const lite = sla as { color?: string; bg?: string };
-            return { color: lite.color, bg: lite.bg };
-          }
-          if (variant === "overdue")
-            return { color: "#B32317", bg: "rgba(179,35,23,0.08)" };
-          if (variant === "late" || variant === "open")
-            return { color: "#B45309", bg: "rgba(180,83,9,0.10)" };
-          if (variant === "ok") return { color: "#1F8A5B", bg: "rgba(31,138,91,0.10)" };
-          return { color: "#475569", bg: "rgba(71,85,105,0.07)" };
-        })()
-      : null;
+  const sla = slaView;
+  const slaChipStyle = sla ? slaChipColor(sla.variant) : null;
 
   const snoozedUntil = extractSnoozeUntil(t.tags);
   const visibleTags = Array.isArray(t.tags)
@@ -407,11 +392,11 @@ export default function ConversationView({
             </>
           ) : null}
           <span style={{ flex: 1 }} />
-          {sla && "label" in sla && slaChipStyle ? (
+          {sla && slaChipStyle ? (
             <span
               className={styles.cvSla}
               style={{ color: slaChipStyle.color, background: slaChipStyle.bg }}
-              title={"tooltip" in sla ? sla.tooltip : undefined}
+              title={sla.tooltip}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
                 <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.6" />
