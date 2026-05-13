@@ -1664,6 +1664,14 @@ app.post(
   postLetterStreamWebhook
 );
 
+// Public version probe — confirms which build of the backend is running. No secrets.
+app.get("/mailers/_version", (_req, res) => {
+  res.json({
+    backendVersion: process.env.BACKEND_BUILD || "(BACKEND_BUILD env not set)",
+    nodeEnv: process.env.NODE_ENV || null,
+    timestamp: new Date().toISOString(),
+  });
+});
 app.get("/mailers/health", requireAuth, getMailerHealth);
 app.get("/mailers/stats", requireAuth, getMailerStats);
 app.get("/mailers/volume", requireAuth, getMailerVolumeByWeek);
