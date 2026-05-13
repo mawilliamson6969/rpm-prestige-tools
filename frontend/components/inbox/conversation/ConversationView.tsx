@@ -18,6 +18,11 @@ import type { UseCompose } from "../../../hooks/inbox/useCompose";
 import type { SlaView } from "../../../hooks/inbox/useSLA";
 import type { UseTeamUsers } from "../../../hooks/inbox/useTeamUsers";
 import type { UseThreadDetail } from "../../../hooks/inbox/useThreadDetail";
+import type {
+  AutomationAutoFiring,
+  UseThreadAutomations,
+} from "../../../hooks/inbox/useThreadAutomations";
+import rulesStyles from "../rules/rules.module.css";
 import {
   ChannelBadge,
   TagPill,
@@ -66,6 +71,11 @@ type Props = {
   /** Prev/next arrows: optional callbacks. */
   onPrevThread?: () => void;
   onNextThread?: () => void;
+  /** Phase 4: pending suggestions + recent auto firings on this thread. */
+  automations?: UseThreadAutomations | null;
+  /** Called after an automation acts on or reverts the thread. Lets the
+   *  parent refetch detail + stats. */
+  onPatchThreadRefresh?: () => void | Promise<void>;
 };
 
 type ConversationEntry =
@@ -109,6 +119,8 @@ export default function ConversationView({
   presence = null,
   onPrevThread,
   onNextThread,
+  automations = null,
+  onPatchThreadRefresh,
 }: Props) {
   const t = detail.thread;
   const [assigneeOpen, setAssigneeOpen] = useState(false);
@@ -448,6 +460,19 @@ export default function ConversationView({
         ) : null}
       </div>
 
+      {automations?.autoFirings && automations.autoFirings.length > 0
+        ? automations.autoFirings.map((af) => (
+            <AutoActionBanner
+              key={af.id}
+              firing={af}
+              onUndo={async () => {
+                const r = await automations.revertAutoFiring(af.id);
+                if (r.ok) await onPatchThreadRefresh?.();
+              }}
+            />
+          ))
+        : null}
+
       <div className={styles.cvMessages}>
         {merged.map((entry) =>
           entry.kind === "message" ? (
@@ -476,6 +501,8 @@ export default function ConversationView({
         onRunAiDraft={onRunAiDraft}
         onDismissAiDraft={onDismissAiDraft}
         onSend={onSend}
+        automations={automations}
+        onAutomationActed={onPatchThreadRefresh}
       />
 
       {/* Popovers */}
@@ -794,4 +821,57 @@ function PopoverItem({
       {children}
     </button>
   );
+}
+
+/* ────────────────────── Auto-action banner ────────────────────── */
+
+function AutoActionBanner({
+  firing,
+  onUndo,
+}: {
+  firing: AutomationAutoFiring;
+  onUndo: () => Promise<void> | void;
+}) {
+  const action = describeFiringAction(firing);
+  return (
+    <div className={rulesStyles.autoBanner}>
+      <span className={rulesStyles.autoBannerLabel}>
+        <b>{action}</b> by <em>“{firing.ruleName}”</em>
+      </span>
+      <button
+        type="button"
+        className={rulesStyles.autoBannerUndo}
+        onClick={() => void onUndo()}
+        disabled={!firing.revertable}
+        title={firing.revertable ? "Undo this action" : "This action can't be undone"}
+      >
+        ↶ Undo
+      </button>
+    </div>
+  );
+}
+
+function describeFiringAction(firing: AutomationAutoFiring): string {
+  const p = firing.proposedAction || {};
+  switch (firing.ruleAction) {
+    case "assign":
+      return `Auto-assigned to ${p.assignee_username ?? "—"}`;
+    case "set_status":
+      return `Status set to ${p.status ?? "—"}`;
+    case "set_priority":
+      return `Priority set to ${p.priority ?? "—"}`;
+    case "close":
+      return "Auto-closed";
+    case "star":
+      return "Auto-starred";
+    case "escalate": {
+      const who = p.assignee_username ?? "—";
+      const pri = p.priority ? ` at ${p.priority} priority` : "";
+      return `Escalated to ${who}${pri}`;
+    }
+    case "apply_label":
+      return `Tag ${p.label ?? "—"} applied`;
+    default:
+      return `Auto-action: ${firing.ruleAction}`;
+  }
 }

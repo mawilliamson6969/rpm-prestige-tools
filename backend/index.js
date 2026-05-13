@@ -353,6 +353,8 @@ import {
   getInboxAutomationAccuracy,
   getInboxAutomationLog,
   getInboxAutomationRules,
+  getInboxAutomationStats,
+  getInboxThreadAutomations,
   patchInboxAutomationRule,
   postInboxAutomationExecute,
   postInboxAutomationFeedback,
@@ -1297,6 +1299,9 @@ app.get("/inbox/automation-accuracy", requireAuth, getInboxAutomationAccuracy);
 app.post("/inbox/automation-log/:id/feedback", requireAuth, postInboxAutomationFeedback);
 app.post("/inbox/automation-log/:id/execute", requireAuth, postInboxAutomationExecute);
 app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, postInboxAutomationRevert);
+// Phase 4 (D0-aligned) additions.
+app.get("/inbox/automation-stats", requireAuth, getInboxAutomationStats);
+app.get("/inbox/threads/:thread_id/automations", requireAuth, getInboxThreadAutomations);
 
 // Phase 5 attachments. Download + preview accept ?token= so plain
 // <a download> + <img src> work without bespoke client fetch logic.

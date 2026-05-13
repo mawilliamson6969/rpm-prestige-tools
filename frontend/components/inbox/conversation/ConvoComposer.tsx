@@ -11,6 +11,7 @@ import { sanitizeEmailHtml } from "../../../lib/sanitizeEmailHtml";
 import type { ThreadRow } from "../../../hooks/inbox/types";
 import type { UseAIDraft } from "../../../hooks/inbox/useAIDraft";
 import type { UseCompose } from "../../../hooks/inbox/useCompose";
+import type { UseThreadAutomations } from "../../../hooks/inbox/useThreadAutomations";
 import { hasNoAiContext } from "../inboxConstants";
 
 type Props = {
@@ -21,6 +22,11 @@ type Props = {
   onRunAiDraft: () => void;
   onDismissAiDraft: () => void;
   onSend: () => void;
+  /** Phase 4: rule-suggestion chips rendered above the footer. */
+  automations?: UseThreadAutomations | null;
+  /** Called after a suggestion is accepted (so the parent can refetch
+   *  detail + stats and re-paint the banner / status / assignee). */
+  onAutomationActed?: () => void | Promise<void>;
 };
 
 export default function ConvoComposer({
@@ -31,6 +37,8 @@ export default function ConvoComposer({
   onRunAiDraft,
   onDismissAiDraft,
   onSend,
+  automations = null,
+  onAutomationActed,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isNote = compose.mode === "note";
@@ -336,6 +344,29 @@ export default function ConvoComposer({
         </div>
       ) : null}
 
+      {automations && automations.suggestions.length > 0 ? (
+        <div className={styles.cvCompAi}>
+          <span className={styles.cvCompAiLbl}>✨ Suggested actions</span>
+          {automations.suggestions.map((s) => {
+            const label = describeSuggestion(s.ruleAction, s.proposedAction);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                className={styles.cvCompAiChip}
+                title={`${s.ruleName}${s.confidence != null ? ` · confidence ${Math.round(s.confidence * 100)}%` : ""}`}
+                onClick={async () => {
+                  const r = await automations.acceptSuggestion(s.id);
+                  if (r.ok) await onAutomationActed?.();
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className={styles.cvCompFoot}>
         <div className={styles.cvCompTools}>
           {allowAttachments ? (
@@ -379,4 +410,36 @@ export default function ConvoComposer({
       </div>
     </div>
   );
+}
+
+function describeSuggestion(
+  action: string,
+  proposed: { [key: string]: unknown } | null
+): string {
+  const p = proposed || {};
+  switch (action) {
+    case "assign":
+      return `Assign to ${String(p.assignee_username || "—")}`;
+    case "set_status":
+      return `Set status to ${String(p.status || "—")}`;
+    case "set_priority":
+      return `Set priority to ${String(p.priority || "—")}`;
+    case "close":
+      return "Close conversation";
+    case "star":
+      return "Star conversation";
+    case "escalate": {
+      const who = String(p.assignee_username || "—");
+      const pri = p.priority ? ` at ${p.priority}` : "";
+      return `Escalate to ${who}${pri}`;
+    }
+    case "create_task":
+      return "Create a task";
+    case "create_work_order":
+      return "Create a work order";
+    case "apply_label":
+      return `Apply tag ${String(p.label || "—")}`;
+    default:
+      return action;
+  }
 }
