@@ -9,7 +9,7 @@ RUN npm ci --omit=dev
 COPY . .
 # Cache-bust: bump this when you suspect Docker is serving a stale COPY layer
 # (e.g., source files have identical mtimes after `git reset --hard`).
-ENV BACKEND_BUILD=v7-quote-fail-diag
+ENV BACKEND_BUILD=v8-direct-send
 EXPOSE 4000
 ENV NODE_ENV=production
 CMD ["node", "index.js"]

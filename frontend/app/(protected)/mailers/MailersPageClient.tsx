@@ -444,20 +444,23 @@ export default function MailersPageClient() {
       // DB hiccup, but if LetterStream gave us back a real authcode + cost,
       // open the modal anyway — the user can still confirm-send.
       const quoteData = (d && typeof d === "object" ? (d.quote as Record<string, unknown>) : null) || null;
-      const authcode = quoteData?.authcode ? String(quoteData.authcode) : null;
       const costCents = typeof quoteData?.costCents === "number" ? (quoteData.costCents as number) : 0;
+      const newMailer = (d?.mailer as Mailer | undefined) ?? null;
+      const wasSent = !!quoteData?.sent
+        || (newMailer && (newMailer.status === "sent" || newMailer.status === "sent_test"));
 
-      if (authcode && costCents > 0) {
-        setSelectedMailer((d?.mailer as Mailer | undefined) ?? null);
-        setQuote({
-          mailerId: id,
-          authcode,
-          costCents,
-          pageCount: typeof quoteData?.pageCount === "number" ? (quoteData.pageCount as number) : 1,
-          testMode: !!quoteData?.testMode,
-          code: String(quoteData?.code ?? ""),
-        });
+      // v8 direct-send: mailer is already sent server-side; just refresh and show toast.
+      if (r.ok && wasSent) {
+        setSelectedMailer(newMailer);
         await loadMailers();
+        await loadStats();
+        void loadBalance(true);
+        const isTest = !!quoteData?.testMode || newMailer?.status === "sent_test";
+        setQuoteError(
+          `✓ Sent for $${(costCents / 100).toFixed(2)}${isTest ? " (TEST mode — sitting in your LetterStream cart for review)" : ""}.`
+        );
+        // Auto-dismiss the success toast after 6s
+        setTimeout(() => setQuoteError(null), 6000);
         return;
       }
 
@@ -791,7 +794,7 @@ export default function MailersPageClient() {
           <div className={styles.slideOverActions}>
             {(m.status === "draft" || m.status === "preauth_pending") && (
               <button className={styles.btnPrimary} onClick={() => handleQuote(m.id)} disabled={actionLoading}>
-                {m.status === "preauth_pending" ? "Re-Quote" : "Get Quote & Send…"}
+                {actionLoading ? "Sending…" : "Send via LetterStream"}
               </button>
             )}
             {["sent", "sent_test", "in_production", "mailed", "in_transit", "out_for_delivery", "attempted"].includes(m.status) && m.providerDocId && (
@@ -829,7 +832,7 @@ export default function MailersPageClient() {
       <div className={styles.dashContent}>
         {/* Build marker — confirms which version of the bundle is loaded */}
         <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginBottom: "0.5rem", textAlign: "right" }}>
-          mailers UI build: v5-fe + backend version probe
+          mailers UI build: v8-direct-send (one click → sent)
         </div>
         {/* Config health banner — only shows when LetterStream isn't fully wired up */}
         {health && !health.ready && (
@@ -1176,7 +1179,7 @@ export default function MailersPageClient() {
 
       {renderSlideOver()}
 
-      {/* Top-level error banner — visible regardless of modal state */}
+      {/* Top-level banner — green for ✓ success toasts, red for errors */}
       {quoteError && (
         <div
           style={{
@@ -1186,7 +1189,7 @@ export default function MailersPageClient() {
             zIndex: 2000,
             maxWidth: 480,
             padding: "0.85rem 1rem",
-            background: "#B32317",
+            background: quoteError.startsWith("✓") ? "#287840" : "#B32317",
             color: "#fff",
             borderRadius: 8,
             boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
@@ -1195,7 +1198,9 @@ export default function MailersPageClient() {
             wordBreak: "break-word",
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Mailer error</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {quoteError.startsWith("✓") ? "Mailer sent" : "Mailer error"}
+          </div>
           <div>{quoteError}</div>
           <button
             type="button"

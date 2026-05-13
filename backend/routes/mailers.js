@@ -4,7 +4,7 @@ import { getPool } from "../lib/db.js";
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v7-quote-fail-diag";
+export const BACKEND_VERSION = "v8-direct-send";
 import {
   submitMailer,
   confirmPreauth,
@@ -293,8 +293,16 @@ export async function deleteMailer(req, res) {
 
 /**
  * POST /api/mailers/:id/quote
- * Generates the PDF, submits to LetterStream as a preauth (price quote).
- * Stores authcode + quoted cost on the mailer, returns them to the frontend.
+ *
+ * One-click send: generates the PDF, submits directly to LetterStream
+ * (no preauth two-step), saves provider IDs + cost, marks mailer sent.
+ * Frontend can keep calling /quote — the response shape is unchanged from
+ * the caller's perspective (returns `{ mailer, quote }`), it just skips
+ * the doauth round-trip.
+ *
+ * Test mode is still honored — LetterStream returns code -105 instead of
+ * -100, and we mark the mailer 'sent_test' so it shows up distinctly in
+ * the table.
  */
 export async function postMailerQuote(req, res) {
   const id = Number(req.params.id);
@@ -307,7 +315,7 @@ export async function postMailerQuote(req, res) {
     if (!rows.length) return res.status(404).json({ error: "Not found." });
     mailer = rows[0];
     if (!["draft", "preauth_pending"].includes(mailer.status)) {
-      return res.status(409).json({ error: `Cannot quote a mailer with status '${mailer.status}'.` });
+      return res.status(409).json({ error: `Cannot send a mailer with status '${mailer.status}'.` });
     }
   } catch (e) {
     console.error("[mailers] quote lookup", e);
@@ -318,7 +326,8 @@ export async function postMailerQuote(req, res) {
     const pdfBuffer = await renderLetterPdf(mailer.letter_html, mailer);
     const pageCount = await countPdfPages(pdfBuffer);
 
-    const result = await submitMailer(mailer, { pdfBuffer, pageCount, preauth: true });
+    // Direct send — no preauth. LetterStream returns -100 (live) or -105 (test mode).
+    const result = await submitMailer(mailer, { pdfBuffer, pageCount, preauth: false });
 
     if (!result.success) {
       await pool.query(
@@ -363,42 +372,48 @@ export async function postMailerQuote(req, res) {
     const costCents = Math.round(costDollars * 100);
 
     // Persist quote details. Wrap in try/catch so we don't lose the authcode if DB save fails.
+    // -100 = live, sent for real; -105 = test mode, sits in LetterStream cart.
+    const isTest = result.code === "-105";
+    const newStatus = isTest ? "sent_test" : "sent";
+
     let savedMailer = null;
     try {
       const { rows: updated } = await pool.query(
         `UPDATE mailers SET
-           status = 'preauth_pending',
-           provider_authcode = $1,
+           status = $1::mail_status,
            provider_batch_id = $2,
            provider_doc_id = $3,
            provider_job_id = $4,
            provider_tracking_number = COALESCE($5, provider_tracking_number),
+           cost_cents = $6,
            quoted_cost_cents = $6,
            quoted_at = NOW(),
+           sent_at = NOW(),
+           last_status_check = NOW(),
            page_count = $7,
            test_mode = $8
          WHERE id = $9
          RETURNING *`,
-        [authcode, batchId, docId, jobId, trackingNum, costCents, pageCount, result.code === "-105", id]
+        [newStatus, batchId, docId, jobId, trackingNum, costCents, pageCount, isTest, id]
       );
       savedMailer = updated[0];
     } catch (dbErr) {
-      console.error("[mailers] quote DB UPDATE failed:", dbErr.message);
+      console.error("[mailers] send DB UPDATE failed:", dbErr.message);
     }
 
     try {
       await pool.query(
         `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
-         VALUES ($1, 'quoted', $2, $3::jsonb, $4)`,
+         VALUES ($1, 'sent', $2, $3::jsonb, $4)`,
         [
           id,
-          `Quoted at $${(costCents / 100).toFixed(2)} (${pageCount} page${pageCount === 1 ? "" : "s"})`,
+          `Sent for $${(costCents / 100).toFixed(2)} (${pageCount} page${pageCount === 1 ? "" : "s"})${isTest ? " — TEST mode" : ""}`,
           JSON.stringify(data),
           asUser(req),
         ]
       );
     } catch (evErr) {
-      console.error("[mailers] quote event log failed:", evErr.message);
+      console.error("[mailers] send event log failed:", evErr.message);
     }
 
     // Fall back to refetching the mailer if the UPDATE returning failed.
@@ -415,8 +430,10 @@ export async function postMailerQuote(req, res) {
         costCents,
         costDollars: costCents / 100,
         pageCount,
-        testMode: result.code === "-105",
+        testMode: isTest,
         code: result.code,
+        sent: true,  // v8: tells the frontend this was a one-click direct send, not a preauth.
+        status: newStatus,
       },
     });
   } catch (e) {
