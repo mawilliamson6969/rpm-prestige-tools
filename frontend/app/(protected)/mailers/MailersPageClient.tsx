@@ -9,7 +9,11 @@ import styles from "./mailers.module.css";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type MailType = "certified" | "certified_return_receipt" | "first_class" | "priority" | "postcard" | "marketing";
-type MailStatus = "draft" | "queued" | "sent" | "in_transit" | "out_for_delivery" | "delivered" | "attempted" | "returned" | "failed" | "cancelled";
+type MailStatus =
+  | "draft" | "queued" | "preauth_pending" | "sent" | "sent_test"
+  | "in_production" | "mailed" | "in_transit" | "out_for_delivery" | "delivered"
+  | "attempted" | "returned" | "failed" | "failed_funding" | "needs_attention"
+  | "address_warning" | "cancelled";
 
 type Mailer = {
   id: number;
@@ -34,9 +38,23 @@ type Mailer = {
   senderZip: string;
   provider: string;
   providerJobId: string | null;
+  providerDocId: string | null;
+  providerAuthcode: string | null;
+  providerBatchId: string | null;
   providerTrackingNumber: string | null;
   providerExpectedDelivery: string | null;
+  quotedCostCents: number | null;
+  quotedAt: string | null;
+  pageCount: number | null;
   costCents: number | null;
+  testMode: boolean;
+  includeReturnEnvelope: boolean;
+  signatureFilePath: string | null;
+  currentScanStatus: string | null;
+  currentScanCode: string | null;
+  lastScannedAt: string | null;
+  lastScanFacility: string | null;
+  lastScanZip: string | null;
   triggeredBy: string;
   triggeredFrom: string | null;
   sentBy: string | null;
@@ -92,26 +110,40 @@ const MAIL_TYPE_COLORS: Record<MailType, string> = {
 const STATUS_LABELS: Record<MailStatus, string> = {
   draft: "Draft",
   queued: "Queued",
+  preauth_pending: "Quote Pending",
   sent: "Sent",
+  sent_test: "Sent (Test)",
+  in_production: "In Production",
+  mailed: "Mailed",
   in_transit: "In Transit",
   out_for_delivery: "Out for Delivery",
   delivered: "Delivered",
   attempted: "Attempted",
   returned: "Returned",
   failed: "Failed",
+  failed_funding: "Failed (Funds)",
+  needs_attention: "Needs Attention",
+  address_warning: "Address Warning",
   cancelled: "Cancelled",
 };
 
 const STATUS_COLORS: Record<MailStatus, string> = {
   draft: "#6A737B",
   queued: "#6A737B",
+  preauth_pending: "#9333ea",
   sent: "#0098D0",
+  sent_test: "#9333ea",
+  in_production: "#0098D0",
+  mailed: "#0098D0",
   in_transit: "#d97706",
   out_for_delivery: "#65a30d",
   delivered: "#287840",
   attempted: "#ea580c",
   returned: "#dc4e00",
   failed: "#B32317",
+  failed_funding: "#B32317",
+  needs_attention: "#d97706",
+  address_warning: "#d97706",
   cancelled: "#9ca3af",
 };
 
@@ -200,6 +232,22 @@ export default function MailersPageClient() {
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterCategory, setFilterCategory] = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // LetterStream balance (in cents) + cached flag
+  const [balance, setBalance] = useState<{ balanceCents: number | null; cached: boolean } | null>(null);
+
+  // Quote → confirm modal
+  type QuoteState = {
+    mailerId: number;
+    authcode: string | null;
+    costCents: number;
+    pageCount: number;
+    testMode: boolean;
+    code: string;
+  };
+  const [quote, setQuote] = useState<QuoteState | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
   // Debounce search
   useEffect(() => {
@@ -348,26 +396,145 @@ export default function MailersPageClient() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  async function handleSend(id: number) {
-    if (!confirm("Send this mailer via LetterStream?")) return;
+  // Two-step send flow: /quote gets price + authcode, /confirm-send releases the job.
+  async function handleQuote(id: number) {
     setActionLoading(true);
+    setQuoteError(null);
     try {
-      const r = await fetch(apiUrl(`/mailers/${id}/send`), {
+      const r = await fetch(apiUrl(`/mailers/${id}/quote`), {
         method: "POST",
         headers: authHeaders(),
       });
       const d = await r.json();
       if (!r.ok) {
-        alert(d.error || "Failed to send.");
+        setQuoteError(d.error || "Failed to get quote.");
+        alert(d.error || "Failed to get quote.");
         return;
       }
       setSelectedMailer(d.mailer);
+      setQuote({
+        mailerId: id,
+        authcode: d.quote?.authcode || null,
+        costCents: d.quote?.costCents || 0,
+        pageCount: d.quote?.pageCount || 1,
+        testMode: !!d.quote?.testMode,
+        code: String(d.quote?.code || ""),
+      });
       await loadMailers();
-      await loadStats();
     } finally {
       setActionLoading(false);
     }
   }
+
+  async function handleConfirmSend() {
+    if (!quote) return;
+    setActionLoading(true);
+    try {
+      const r = await fetch(apiUrl(`/mailers/${quote.mailerId}/confirm-send`), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setQuoteError(d.error || "Failed to send.");
+        alert(d.error || "Failed to send.");
+        return;
+      }
+      setSelectedMailer(d.mailer);
+      setQuote(null);
+      await loadMailers();
+      await loadStats();
+      void loadBalance(true);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleRefreshTracking(id: number) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(apiUrl(`/mailers/${id}/tracking`), {
+        headers: authHeaders(),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        alert(d.error || "Failed to refresh tracking.");
+        return;
+      }
+      setSelectedMailer(d.mailer);
+      await loadMailerEvents(id);
+      await loadMailers();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleDownloadSignature(id: number) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(apiUrl(`/mailers/${id}/signature`), {
+        headers: authHeaders(),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(d.error || "Signature not available yet.");
+        return;
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      // Open in a new tab and remember for cleanup
+      window.open(url, "_blank", "noopener,noreferrer");
+      if (signatureUrl) URL.revokeObjectURL(signatureUrl);
+      setSignatureUrl(url);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function loadMailerEvents(id: number) {
+    try {
+      const r = await fetch(apiUrl(`/mailers/${id}`), { headers: authHeaders() });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.events) setSelectedEvents(d.events);
+    } catch { /* ignore */ }
+  }
+
+  const loadBalance = useCallback(async (force = false) => {
+    try {
+      const r = await fetch(apiUrl("/mailers/account-balance"), {
+        headers: authHeaders(),
+        cache: force ? "no-store" : "default",
+      });
+      if (!r.ok) { setBalance(null); return; }
+      const d = await r.json();
+      setBalance({ balanceCents: d.balanceCents ?? null, cached: !!d.cached });
+    } catch { setBalance(null); }
+  }, [authHeaders]);
+
+  useEffect(() => { loadBalance(); }, [loadBalance]);
+
+  // Auto-open the quote modal if compose redirected us here with ?openQuote=<id>.
+  // We strip the param after firing so refreshes don't re-quote.
+  const autoQuoteFiredRef = useRef(false);
+  useEffect(() => {
+    if (autoQuoteFiredRef.current) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const idStr = params.get("openQuote");
+    if (!idStr) return;
+    const id = Number(idStr);
+    if (!Number.isFinite(id) || id <= 0) return;
+    autoQuoteFiredRef.current = true;
+    setSelectedId(id);
+    // Slight delay to let mailers list load so the slide-over has data
+    setTimeout(() => { void handleQuote(id); }, 400);
+    // Strip the query param
+    const url = new URL(window.location.href);
+    url.searchParams.delete("openQuote");
+    window.history.replaceState({}, "", url.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleCancel(id: number) {
     if (!confirm("Cancel this mailer?")) return;
@@ -550,17 +717,27 @@ export default function MailersPageClient() {
 
           {/* Actions */}
           <div className={styles.slideOverActions}>
-            {(m.status === "draft" || m.status === "queued") && (
-              <button className={styles.btnPrimary} onClick={() => handleSend(m.id)} disabled={actionLoading}>
-                Send Now
+            {(m.status === "draft" || m.status === "preauth_pending") && (
+              <button className={styles.btnPrimary} onClick={() => handleQuote(m.id)} disabled={actionLoading}>
+                {m.status === "preauth_pending" ? "Re-Quote" : "Get Quote & Send…"}
               </button>
             )}
-            {["failed", "returned", "cancelled"].includes(m.status) && (
+            {["sent", "sent_test", "in_production", "mailed", "in_transit", "out_for_delivery", "attempted"].includes(m.status) && m.providerDocId && (
+              <button className={styles.btnSm} onClick={() => handleRefreshTracking(m.id)} disabled={actionLoading}>
+                ↻ Refresh Status
+              </button>
+            )}
+            {m.status === "delivered" && (m.mailType === "certified" || m.mailType === "certified_return_receipt") && m.providerTrackingNumber && (
+              <button className={styles.btnSm} onClick={() => handleDownloadSignature(m.id)} disabled={actionLoading}>
+                📄 Download Signature
+              </button>
+            )}
+            {["failed", "failed_funding", "returned", "cancelled", "needs_attention"].includes(m.status) && (
               <button className={styles.btnSm} onClick={() => handleResend(m.id)} disabled={actionLoading}>
                 ↻ Resend
               </button>
             )}
-            {["draft", "queued"].includes(m.status) && (
+            {["draft", "queued", "preauth_pending"].includes(m.status) && (
               <button className={`${styles.btnSm} ${styles.btnDanger}`} onClick={() => handleCancel(m.id)} disabled={actionLoading}>
                 Cancel
               </button>
@@ -578,6 +755,48 @@ export default function MailersPageClient() {
 
     return (
       <div className={styles.dashContent}>
+        {/* LetterStream balance */}
+        {balance && (
+          <div
+            className={styles.balanceCard}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.85rem 1.1rem",
+              marginBottom: "1rem",
+              background: "linear-gradient(90deg, #1B2856 0%, #0098D0 100%)",
+              color: "#fff",
+              borderRadius: 8,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "0.75rem", opacity: 0.85, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                LetterStream Prepaid Balance{balance.cached ? " (cached)" : ""}
+              </div>
+              <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>
+                {balance.balanceCents != null ? formatCents(balance.balanceCents) : "—"}
+              </div>
+            </div>
+            <a
+              href="https://www.letterstream.com/ls/myacct?action=billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                color: "#fff",
+                padding: "0.5rem 0.9rem",
+                borderRadius: 6,
+                textDecoration: "none",
+                fontWeight: 600,
+                fontSize: "0.85rem",
+              }}
+            >
+              + Add Funds ↗
+            </a>
+          </div>
+        )}
+
         {/* Stats row */}
         <div className={styles.statsRow}>
           <div className={styles.statCard}>
@@ -841,6 +1060,76 @@ export default function MailersPageClient() {
       </main>
 
       {renderSlideOver()}
+
+      {/* Quote confirmation modal */}
+      {quote && selectedMailer && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed", inset: 0, zIndex: 1500,
+            background: "rgba(15, 23, 42, 0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem",
+          }}
+          onClick={() => !actionLoading && setQuote(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 12, maxWidth: 480, width: "100%",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid #e5e7eb" }}>
+              <div style={{ fontSize: "0.75rem", color: "#6A737B", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                Confirm Send {quote.testMode ? "· TEST MODE" : ""}
+              </div>
+              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "#1B2856", marginTop: 4 }}>
+                Send for ${(quote.costCents / 100).toFixed(2)}?
+              </div>
+            </div>
+            <div style={{ padding: "1.25rem 1.5rem", lineHeight: 1.55, color: "#374151" }}>
+              <div style={{ marginBottom: "0.75rem" }}>
+                This will send <strong>{MAIL_TYPE_LABELS[selectedMailer.mailType]}</strong> mail to:
+              </div>
+              <div style={{ background: "#f8fafc", borderRadius: 8, padding: "0.75rem 1rem", fontSize: "0.9rem" }}>
+                <strong>{selectedMailer.recipientName}</strong><br />
+                {selectedMailer.recipientAddress}<br />
+                {selectedMailer.recipientCity}, {selectedMailer.recipientState} {selectedMailer.recipientZip}
+              </div>
+              <div style={{ marginTop: "0.85rem", fontSize: "0.85rem", color: "#6A737B" }}>
+                {quote.pageCount} page{quote.pageCount === 1 ? "" : "s"} · LetterStream code {quote.code}
+                {quote.testMode && (
+                  <div style={{ marginTop: "0.5rem", padding: "0.5rem 0.75rem", background: "#fef3c7", color: "#92400e", borderRadius: 6 }}>
+                    ⚠ Test mode is enabled — no real mail will be sent. The job will sit in your LetterStream shopping cart for review.
+                  </div>
+                )}
+              </div>
+              {quoteError && (
+                <div style={{ marginTop: "0.75rem", color: "#B32317", fontSize: "0.85rem" }}>{quoteError}</div>
+              )}
+            </div>
+            <div style={{ padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.5rem", background: "#f8fafc" }}>
+              <button
+                className={styles.btnSm}
+                onClick={() => setQuote(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className={styles.btnPrimary}
+                onClick={handleConfirmSend}
+                disabled={actionLoading || !quote.authcode}
+                style={{ minWidth: 160 }}
+              >
+                {actionLoading ? "Sending…" : `Confirm & Send · $${(quote.costCents / 100).toFixed(2)}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
