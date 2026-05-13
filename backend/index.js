@@ -7,7 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { fetchAppfolioUnitsJson } from "./lib/appfolio.js";
 import { getOccupancy } from "./lib/dashboard-cache.js";
-import { requireAdminRole, requireAuth, requireAuthOrQueryToken } from "./lib/auth.js";
+import { requireAdminRole, requireAuth, requireAuthOrQueryToken, requirePermission } from "./lib/auth.js";
 import {
   ensureAnnouncementsSchema,
   ensureCachedDashboardSchema,
@@ -328,6 +328,13 @@ import {
   postInboxThreadSync,
   postInboxThreadTags,
 } from "./routes/inboxThreads.js";
+import {
+  getInboxAnalyticsChannelMix,
+  getInboxAnalyticsInboxHealth,
+  getInboxAnalyticsKpis,
+  getInboxAnalyticsTeamLoad,
+  getInboxAnalyticsVolume,
+} from "./routes/inboxAnalytics.js";
 import {
   deleteInboxView,
   getInboxViewThreads,
@@ -1234,6 +1241,38 @@ app.post("/inbox/threads/:thread_id/read", requireAuth, postInboxThreadMarkRead)
 app.post("/inbox/threads/:thread_id/sync", requireAuth, postInboxThreadSync);
 app.post("/inbox/threads/:thread_id/snooze", requireAuth, postInboxThreadSnooze);
 app.post("/inbox/threads/:thread_id/tags", requireAuth, postInboxThreadTags);
+
+// Phase A inbox analytics — gated on reports.view (csm/admin/owner).
+app.get(
+  "/inbox/analytics/kpis",
+  requireAuth,
+  requirePermission("reports.view"),
+  getInboxAnalyticsKpis
+);
+app.get(
+  "/inbox/analytics/volume",
+  requireAuth,
+  requirePermission("reports.view"),
+  getInboxAnalyticsVolume
+);
+app.get(
+  "/inbox/analytics/channel-mix",
+  requireAuth,
+  requirePermission("reports.view"),
+  getInboxAnalyticsChannelMix
+);
+app.get(
+  "/inbox/analytics/team-load",
+  requireAuth,
+  requirePermission("reports.view"),
+  getInboxAnalyticsTeamLoad
+);
+app.get(
+  "/inbox/analytics/inbox-health",
+  requireAuth,
+  requirePermission("reports.view"),
+  getInboxAnalyticsInboxHealth
+);
 
 // Phase 2 saved views.
 app.get("/inbox/views", requireAuth, getInboxViews);

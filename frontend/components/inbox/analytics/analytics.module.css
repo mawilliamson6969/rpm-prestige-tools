@@ -1,0 +1,473 @@
+/* Analytics view styling — Phase A.
+ *
+ * Source: design/shared-inbox-ux-and-ui/project/styles.css lines 792–907
+ * (`.page`, `.page-hd`, `.page-eyebrow`, `.page-title`, `.page-sub`,
+ *  `.page-btn`, `.page-seg-wrap`, `.page-seg-btn`, `.kpi-grid`, `.kpi`,
+ *  `.kpi-label/value/delta/spark`, `.chart-grid`, `.card`, `.card-hd`,
+ *  `.card-title/sub/link`, `.team-table`, `.team-row`, `.team-bar-wrap`,
+ *  `.team-bar`, `.inbox-table`).
+ *
+ * Tokens come from `.inbox-root` (see inbox-tokens.css).
+ */
+
+.page {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pageHd {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.pageEyebrow {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  color: var(--text);
+}
+
+.pageSub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 4px;
+  max-width: 600px;
+}
+
+.pageHdActions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pageBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.pageBtn:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.pageBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pageSegWrap {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  padding: 2px;
+}
+
+.pageSegBtn {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.pageSegBtn[data-active="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.pageBody {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* KPI grid */
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1280px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.kpi {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpiLabel {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.kpiRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kpiValue {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiDelta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px 1px 4px;
+  border-radius: 999px;
+}
+
+.kpiDeltaPos {
+  background: rgba(31, 138, 91, 0.10);
+  color: #1F8A5B;
+}
+
+.kpiDeltaNeg {
+  background: rgba(179, 35, 23, 0.10);
+  color: #B32317;
+}
+
+.kpiDeltaNeutral {
+  background: var(--panel-2);
+  color: var(--text-3);
+}
+
+.kpiSpark {
+  margin-top: 4px;
+  opacity: 0.85;
+  min-height: 24px;
+}
+
+/* Two-column chart/table grid */
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 1024px) {
+  .chartGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.cardHd {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.cardSub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.cardLink {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-3);
+  align-items: center;
+}
+
+.legendSwatch {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.legendDash {
+  background-image: linear-gradient(to right, #1F8A5B 50%, transparent 50%);
+  background-size: 6px 2px;
+  background-repeat: repeat-x;
+  height: 2px;
+}
+
+/* Team load table */
+
+.teamTable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teamRow {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.teamRowL {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.teamAvatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.teamName {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teamBarWrap {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.teamBar {
+  height: 100%;
+}
+
+.teamCounts {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 90px;
+  justify-content: flex-end;
+}
+
+.teamCountsOpen {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.teamCountsResolved {
+  color: var(--text-3);
+}
+
+/* Inbox health table */
+
+.inboxTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.inboxTable th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-3);
+  padding: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.inboxTable td {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.right {
+  text-align: right;
+}
+
+.inboxMailboxDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* Donut + legend column */
+
+.donutWrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.donutLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.donutLegendRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.donutLegendSwatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.donutLegendLabel {
+  color: var(--text-2);
+}
+
+.donutLegendValue {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+/* Empty / forbidden states */
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 32px;
+  text-align: center;
+}
+
+.emptyInner {
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.emptySub {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.skeleton {
+  background: var(--panel-2);
+  border-radius: 6px;
+  animation: anSkelPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes anSkelPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
