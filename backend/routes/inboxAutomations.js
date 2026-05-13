@@ -382,3 +382,117 @@ export async function postInboxAutomationRevert(req, res) {
     res.status(500).json({ error: "Could not revert automation." });
   }
 }
+
+/**
+ * Phase 4 (D0-aligned): per-rule firing stats over the last 7 days, used
+ * by the Rules screen cards. Returns one row per rule with last7d_firings
+ * (matched=TRUE log rows), last7d_acted (executed=TRUE among those), and
+ * last7d_acted_pct (rounded percentage, or NULL when no firings).
+ *
+ * Rules with zero activity still surface so the screen shows them as
+ * dormant rather than dropping them.
+ */
+export async function getInboxAutomationStats(_req, res) {
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT r.id              AS rule_id,
+              r.name            AS name,
+              r.mode            AS mode,
+              r.active          AS active,
+              COALESCE(s.firings, 0)::int AS last7d_firings,
+              COALESCE(s.acted,   0)::int AS last7d_acted,
+              CASE
+                WHEN COALESCE(s.firings, 0) > 0
+                  THEN ROUND((s.acted::numeric / s.firings) * 100)::int
+                ELSE NULL
+              END AS last7d_acted_pct
+         FROM automation_rules r
+    LEFT JOIN (
+           SELECT rule_id,
+                  COUNT(*) FILTER (WHERE matched = TRUE) AS firings,
+                  COUNT(*) FILTER (WHERE matched = TRUE AND executed = TRUE) AS acted
+             FROM automation_log
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+            GROUP BY rule_id
+         ) s ON s.rule_id = r.id
+        ORDER BY r.priority_rank ASC, r.id ASC`
+    );
+    res.json({ rules: rows });
+  } catch (e) {
+    console.error("[automation] stats", e);
+    res.status(500).json({ error: "Could not load rule stats." });
+  }
+}
+
+/**
+ * Phase 4 (D0-aligned): pending suggested actions + recent auto firings
+ * for one thread. Powers the conversation view's auto-action banner and
+ * the composer's suggested-action chips.
+ *
+ *   suggestions[]  → composer chips. mode=suggested, matched=true,
+ *                    executed=false, reverted=false.
+ *   autoFirings[]  → banner above the message list. mode=auto,
+ *                    executed=true, reverted=false, executed within
+ *                    the last 24 hours.
+ */
+export async function getInboxThreadAutomations(req, res) {
+  try {
+    const threadId = String(req.params.thread_id || "").trim();
+    if (!threadId) {
+      return res.status(400).json({ error: "thread_id is required." });
+    }
+    const pool = getPool();
+    const { rows: suggestions } = await pool.query(
+      `SELECT l.id, l.rule_id, l.proposed_action, l.confidence, l.created_at,
+              r.name AS rule_name, r.action AS rule_action
+         FROM automation_log l
+         JOIN automation_rules r ON r.id = l.rule_id
+        WHERE l.thread_id = $1
+          AND l.mode = 'suggested'
+          AND l.matched = TRUE
+          AND l.executed = FALSE
+          AND l.reverted = FALSE
+        ORDER BY l.created_at DESC
+        LIMIT 5`,
+      [threadId]
+    );
+    const { rows: autoFirings } = await pool.query(
+      `SELECT l.id, l.rule_id, l.proposed_action, l.executed_at, l.revert_payload,
+              r.name AS rule_name, r.action AS rule_action
+         FROM automation_log l
+         JOIN automation_rules r ON r.id = l.rule_id
+        WHERE l.thread_id = $1
+          AND l.mode = 'auto'
+          AND l.executed = TRUE
+          AND l.reverted = FALSE
+          AND l.executed_at >= NOW() - INTERVAL '24 hours'
+        ORDER BY l.executed_at DESC
+        LIMIT 3`,
+      [threadId]
+    );
+    res.json({
+      suggestions: suggestions.map((r) => ({
+        id: r.id,
+        ruleId: r.rule_id,
+        ruleName: r.rule_name,
+        ruleAction: r.rule_action,
+        proposedAction: r.proposed_action,
+        confidence: r.confidence != null ? Number(r.confidence) : null,
+        createdAt: r.created_at,
+      })),
+      autoFirings: autoFirings.map((r) => ({
+        id: r.id,
+        ruleId: r.rule_id,
+        ruleName: r.rule_name,
+        ruleAction: r.rule_action,
+        proposedAction: r.proposed_action,
+        executedAt: r.executed_at,
+        revertable: !!r.revert_payload,
+      })),
+    });
+  } catch (e) {
+    console.error("[automation] thread automations", e);
+    res.status(500).json({ error: "Could not load thread automations." });
+  }
+}

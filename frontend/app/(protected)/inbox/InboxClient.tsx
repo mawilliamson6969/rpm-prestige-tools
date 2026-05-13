@@ -20,6 +20,7 @@ import { useToast } from "../../../hooks/inbox/useToast";
 import useSLA from "../../../hooks/inbox/useSLA";
 import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
+import useThreadAutomations from "../../../hooks/inbox/useThreadAutomations";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
 import type { SavedViewFilters } from "../../../hooks/inbox/useSavedViews";
@@ -165,6 +166,8 @@ function InboxOrchestrator() {
     readOnly: readOnlyMailbox,
   });
   const slaView = useSLA(detail.thread);
+  // Phase 4: pending suggested actions + recent auto firings on this thread.
+  const automations = useThreadAutomations(selectedThreadId);
 
   const canMetaMailbox =
     !!detail.thread &&
@@ -438,6 +441,11 @@ function InboxOrchestrator() {
             onTagOp={onTagOp}
             onStatusChange={(next) => void actions.update({ status: next })}
             presence={null}
+            automations={automations}
+            onPatchThreadRefresh={async () => {
+              await detail.refetch();
+              await stats.refetch();
+            }}
           />
         </ErrorBoundary>
       </div>
