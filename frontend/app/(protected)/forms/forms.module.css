@@ -1777,3 +1777,826 @@
   word-break: break-all;
   margin-bottom: 0.4rem;
 }
+
+/* —— Forms list redesign (sidebar, list/grid, density) —— */
+
+.mainShell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .mainShell { padding: 16px; }
+}
+
+@media (max-width: 767px) {
+  .mainShell { padding: 12px; }
+}
+
+.formsToolbarRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.formsToolbarRow .searchInput {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.toolbarControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.viewToggle {
+  display: inline-flex;
+  border: 1px solid rgba(27, 40, 86, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--white);
+}
+
+.viewToggleBtn {
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--grey);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.viewToggleBtn:hover {
+  background: rgba(0, 152, 208, 0.06);
+  color: var(--navy);
+}
+
+.viewToggleBtn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--blue);
+  z-index: 1;
+}
+
+.viewToggleBtnActive {
+  background: rgba(0, 152, 208, 0.12);
+  color: var(--navy);
+}
+
+.hamburgerBtn {
+  display: none;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--navy);
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hamburgerBtn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.formsLayout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.formsMainColumn {
+  flex: 1;
+  min-width: 0;
+}
+
+.formsSidebarOuter {
+  flex: 0 0 240px;
+  width: 240px;
+  box-sizing: border-box;
+  padding: 16px 12px 12px;
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  margin-right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 12px;
+  align-self: flex-start;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.formsSidebarCollapsed {
+  flex-basis: 56px;
+  width: 56px;
+  padding: 12px 6px;
+  align-items: center;
+}
+
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.35);
+  z-index: 95;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.formsSidebarDrawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  margin: 0;
+  border-radius: 0 10px 10px 0;
+  max-height: none;
+  z-index: 96;
+  transform: translateX(-102%);
+  transition: transform 0.2s ease;
+  box-shadow: 8px 0 24px rgba(27, 40, 86, 0.15);
+}
+
+.formsSidebarDrawerOpen {
+  transform: translateX(0);
+}
+
+.sidebarSectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--grey);
+  margin: 12px 0 8px;
+}
+
+.sidebarSectionLabel:first-child {
+  margin-top: 0;
+}
+
+.sidebarEmptyHint {
+  margin: 0;
+  padding: 0 4px 6px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--grey);
+}
+
+.sidebarFavList {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  list-style: disc;
+}
+
+.sidebarFavList li {
+  margin: 0.2rem 0;
+}
+
+.sidebarFavLink {
+  font-size: 0.82rem;
+  color: var(--navy);
+  text-decoration: none;
+}
+
+.sidebarFavLink:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+.sidebarFavLink:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.sidebarCollapsedFavHint {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--grey);
+  padding: 0.25rem 0 0.5rem;
+}
+
+.sidebarItem {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  padding: 0.55rem 0.6rem;
+  background: transparent;
+  color: var(--navy);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sidebarItem:hover {
+  background: rgba(27, 40, 86, 0.04);
+}
+
+.sidebarItem:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.sidebarItemActive {
+  border-left-color: var(--navy);
+  background: rgba(27, 40, 86, 0.06);
+}
+
+.sidebarItemCollapsed {
+  justify-content: center;
+  padding: 10px 4px;
+  min-height: 44px;
+}
+
+.sidebarIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--navy);
+  font-family: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sidebarIconBtn:hover {
+  background: rgba(27, 40, 86, 0.06);
+}
+
+.sidebarIconBtn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.sidebarItemActiveCollapsed {
+  box-shadow: inset 0 0 0 2px rgba(27, 40, 86, 0.2);
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.sidebarRowInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.sidebarCollapsedGlyph {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.sidebarCollapsedAbbr {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.sidebarBullet {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.sidebarCount {
+  font-weight: 600;
+  color: var(--grey);
+  flex-shrink: 0;
+}
+
+.sidebarCollapseBtn {
+  margin-top: 8px;
+  padding: 0.5rem 0.35rem;
+  border: none;
+  background: transparent;
+  color: var(--grey);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  align-self: flex-start;
+}
+
+.sidebarCollapseBtn:hover {
+  color: var(--navy);
+}
+
+.sidebarCollapseBtn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.formsSectionHdr {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--grey);
+  margin: 12px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(27, 40, 86, 0.1);
+}
+
+.formsSectionHdrFirst {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.listStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listRowOuter {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-radius: 10px;
+}
+
+.listRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 12px 16px;
+  outline: none;
+  border-radius: 10px;
+}
+
+.listRow:hover {
+  background: rgba(27, 40, 86, 0.02);
+  cursor: pointer;
+}
+
+.listRow:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.starCell,
+.starCellGrid {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0;
+  align-self: center;
+}
+
+.starCell:focus-visible,
+.starCellGrid:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.starFilled {
+  color: var(--blue);
+}
+
+.starHollow {
+  color: rgba(27, 40, 86, 0.22);
+}
+
+.listRowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.listRowTopDesktop {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.listRowMobileTop,
+.listRowMobileMeta {
+  display: none;
+}
+
+.listFormTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.listFormTitle:hover {
+  color: var(--blue);
+}
+
+.listDesc {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--grey);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listDescSpacer {
+  margin: 0;
+  min-height: 1px;
+}
+
+.listMuted {
+  font-size: 13px;
+  color: var(--grey);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.statusDotPublished { background: var(--green); }
+.statusDotDraft { background: #9ca3af; }
+.statusDotArchived { background: var(--amber); }
+
+.categoryChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.catChipNavy {
+  background: rgba(27, 40, 86, 0.08);
+  color: var(--navy);
+}
+
+.catChipRed {
+  background: rgba(179, 35, 23, 0.1);
+  color: #94231a;
+}
+
+.catChipTeal {
+  background: rgba(0, 152, 208, 0.12);
+  color: #006f96;
+}
+
+.catChipBlue {
+  background: rgba(0, 152, 208, 0.18);
+  color: var(--blue);
+}
+
+.catChipNeutral {
+  background: rgba(106, 115, 123, 0.12);
+  color: var(--grey);
+}
+
+.listRowActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+}
+
+.btnOpenPrimary {
+  border: none;
+  border-radius: 8px;
+  padding: 0 1rem;
+  min-height: 44px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  background: var(--blue);
+  color: var(--white);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btnOpenPrimary:hover {
+  filter: brightness(1.06);
+}
+
+.btnOpenPrimary:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.overflowBtn {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  width: 44px;
+  min-height: 44px;
+  background: var(--white);
+  color: var(--navy);
+  font-weight: 800;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.overflowBtn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.overflowMenuAlign {
+  right: 0;
+  left: auto;
+}
+
+.dropdownItemDanger {
+  color: var(--red) !important;
+  font-weight: 700 !important;
+}
+
+.dropdownItemDanger:hover {
+  background: rgba(179, 35, 23, 0.08) !important;
+}
+
+.dropdownItemLink {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.9rem;
+  border: none;
+  box-sizing: border-box;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--navy);
+  font-family: inherit;
+}
+
+.dropdownItemLink:hover {
+  background: rgba(0, 152, 208, 0.08);
+}
+
+.dropdownItemLink:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.menuKbd {
+  float: right;
+  margin-left: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--grey);
+  opacity: 0.85;
+}
+
+.formGridModern {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .formGridModern {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .formGridModern {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formGridCard {
+  background: var(--white);
+  border: 1px solid rgba(27, 40, 86, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 140px;
+  box-sizing: border-box;
+}
+
+.formGridRow1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.formGridTitleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.formGridTitle {
+  margin: 0;
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.25;
+  text-decoration: none;
+  display: inline-block;
+  word-break: break-word;
+}
+
+.formGridDesc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--grey);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formGridDescEmpty {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.formGridRow3 {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.formGridRow4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.toastFloater {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(27, 40, 86, 0.2);
+}
+
+.toastFloaterOk {
+  background: var(--navy);
+  color: var(--white);
+}
+
+.toastFloaterErr {
+  background: var(--red);
+  color: var(--white);
+}
+
+.miniModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.miniModal {
+  background: var(--white);
+  border-radius: 10px;
+  padding: 1.25rem;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 16px 40px rgba(27, 40, 86, 0.25);
+}
+
+.miniModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 767px) {
+  .hamburgerBtn {
+    display: inline-flex;
+  }
+
+  .formsLayout {
+    display: block;
+  }
+
+  .formsSidebarOuter.formsSidebarDrawer {
+    display: flex;
+    flex-basis: auto;
+    width: min(300px, 88vw);
+  }
+
+  .formsToolbarRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbarControls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .listRowTopDesktop {
+    display: none !important;
+  }
+
+  .listRowMobileTop,
+  .listRowMobileMeta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .listDesc {
+    padding-left: 0;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    max-height: 2.7em;
+  }
+
+  .listRowMobileTop .listFormTitle {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .formsSidebarOuter.formsSidebarDrawer {
+    position: sticky;
+    transform: none;
+    flex: 0 0 240px;
+    margin-right: 16px;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+    border-radius: 10px;
+    box-shadow: none;
+    width: 240px;
+    left: auto;
+  }
+
+  .drawerBackdrop {
+    display: none !important;
+  }
+}

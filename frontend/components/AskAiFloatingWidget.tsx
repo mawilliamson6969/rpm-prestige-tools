@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import AskAiChat from "./AskAiChat";
-import styles from "./ask-ai.module.css";
+import AskAiChat from "./ask-ai/AskAiChat";
+import styles from "./ask-ai/ask-ai.module.css";
 
 export default function AskAiFloatingWidget() {
   const { token } = useAuth();
@@ -28,12 +28,14 @@ export default function AskAiFloatingWidget() {
           </svg>
         </button>
       ) : (
-        <div className={styles.widgetPanel} role="dialog" aria-label="Ask the AI">
+        <div className={styles.widgetPanel} role="dialog" aria-modal="false" aria-label="Ask the AI">
           <div className={styles.widgetHeader}>
-            <span>Ask the AI</span>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
-              <a href="/ask">Open full view</a>
-              <button type="button" className={styles.widgetMin} onClick={() => setOpen(false)} aria-label="Minimize">
+            <span className={styles.widgetTitle}>Ask the AI</span>
+            <div className={styles.widgetHeaderActions}>
+              <a href="/ask" className={styles.widgetOpenLink}>
+                Open full view
+              </a>
+              <button type="button" className={styles.widgetMin} onClick={() => setOpen(false)} aria-label="Minimize Ask the AI">
                 −
               </button>
             </div>

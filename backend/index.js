@@ -24,6 +24,59 @@ import {
   ensureDocumentsSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
+import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
+import { ensureMbSchema } from "./lib/mbSchema.js";
+import {
+  listBoards as listMbBoards,
+  createBoard as createMbBoard,
+  getBoard as getMbBoard,
+  updateBoard as updateMbBoard,
+  deleteBoard as deleteMbBoard,
+} from "./routes/mbBoards.js";
+import {
+  listItems as listMbItems,
+  createItem as createMbItem,
+  getItem as getMbItem,
+  updateItem as updateMbItem,
+  deleteItem as deleteMbItem,
+} from "./routes/mbItems.js";
+import {
+  listSubitems as listMbSubitems,
+  createSubitem as createMbSubitem,
+  updateSubitem as updateMbSubitem,
+  deleteSubitem as deleteMbSubitem,
+} from "./routes/mbSubitems.js";
+import {
+  listSubitemTemplates as listMbTemplates,
+  createSubitemTemplate as createMbTemplate,
+  updateSubitemTemplate as updateMbTemplate,
+  deleteSubitemTemplate as deleteMbTemplate,
+} from "./routes/mbTemplates.js";
+import {
+  listItemUpdates as listMbItemUpdates,
+  createItemUpdate as createMbItemUpdate,
+  listSubitemUpdates as listMbSubitemUpdates,
+  createSubitemUpdate as createMbSubitemUpdate,
+} from "./routes/mbUpdates.js";
+import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
+import {
+  ensureAgentHubPhase2Schema,
+  refreshAgentLifetimeValue,
+} from "./lib/agentHubPhase2Schema.js";
+import { ensureAgentHubPhase3Schema } from "./lib/agentHubPhase3Schema.js";
+import { ensureAgentHubPhase4Schema } from "./lib/agentHubPhase4Schema.js";
+import {
+  evaluateTriggers as agentHubEvaluateTriggers,
+  executeActions as agentHubExecuteActions,
+  reapApprovalWindow as agentHubReapApprovalWindow,
+  detectReplies as agentHubDetectReplies,
+} from "./lib/agentHub/engine.js";
+import {
+  recomputeAllEngagementScores as agentHubRecomputeScores,
+  refreshAllPredictiveFlags as agentHubRefreshFlags,
+  refreshCohorts as agentHubRefreshCohorts,
+  archiveAndPruneScoreHistory as agentHubArchiveScores,
+} from "./lib/agentHub/intelligence/jobs.js";
 import { ensureMarketingSchema } from "./lib/marketing-db.js";
 import { ensureEosSchema, ensureIndividualScorecardSchema, ensurePortfolioSnapshotsSchema } from "./lib/eosSchema.js";
 import { ensureOperationsSchema } from "./lib/operationsSchema.js";
@@ -106,6 +159,7 @@ import {
   getPublicForm,
   getPublicFormPrefill,
   postForm,
+  postFormFavorite,
   postFormAutomation,
   postFormDuplicate,
   postFormField,
@@ -126,7 +180,7 @@ import {
 import { getExecutiveDashboardV2, takePortfolioSnapshot } from "./routes/executive-dashboard.js";
 import { getMaintenanceDashboardV2, getTechnicianConfig, putTechnicianConfig } from "./routes/maintenance-dashboard.js";
 import { ensureAgentsSchema } from "./lib/agents-schema.js";
-import { runEmailSyncOnce } from "./lib/inbox/email-sync.js";
+import { runEmailSyncOnce } from "./lib/inbox/email-delta-sync.js";
 import { runFullSync } from "./lib/sync-engine.js";
 import {
   getMe,
@@ -163,6 +217,7 @@ import {
 import {
   createUser,
   deleteUser,
+  getMyProfile,
   listUsers,
   updateUser,
 } from "./routes/users.js";
@@ -251,6 +306,7 @@ import {
   postInboxAiDraftBatch,
   postInboxConnectionGrantTeam,
   postInboxConnectionPermission,
+  postInboxConnectionSync,
   postInboxSyncTrigger,
   postInboxTicketAiDraft,
   postInboxTicketAssign,
@@ -261,6 +317,249 @@ import {
   putInboxConnectionPermission,
   putInboxTicket,
 } from "./routes/inbox.js";
+import {
+  getInboxThread,
+  getInboxThreadStats,
+  getInboxThreads,
+  patchInboxThread,
+  postInboxThreadMarkRead,
+  postInboxThreadReply,
+  postInboxThreadSync,
+} from "./routes/inboxThreads.js";
+import {
+  deleteInboxView,
+  getInboxViewThreads,
+  getInboxViews,
+  patchInboxView,
+  postInboxView,
+} from "./routes/inboxViews.js";
+import {
+  deleteInboxSlaPolicy,
+  getInboxSlaPolicies,
+  patchInboxSlaPolicy,
+  postInboxSlaPolicy,
+} from "./routes/inboxSlaPolicies.js";
+import {
+  deleteInboxAutomationRule,
+  getInboxAutomationAccuracy,
+  getInboxAutomationLog,
+  getInboxAutomationRules,
+  patchInboxAutomationRule,
+  postInboxAutomationExecute,
+  postInboxAutomationFeedback,
+  postInboxAutomationRevert,
+  postInboxAutomationRule,
+} from "./routes/inboxAutomations.js";
+import {
+  getInboxAttachmentDownload,
+  getInboxAttachmentPreview,
+  inboxAttachmentUpload,
+  postInboxThreadFetchAttachments,
+  postInboxThreadReplyWithAttachments,
+} from "./routes/inboxAttachments.js";
+import {
+  requireAgentHubAccess,
+} from "./lib/agentHub/permissions.js";
+import {
+  createAgentHubBrokerage,
+  deleteAgentHubBrokerage,
+  getAgentHubBrokerage,
+  listAgentHubBrokerages,
+  updateAgentHubBrokerage,
+} from "./routes/agentHubBrokerages.js";
+import {
+  createAgentHubAgent,
+  deleteAgentHubAgent,
+  getAgentHubAgent,
+  listAgentHubAgents,
+  mergeAgentHubAgents,
+  updateAgentHubAgent,
+} from "./routes/agentHubAgents.js";
+import {
+  getAgentHubPersonalDetails,
+  upsertAgentHubPersonalDetails,
+} from "./routes/agentHubPersonalDetails.js";
+import {
+  createAgentHubActivity,
+  deleteAgentHubActivity,
+  downloadAgentHubAttachment,
+  listAgentHubActivities,
+  updateAgentHubActivity,
+  uploadActivityAttachmentMiddleware,
+} from "./routes/agentHubActivities.js";
+import {
+  addAgentHubTag,
+  deleteGlobalTag,
+  listGlobalTags,
+  removeAgentHubTag,
+  renameGlobalTag,
+} from "./routes/agentHubTags.js";
+import {
+  createAgentHubRelationship,
+  deleteAgentHubRelationship,
+  listAgentHubRelationships,
+} from "./routes/agentHubRelationships.js";
+import { searchAgentHub } from "./routes/agentHubSearch.js";
+import {
+  getAgentHubDashboard,
+  getAgentHubNeedsAttention,
+  getAgentHubRecentActivity,
+  getAgentHubUpcomingTouchpoints,
+} from "./routes/agentHubDashboard.js";
+import {
+  bulkChangeTier,
+  bulkMarkDnc,
+  bulkTagAgents,
+  exportAgentsCsv,
+} from "./routes/agentHubBulk.js";
+import {
+  getMyHubPermissions,
+  listAgentHubPermissions,
+  revokeAgentHubAccess,
+  upsertAgentHubPermissions,
+} from "./routes/agentHubPermissions.js";
+import {
+  createOwner,
+  deleteOwner,
+  getOwner,
+  listOwners,
+  updateOwner,
+} from "./routes/agentHubOwners.js";
+import {
+  createProperty,
+  deleteProperty,
+  getProperty,
+  listProperties,
+  updateProperty,
+} from "./routes/agentHubProperties.js";
+import {
+  advanceReferralStage,
+  createReferral,
+  getReferral,
+  getReferralStageHistory,
+  listReferrals,
+  markReferralDeclined,
+  markReferralLost,
+  restoreReferral,
+  updateReferral,
+} from "./routes/agentHubReferrals.js";
+import {
+  deletePayment,
+  listPayments,
+  recordPayment,
+  updatePayment,
+} from "./routes/agentHubReferralPayments.js";
+import {
+  addRevenue,
+  bulkImportRevenue,
+  deleteRevenue,
+  listRevenue,
+  updateRevenue,
+} from "./routes/agentHubRevenue.js";
+import {
+  createTask as createAgentHubTask,
+  deleteTask as deleteAgentHubTask,
+  getTask as getAgentHubTask,
+  listTasks as listAgentHubTasks,
+  updateTask as updateAgentHubTask,
+} from "./routes/agentHubTasks.js";
+import {
+  getAgentLifetimeValue,
+  leaderboard as agentHubLeaderboard,
+  refreshLifetimeValue,
+} from "./routes/agentHubLifetimeValue.js";
+import {
+  exportFinancialsCsv,
+  getFinancialsByMonth,
+  getFinancialsSummary,
+  getPipelineFunnel,
+  getPipelineStats,
+} from "./routes/agentHubFinancials.js";
+import {
+  createAutomation as createAgentHubAutomation,
+  deleteAutomation as deleteAgentHubAutomation,
+  getAutomation as getAgentHubAutomation,
+  listAutomations as listAgentHubAutomations,
+  simulateAutomationRoute as simulateAgentHubAutomation,
+  triggerAutomationManual as triggerAgentHubAutomationManual,
+  updateAutomation as updateAgentHubAutomation,
+} from "./routes/agentHubAutomations.js";
+import {
+  approveRun,
+  bulkApprove,
+  bulkCancel,
+  cancelRun,
+  getApprovalQueue,
+  getRun,
+  listRuns,
+} from "./routes/agentHubAutomationRuns.js";
+import {
+  createTemplate as createAgentHubTemplate,
+  deleteTemplate as deleteAgentHubTemplate,
+  getTemplate as getAgentHubTemplate,
+  listTemplates as listAgentHubTemplates,
+  previewTemplate as previewAgentHubTemplate,
+  testSendTemplate as testSendAgentHubTemplate,
+  updateTemplate as updateAgentHubTemplate,
+} from "./routes/agentHubTemplates.js";
+import {
+  getSendLogEntry,
+  listAgentSendLog,
+  listReplies,
+  listSendLog,
+  markReplyHandled,
+} from "./routes/agentHubSendLog.js";
+import {
+  cancelPostcard,
+  exportPostcardQueueCsv,
+  getPostcard,
+  listPostcardQueue,
+  markPostcardMailed,
+} from "./routes/agentHubPostcardQueue.js";
+import {
+  adHocEmail,
+  adHocPostcard,
+  adHocSms,
+} from "./routes/agentHubAdHoc.js";
+import {
+  completeLaunchChecklist,
+  getConfig as getAgentHubSystemConfig,
+  publicUnsubscribe as publicAgentHubUnsubscribe,
+  toggleKillSwitch,
+  updateConfig as updateAgentHubSystemConfig,
+} from "./routes/agentHubSystemConfig.js";
+import {
+  dismissFlag,
+  getAgentScore,
+  getCalculationLog,
+  getFlag,
+  getFunnel,
+  getHealth,
+  getPredictions,
+  leaderboard as agentHubLeaderboardIntel,
+  listFlags,
+  listScores,
+  recalculateFlags,
+  recalculateScores,
+  trendReferralVelocity,
+  trendScoreDistribution,
+  trendTierMovement,
+} from "./routes/agentHubIntelligence.js";
+import {
+  compareCohorts,
+  createCohort,
+  deleteCohort,
+  getCohort,
+  listCohorts,
+} from "./routes/agentHubCohorts.js";
+import {
+  bulkImportMarket,
+  createMarket,
+  deleteMarket,
+  getLatestForZip,
+  listMarket,
+  updateMarket,
+} from "./routes/agentHubMarket.js";
 import {
   deleteVideoById,
   deleteVideoFolder,
@@ -752,9 +1051,13 @@ app.post("/auth/change-password", requireAuth, postChangePassword);
 app.get("/auth/microsoft/callback", getMicrosoftCallback);
 app.get("/auth/microsoft/connect", requireAuth, getMicrosoftConnect);
 
-app.get("/users", requireAuth, requireAdminRole, listUsers);
+// Any authenticated user can read the team list (drives assignee pickers).
+app.get("/users", requireAuth, listUsers);
+app.get("/users/me", requireAuth, getMyProfile);
+// Mutations stay admin-gated.
 app.post("/users", requireAuth, requireAdminRole, createUser);
 app.put("/users/:id", requireAuth, requireAdminRole, updateUser);
+app.patch("/users/:id", requireAuth, requireAdminRole, updateUser);
 app.delete("/users/:id", requireAuth, requireAdminRole, deleteUser);
 
 app.get("/user-preferences/layout", requireAuth, getLayoutPrefs);
@@ -911,7 +1214,326 @@ app.delete("/inbox/tickets/:id/ai-draft", requireAuth, deleteInboxTicketAiDraft)
 app.get("/inbox/tickets/:id/sla", requireAuth, getInboxTicketSla);
 app.post("/inbox/ai-draft/batch", requireAuth, requireAdminRole, postInboxAiDraftBatch);
 app.get("/inbox/stats", requireAuth, getInboxStats);
+
+// Phase 1 thread-first inbox API. Mutations go here; the old /inbox/tickets
+// endpoints stay for back-compat (admin tooling, batch AI drafts).
+app.get("/inbox/threads", requireAuth, getInboxThreads);
+app.get("/inbox/thread-stats", requireAuth, getInboxThreadStats);
+app.get("/inbox/threads/:thread_id", requireAuth, getInboxThread);
+app.patch("/inbox/threads/:thread_id", requireAuth, patchInboxThread);
+app.post("/inbox/threads/:thread_id/messages", requireAuth, postInboxThreadReply);
+app.post("/inbox/threads/:thread_id/read", requireAuth, postInboxThreadMarkRead);
+app.post("/inbox/threads/:thread_id/sync", requireAuth, postInboxThreadSync);
+
+// Phase 2 saved views.
+app.get("/inbox/views", requireAuth, getInboxViews);
+app.post("/inbox/views", requireAuth, postInboxView);
+app.patch("/inbox/views/:id", requireAuth, patchInboxView);
+app.delete("/inbox/views/:id", requireAuth, deleteInboxView);
+app.get("/inbox/views/:id/threads", requireAuth, getInboxViewThreads);
+
+// Phase 3 SLA policies — admin-only.
+app.get("/inbox/sla-policies", requireAuth, getInboxSlaPolicies);
+app.post("/inbox/sla-policies", requireAuth, requireAdminRole, postInboxSlaPolicy);
+app.patch("/inbox/sla-policies/:id", requireAuth, requireAdminRole, patchInboxSlaPolicy);
+app.delete("/inbox/sla-policies/:id", requireAuth, requireAdminRole, deleteInboxSlaPolicy);
+
+// Phase 4 workflow automations.
+app.get("/inbox/automation-rules", requireAuth, getInboxAutomationRules);
+app.post("/inbox/automation-rules", requireAuth, requireAdminRole, postInboxAutomationRule);
+app.patch("/inbox/automation-rules/:id", requireAuth, requireAdminRole, patchInboxAutomationRule);
+app.delete("/inbox/automation-rules/:id", requireAuth, requireAdminRole, deleteInboxAutomationRule);
+app.get("/inbox/automation-log", requireAuth, getInboxAutomationLog);
+app.get("/inbox/automation-accuracy", requireAuth, getInboxAutomationAccuracy);
+app.post("/inbox/automation-log/:id/feedback", requireAuth, postInboxAutomationFeedback);
+app.post("/inbox/automation-log/:id/execute", requireAuth, postInboxAutomationExecute);
+app.post("/inbox/automation-log/:id/revert", requireAuth, requireAdminRole, postInboxAutomationRevert);
+
+// Phase 5 attachments. Download + preview accept ?token= so plain
+// <a download> + <img src> work without bespoke client fetch logic.
+app.get("/inbox/attachments/:id/download", requireAuthOrQueryToken, getInboxAttachmentDownload);
+app.get("/inbox/attachments/:id/preview", requireAuthOrQueryToken, getInboxAttachmentPreview);
+app.post(
+  "/inbox/threads/:thread_id/messages-with-attachments",
+  requireAuth,
+  inboxAttachmentUpload,
+  postInboxThreadReplyWithAttachments
+);
+app.post(
+  "/inbox/threads/:thread_id/fetch-attachments",
+  requireAuth,
+  postInboxThreadFetchAttachments
+);
+
+/* ============================================================
+ * Agent Hub (Phase 1): real estate referral CRM.
+ * All routes require requireAuth + requireAgentHubAccess.
+ * Per-route permission flags enforced inside handlers via assertPermission().
+ * ============================================================ */
+
+// "me" — used by frontend to know what to show. Must be reachable by anyone
+// with global auth so the UI can render a "no access" state.
+app.get("/agent-hub/permissions/me", requireAuth, async (req, res, next) => {
+  try {
+    // Run requireAgentHubAccess in a soft mode: don't 403 if no row, just
+    // pass null perms through.
+    const { getPool } = await import("./lib/db.js");
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT * FROM agent_hub_user_permissions WHERE user_id = $1`,
+      [req.user.id]
+    );
+    if (rows.length) {
+      req.agentHubPerms = rows[0];
+    } else if (req.user.role === "owner" || req.user.role === "admin") {
+      req.agentHubPerms = {
+        user_id: req.user.id,
+        role: "owner",
+        can_view_personal_details: true,
+        can_change_tier: true,
+        can_mark_dnc: true,
+        can_export: true,
+        can_merge: true,
+        synthetic: true,
+      };
+    } else {
+      req.agentHubPerms = null;
+    }
+    next();
+  } catch (e) {
+    console.error("[agent-hub] perms/me", e);
+    res.status(500).json({ error: "Could not load permissions." });
+  }
+}, getMyHubPermissions);
+
+// Brokerages
+app.get("/agent-hub/brokerages", requireAuth, requireAgentHubAccess, listAgentHubBrokerages);
+app.get("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, getAgentHubBrokerage);
+app.post("/agent-hub/brokerages", requireAuth, requireAgentHubAccess, createAgentHubBrokerage);
+app.patch("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, updateAgentHubBrokerage);
+app.delete("/agent-hub/brokerages/:id", requireAuth, requireAgentHubAccess, deleteAgentHubBrokerage);
+
+// Agents
+app.get("/agent-hub/agents", requireAuth, requireAgentHubAccess, listAgentHubAgents);
+app.get("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, getAgentHubAgent);
+app.post("/agent-hub/agents", requireAuth, requireAgentHubAccess, createAgentHubAgent);
+app.patch("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, updateAgentHubAgent);
+app.delete("/agent-hub/agents/:id", requireAuth, requireAgentHubAccess, deleteAgentHubAgent);
+app.post("/agent-hub/agents/:id/merge/:other_id", requireAuth, requireAgentHubAccess, mergeAgentHubAgents);
+
+// Personal details (gated)
+app.get("/agent-hub/agents/:id/personal", requireAuth, requireAgentHubAccess, getAgentHubPersonalDetails);
+app.put("/agent-hub/agents/:id/personal", requireAuth, requireAgentHubAccess, upsertAgentHubPersonalDetails);
+
+// Activities
+app.get("/agent-hub/agents/:id/activities", requireAuth, requireAgentHubAccess, listAgentHubActivities);
+app.post(
+  "/agent-hub/agents/:id/activities",
+  requireAuth,
+  requireAgentHubAccess,
+  uploadActivityAttachmentMiddleware,
+  createAgentHubActivity
+);
+app.patch("/agent-hub/activities/:id", requireAuth, requireAgentHubAccess, updateAgentHubActivity);
+app.delete("/agent-hub/activities/:id", requireAuth, requireAgentHubAccess, deleteAgentHubActivity);
+app.get("/agent-hub/attachments/:id/download", requireAuth, requireAgentHubAccess, downloadAgentHubAttachment);
+
+// Tags
+app.get("/agent-hub/tags", requireAuth, requireAgentHubAccess, listGlobalTags);
+app.post("/agent-hub/agents/:id/tags", requireAuth, requireAgentHubAccess, addAgentHubTag);
+app.delete("/agent-hub/agents/:id/tags/:tag", requireAuth, requireAgentHubAccess, removeAgentHubTag);
+app.post("/agent-hub/tags/rename", requireAuth, requireAgentHubAccess, renameGlobalTag);
+app.delete("/agent-hub/tags/:tag", requireAuth, requireAgentHubAccess, deleteGlobalTag);
+
+// Relationships
+app.get("/agent-hub/agents/:id/relationships", requireAuth, requireAgentHubAccess, listAgentHubRelationships);
+app.post("/agent-hub/agents/:id/relationships", requireAuth, requireAgentHubAccess, createAgentHubRelationship);
+app.delete("/agent-hub/relationships/:id", requireAuth, requireAgentHubAccess, deleteAgentHubRelationship);
+
+// Search
+app.get("/agent-hub/search", requireAuth, requireAgentHubAccess, searchAgentHub);
+
+// Dashboard
+app.get("/agent-hub/dashboard", requireAuth, requireAgentHubAccess, getAgentHubDashboard);
+app.get("/agent-hub/dashboard/recent-activity", requireAuth, requireAgentHubAccess, getAgentHubRecentActivity);
+app.get("/agent-hub/dashboard/upcoming-touchpoints", requireAuth, requireAgentHubAccess, getAgentHubUpcomingTouchpoints);
+app.get("/agent-hub/dashboard/needs-attention", requireAuth, requireAgentHubAccess, getAgentHubNeedsAttention);
+
+// Bulk + export
+app.post("/agent-hub/agents/bulk-tag", requireAuth, requireAgentHubAccess, bulkTagAgents);
+app.post("/agent-hub/agents/bulk-tier", requireAuth, requireAgentHubAccess, bulkChangeTier);
+app.post("/agent-hub/agents/bulk-dnc", requireAuth, requireAgentHubAccess, bulkMarkDnc);
+app.get("/agent-hub/agents/export.csv", requireAuth, requireAgentHubAccess, exportAgentsCsv);
+
+// Permission settings
+app.get("/agent-hub/permissions", requireAuth, requireAgentHubAccess, listAgentHubPermissions);
+app.put("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, upsertAgentHubPermissions);
+app.delete("/agent-hub/permissions/:user_id", requireAuth, requireAgentHubAccess, revokeAgentHubAccess);
+
+/* ============================================================
+ * Agent Hub Phase 2: referral pipeline, owners, properties,
+ * payments, revenue tracking, tasks, LTV, financials.
+ * ============================================================ */
+
+// Owners
+app.get("/agent-hub/owners", requireAuth, requireAgentHubAccess, listOwners);
+app.get("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, getOwner);
+app.post("/agent-hub/owners", requireAuth, requireAgentHubAccess, createOwner);
+app.patch("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, updateOwner);
+app.delete("/agent-hub/owners/:id", requireAuth, requireAgentHubAccess, deleteOwner);
+
+// Properties
+app.get("/agent-hub/properties", requireAuth, requireAgentHubAccess, listProperties);
+app.get("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, getProperty);
+app.post("/agent-hub/properties", requireAuth, requireAgentHubAccess, createProperty);
+app.patch("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, updateProperty);
+app.delete("/agent-hub/properties/:id", requireAuth, requireAgentHubAccess, deleteProperty);
+
+// Referrals
+app.get("/agent-hub/referrals", requireAuth, requireAgentHubAccess, listReferrals);
+app.get("/agent-hub/referrals/:id", requireAuth, requireAgentHubAccess, getReferral);
+app.post("/agent-hub/referrals", requireAuth, requireAgentHubAccess, createReferral);
+app.patch("/agent-hub/referrals/:id", requireAuth, requireAgentHubAccess, updateReferral);
+app.post("/agent-hub/referrals/:id/advance-stage", requireAuth, requireAgentHubAccess, advanceReferralStage);
+app.post("/agent-hub/referrals/:id/mark-lost", requireAuth, requireAgentHubAccess, markReferralLost);
+app.post("/agent-hub/referrals/:id/mark-declined", requireAuth, requireAgentHubAccess, markReferralDeclined);
+app.post("/agent-hub/referrals/:id/restore", requireAuth, requireAgentHubAccess, restoreReferral);
+app.get("/agent-hub/referrals/:id/stage-history", requireAuth, requireAgentHubAccess, getReferralStageHistory);
+
+// Payments
+app.get("/agent-hub/referrals/:id/payments", requireAuth, requireAgentHubAccess, listPayments);
+app.post("/agent-hub/referrals/:id/payments", requireAuth, requireAgentHubAccess, recordPayment);
+app.patch("/agent-hub/payments/:id", requireAuth, requireAgentHubAccess, updatePayment);
+app.delete("/agent-hub/payments/:id", requireAuth, requireAgentHubAccess, deletePayment);
+
+// Revenue tracking
+app.get("/agent-hub/referrals/:id/revenue", requireAuth, requireAgentHubAccess, listRevenue);
+app.post("/agent-hub/referrals/:id/revenue", requireAuth, requireAgentHubAccess, addRevenue);
+app.patch("/agent-hub/revenue/:id", requireAuth, requireAgentHubAccess, updateRevenue);
+app.delete("/agent-hub/revenue/:id", requireAuth, requireAgentHubAccess, deleteRevenue);
+app.post("/agent-hub/revenue/bulk-import", requireAuth, requireAgentHubAccess, bulkImportRevenue);
+
+// Tasks (Agent Hub specific — different table from operations.tasks)
+app.get("/agent-hub/tasks", requireAuth, requireAgentHubAccess, listAgentHubTasks);
+app.get("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, getAgentHubTask);
+app.post("/agent-hub/tasks", requireAuth, requireAgentHubAccess, createAgentHubTask);
+app.patch("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, updateAgentHubTask);
+app.delete("/agent-hub/tasks/:id", requireAuth, requireAgentHubAccess, deleteAgentHubTask);
+
+// Lifetime value
+app.get("/agent-hub/agents/:id/lifetime-value", requireAuth, requireAgentHubAccess, getAgentLifetimeValue);
+app.post("/agent-hub/lifetime-value/refresh", requireAuth, requireAgentHubAccess, refreshLifetimeValue);
+app.get("/agent-hub/financials/leaderboard", requireAuth, requireAgentHubAccess, agentHubLeaderboard);
+
+// Pipeline + financials aggregations
+app.get("/agent-hub/pipeline/stats", requireAuth, requireAgentHubAccess, getPipelineStats);
+app.get("/agent-hub/pipeline/funnel", requireAuth, requireAgentHubAccess, getPipelineFunnel);
+app.get("/agent-hub/financials/summary", requireAuth, requireAgentHubAccess, getFinancialsSummary);
+app.get("/agent-hub/financials/by-month", requireAuth, requireAgentHubAccess, getFinancialsByMonth);
+app.get("/agent-hub/financials/export.csv", requireAuth, requireAgentHubAccess, exportFinancialsCsv);
+
+/* ============================================================
+ * Agent Hub Phase 3: automation engine + compliance + sends.
+ * ============================================================ */
+
+// Public unsubscribe handler — NO auth (token is the credential).
+app.get("/agent-hub/unsubscribe", publicAgentHubUnsubscribe);
+
+// Automations (Agent Hub specific — separate from reviews automations)
+app.get("/agent-hub/automations", requireAuth, requireAgentHubAccess, listAgentHubAutomations);
+app.get("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, getAgentHubAutomation);
+app.post("/agent-hub/automations", requireAuth, requireAgentHubAccess, createAgentHubAutomation);
+app.patch("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, updateAgentHubAutomation);
+app.delete("/agent-hub/automations/:id", requireAuth, requireAgentHubAccess, deleteAgentHubAutomation);
+app.post("/agent-hub/automations/:id/simulate", requireAuth, requireAgentHubAccess, simulateAgentHubAutomation);
+app.post("/agent-hub/automations/:id/trigger-manual", requireAuth, requireAgentHubAccess, triggerAgentHubAutomationManual);
+
+// Automation runs
+app.get("/agent-hub/automation-runs", requireAuth, requireAgentHubAccess, listRuns);
+app.get("/agent-hub/automation-runs/:id", requireAuth, requireAgentHubAccess, getRun);
+app.post("/agent-hub/automation-runs/:id/approve", requireAuth, requireAgentHubAccess, approveRun);
+app.post("/agent-hub/automation-runs/:id/cancel", requireAuth, requireAgentHubAccess, cancelRun);
+
+// Approval queue
+app.get("/agent-hub/approval-queue", requireAuth, requireAgentHubAccess, getApprovalQueue);
+app.post("/agent-hub/approval-queue/bulk-approve", requireAuth, requireAgentHubAccess, bulkApprove);
+app.post("/agent-hub/approval-queue/bulk-cancel", requireAuth, requireAgentHubAccess, bulkCancel);
+
+// Templates (Agent Hub specific)
+app.get("/agent-hub/templates", requireAuth, requireAgentHubAccess, listAgentHubTemplates);
+app.get("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, getAgentHubTemplate);
+app.post("/agent-hub/templates", requireAuth, requireAgentHubAccess, createAgentHubTemplate);
+app.patch("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, updateAgentHubTemplate);
+app.delete("/agent-hub/templates/:id", requireAuth, requireAgentHubAccess, deleteAgentHubTemplate);
+app.post("/agent-hub/templates/:id/preview", requireAuth, requireAgentHubAccess, previewAgentHubTemplate);
+app.post("/agent-hub/templates/:id/test-send", requireAuth, requireAgentHubAccess, testSendAgentHubTemplate);
+
+// Send log + replies
+app.get("/agent-hub/send-log", requireAuth, requireAgentHubAccess, listSendLog);
+app.get("/agent-hub/send-log/:id", requireAuth, requireAgentHubAccess, getSendLogEntry);
+app.get("/agent-hub/agents/:id/send-log", requireAuth, requireAgentHubAccess, listAgentSendLog);
+app.get("/agent-hub/replies", requireAuth, requireAgentHubAccess, listReplies);
+app.post("/agent-hub/replies/:id/handled", requireAuth, requireAgentHubAccess, markReplyHandled);
+
+// Postcard queue
+app.get("/agent-hub/postcard-queue", requireAuth, requireAgentHubAccess, listPostcardQueue);
+app.get("/agent-hub/postcard-queue/:id", requireAuth, requireAgentHubAccess, getPostcard);
+app.post("/agent-hub/postcard-queue/:id/mark-mailed", requireAuth, requireAgentHubAccess, markPostcardMailed);
+app.post("/agent-hub/postcard-queue/:id/cancel", requireAuth, requireAgentHubAccess, cancelPostcard);
+app.get("/agent-hub/postcard-queue/export.csv", requireAuth, requireAgentHubAccess, exportPostcardQueueCsv);
+
+// Ad-hoc sends from agent detail page
+app.post("/agent-hub/agents/:id/send-email", requireAuth, requireAgentHubAccess, adHocEmail);
+app.post("/agent-hub/agents/:id/send-sms", requireAuth, requireAgentHubAccess, adHocSms);
+app.post("/agent-hub/agents/:id/queue-postcard", requireAuth, requireAgentHubAccess, adHocPostcard);
+
+// System config + kill switch + launch checklist
+app.get("/agent-hub/system-config", requireAuth, requireAgentHubAccess, getAgentHubSystemConfig);
+app.patch("/agent-hub/system-config", requireAuth, requireAgentHubAccess, updateAgentHubSystemConfig);
+app.post("/agent-hub/system-config/kill-switch", requireAuth, requireAgentHubAccess, toggleKillSwitch);
+app.post("/agent-hub/system-config/complete-launch-checklist", requireAuth, requireAgentHubAccess, completeLaunchChecklist);
+
+/* ============================================================
+ * Agent Hub Phase 4: intelligence layer.
+ * ============================================================ */
+
+// Engagement scores
+app.get("/agent-hub/intelligence/scores", requireAuth, requireAgentHubAccess, listScores);
+app.get("/agent-hub/intelligence/scores/calculation-log", requireAuth, requireAgentHubAccess, getCalculationLog);
+app.get("/agent-hub/intelligence/scores/:agent_id", requireAuth, requireAgentHubAccess, getAgentScore);
+app.post("/agent-hub/intelligence/scores/recalculate", requireAuth, requireAgentHubAccess, recalculateScores);
+
+// Predictive flags
+app.get("/agent-hub/intelligence/flags", requireAuth, requireAgentHubAccess, listFlags);
+app.get("/agent-hub/intelligence/flags/:id", requireAuth, requireAgentHubAccess, getFlag);
+app.post("/agent-hub/intelligence/flags/:id/dismiss", requireAuth, requireAgentHubAccess, dismissFlag);
+app.post("/agent-hub/intelligence/flags/recalculate", requireAuth, requireAgentHubAccess, recalculateFlags);
+
+// Leaderboard, health, funnel, predictions, trends
+app.get("/agent-hub/intelligence/leaderboard", requireAuth, requireAgentHubAccess, agentHubLeaderboardIntel);
+app.get("/agent-hub/intelligence/health", requireAuth, requireAgentHubAccess, getHealth);
+app.get("/agent-hub/intelligence/funnel", requireAuth, requireAgentHubAccess, getFunnel);
+app.get("/agent-hub/intelligence/predictions", requireAuth, requireAgentHubAccess, getPredictions);
+app.get("/agent-hub/intelligence/trends/score-distribution", requireAuth, requireAgentHubAccess, trendScoreDistribution);
+app.get("/agent-hub/intelligence/trends/tier-movement", requireAuth, requireAgentHubAccess, trendTierMovement);
+app.get("/agent-hub/intelligence/trends/referral-velocity", requireAuth, requireAgentHubAccess, trendReferralVelocity);
+
+// Cohorts
+app.get("/agent-hub/intelligence/cohorts", requireAuth, requireAgentHubAccess, listCohorts);
+app.get("/agent-hub/intelligence/cohorts/compare", requireAuth, requireAgentHubAccess, compareCohorts);
+app.get("/agent-hub/intelligence/cohorts/:id", requireAuth, requireAgentHubAccess, getCohort);
+app.post("/agent-hub/intelligence/cohorts", requireAuth, requireAgentHubAccess, createCohort);
+app.delete("/agent-hub/intelligence/cohorts/:id", requireAuth, requireAgentHubAccess, deleteCohort);
+
+// Market intelligence
+app.get("/agent-hub/intelligence/market", requireAuth, requireAgentHubAccess, listMarket);
+app.get("/agent-hub/intelligence/market/zips/:zip/latest", requireAuth, requireAgentHubAccess, getLatestForZip);
+app.post("/agent-hub/intelligence/market", requireAuth, requireAgentHubAccess, createMarket);
+app.post("/agent-hub/intelligence/market/bulk-import", requireAuth, requireAgentHubAccess, bulkImportMarket);
+app.patch("/agent-hub/intelligence/market/:id", requireAuth, requireAgentHubAccess, updateMarket);
+app.delete("/agent-hub/intelligence/market/:id", requireAuth, requireAgentHubAccess, deleteMarket);
 app.post("/inbox/sync/trigger", requireAuth, requireAdminRole, postInboxSyncTrigger);
+app.post("/inbox/connections/:id/sync", requireAuth, postInboxConnectionSync);
 app.get("/inbox/sync/status", requireAuth, getInboxSyncStatus);
 
 app.get("/inbox/signatures", requireAuth, getInboxSignatures);
@@ -1441,6 +2063,7 @@ app.get("/forms/:id/automation-log", requireAuth, getAutomationLog);
 app.put("/forms/:id/publish", requireAuth, putFormPublishWithVersion);
 app.put("/forms/:id/unpublish", requireAuth, putFormUnpublish);
 app.post("/forms/:id/duplicate", requireAuth, postFormDuplicate);
+app.post("/forms/:id/favorite", requireAuth, postFormFavorite);
 
 // Phase 4: form-scoped
 app.get("/forms/:id/versions", requireAuth, getVersions);
@@ -1532,6 +2155,42 @@ app.get("/esign/requests/:id/download", requireAuth, getEsignRequestDownload);
 app.post("/esign/requests/:id/resend", requireAuth, postEsignRequestResend);
 app.delete("/esign/requests/:id", requireAuth, deleteEsignRequest);
 
+/** Monday-style boards (Phase 1 foundation — additive; existing process boards untouched). */
+app.get("/mb/boards", requireAuth, listMbBoards);
+app.post("/mb/boards", requireAuth, requireAdminRole, createMbBoard);
+app.get("/mb/boards/:id", requireAuth, getMbBoard);
+app.patch("/mb/boards/:id", requireAuth, requireAdminRole, updateMbBoard);
+app.delete("/mb/boards/:id", requireAuth, requireAdminRole, deleteMbBoard);
+
+app.get("/mb/boards/:boardId/items", requireAuth, listMbItems);
+app.post("/mb/boards/:boardId/items", requireAuth, createMbItem);
+app.get("/mb/items/:id", requireAuth, getMbItem);
+app.patch("/mb/items/:id", requireAuth, updateMbItem);
+app.delete("/mb/items/:id", requireAuth, deleteMbItem);
+
+app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitems);
+app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitem);
+app.patch("/mb/subitems/:id", requireAuth, updateMbSubitem);
+app.delete("/mb/subitems/:id", requireAuth, deleteMbSubitem);
+
+app.get("/mb/boards/:boardId/subitem-templates", requireAuth, listMbTemplates);
+app.post(
+  "/mb/boards/:boardId/subitem-templates",
+  requireAuth,
+  requireAdminRole,
+  createMbTemplate
+);
+app.patch("/mb/subitem-templates/:id", requireAuth, requireAdminRole, updateMbTemplate);
+app.delete("/mb/subitem-templates/:id", requireAuth, requireAdminRole, deleteMbTemplate);
+
+app.get("/mb/items/:itemId/updates", requireAuth, listMbItemUpdates);
+app.post("/mb/items/:itemId/updates", requireAuth, createMbItemUpdate);
+app.get("/mb/subitems/:subitemId/updates", requireAuth, listMbSubitemUpdates);
+app.post("/mb/subitems/:subitemId/updates", requireAuth, createMbSubitemUpdate);
+
+/** AppFolio webhook receiver (public — AppFolio server-to-server). JWS verification is Phase 2. */
+app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -1592,6 +2251,16 @@ async function start() {
       console.log("Database schema OK (documents).");
       await ensureMailersSchema();
       console.log("Database schema OK (mailers + mailer_events).");
+      await ensureAgentHubSchema();
+      console.log("Database schema OK (agent_hub_*).");
+      await ensureAgentHubPhase2Schema();
+      console.log("Database schema OK (agent_hub_* phase 2).");
+      await ensureAgentHubPhase3Schema();
+      console.log("Database schema OK (agent_hub_* phase 3).");
+      await ensureAgentHubPhase4Schema();
+      console.log("Database schema OK (agent_hub_* phase 4).");
+      await ensureMbSchema();
+      console.log("Database schema OK (mb_* monday-style boards).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
@@ -1627,6 +2296,88 @@ async function start() {
       takePortfolioSnapshot().catch((e) => console.error("[portfolio snapshot cron]", e.message || e));
     });
     console.log("Scheduled portfolio snapshot: 0 6 * * * (daily at 6 AM).");
+
+    // Phase 2 Agent Hub: refresh agent_hub_agent_lifetime_value materialized
+    // view every night at 2:15 AM. We also refresh on-demand inside the
+    // payment / revenue / advance-to-active_management handlers, so the
+    // nightly run is mostly a safety net for edits that bypass those paths
+    // (e.g. direct DB tweaks).
+    cron.schedule("15 2 * * *", () => {
+      refreshAgentLifetimeValue().catch((e) =>
+        console.error("[agent-hub LTV cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub LTV refresh: 15 2 * * * (daily at 2:15 AM).");
+
+    // Phase 3 Agent Hub engine workers.
+    // Trigger evaluator: scans time-based automations every 15 minutes
+    // and creates pending_approval (or approved) runs for eligible agents.
+    cron.schedule("*/15 * * * *", () => {
+      agentHubEvaluateTriggers().catch((e) =>
+        console.error("[agent-hub engine evaluate]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub trigger evaluator: */15 * * * * (every 15 min).");
+
+    // Action executor: drains the action queue every 5 minutes. Locks
+    // batches with FOR UPDATE SKIP LOCKED so concurrent crons can't double-send.
+    cron.schedule("*/5 * * * *", () => {
+      agentHubExecuteActions().catch((e) =>
+        console.error("[agent-hub engine execute]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub action executor: */5 * * * * (every 5 min).");
+
+    // Approval window reaper: cancels pending_approval runs whose
+    // approval_required_until has passed.
+    cron.schedule("0 * * * *", () => {
+      agentHubReapApprovalWindow().catch((e) =>
+        console.error("[agent-hub engine reap]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub approval reaper: 0 * * * * (hourly).");
+
+    // Reply detector: polls Microsoft Graph for replies and pauses
+    // automations on reply.
+    cron.schedule("*/15 * * * *", () => {
+      agentHubDetectReplies().catch((e) =>
+        console.error("[agent-hub engine reply-detect]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub reply detector: */15 * * * * (every 15 min).");
+
+    // Phase 4 intelligence layer:
+    //   3:00 AM — engagement scores (full recompute)
+    //   3:30 AM — predictive flags
+    //   4:00 AM — cohort metrics + maintain quarterly cohorts
+    //   5:00 AM — score history archival + log retention
+    cron.schedule("0 3 * * *", () => {
+      agentHubRecomputeScores().catch((e) =>
+        console.error("[agent-hub intel scores]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub engagement scoring: 0 3 * * * (daily at 3 AM).");
+
+    cron.schedule("30 3 * * *", () => {
+      agentHubRefreshFlags().catch((e) =>
+        console.error("[agent-hub intel flags]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub predictive flags: 30 3 * * * (daily at 3:30 AM).");
+
+    cron.schedule("0 4 * * *", () => {
+      agentHubRefreshCohorts().catch((e) =>
+        console.error("[agent-hub intel cohorts]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub cohort refresh: 0 4 * * * (daily at 4 AM).");
+
+    cron.schedule("0 5 * * *", () => {
+      agentHubArchiveScores().catch((e) =>
+        console.error("[agent-hub intel archive]", e.message || e)
+      );
+    });
+    console.log("Scheduled Agent Hub score archival: 0 5 * * * (daily at 5 AM).");
 
     cron.schedule("0 * * * *", () => {
       processDelayedAutoCompletes().catch((e) =>

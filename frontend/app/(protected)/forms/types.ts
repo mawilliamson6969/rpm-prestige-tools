@@ -32,6 +32,8 @@ export type FormSummary = {
   ipLimit?: number | null;
   requiresApproval?: boolean;
   approvalConfig?: { type?: "single" | "sequential"; approvers?: number[]; steps?: Array<{ approverUserId: number; label?: string }>; notifyOnSubmit?: boolean; notifyOnDecision?: boolean; allowResubmit?: boolean } | null;
+  /** Present on GET /forms when authenticated */
+  favorited?: boolean;
 };
 
 export type FormPage = {

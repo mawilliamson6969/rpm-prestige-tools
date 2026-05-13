@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SignatureManager from "../../../../components/signature/SignatureManager";
+import AutomationsPanel from "../../../../components/inbox/AutomationsPanel";
+import SlaPoliciesPanel from "../../../../components/inbox/SlaPoliciesPanel";
 import { useAuth } from "../../../../context/AuthContext";
 import { apiUrl } from "../../../../lib/api";
 import styles from "../inbox.module.css";
@@ -23,6 +25,12 @@ type Conn = {
   messages_synced?: number | null;
   error_log?: string | null;
   my_permission?: string | null;
+  delta_last_synced_at?: string | null;
+  delta_last_success_at?: string | null;
+  delta_last_error?: string | null;
+  delta_last_error_at?: string | null;
+  delta_messages_processed?: number | null;
+  delta_full_sync_in_progress?: boolean | null;
 };
 
 type TeamUser = { id: number; username: string; displayName: string; email?: string | null };
@@ -57,6 +65,8 @@ export default function InboxSettingsClient() {
   const [sharedModalOpen, setSharedModalOpen] = useState(false);
   const [sharedEmail, setSharedEmail] = useState("");
   const [sharedDisplayName, setSharedDisplayName] = useState("");
+
+  const [syncingId, setSyncingId] = useState<number | null>(null);
 
   const [permModalConn, setPermModalConn] = useState<Conn | null>(null);
   const [permRows, setPermRows] = useState<PermRow[]>([]);
@@ -137,6 +147,34 @@ export default function InboxSettingsClient() {
     });
   };
 
+  const syncOne = async (id: number) => {
+    setSyncingId(id);
+    try {
+      const res = await fetch(apiUrl(`/inbox/connections/${id}/sync`), {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(typeof body.error === "string" ? body.error : "Sync failed.");
+        return;
+      }
+      const processed = typeof body.processed === "number" ? body.processed : 0;
+      const removed = typeof body.removed === "number" ? body.removed : 0;
+      const bootstrapped = body.bootstrapped === true;
+      setMsg(
+        bootstrapped
+          ? `Bootstrapped delta sync — ${processed} messages.`
+          : `Sync complete — ${processed} new, ${removed} removed.`
+      );
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Sync failed.");
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
   const disconnect = async (id: number) => {
     if (!confirm("Disconnect this mailbox from the shared inbox?")) return;
     const res = await fetch(apiUrl(`/inbox/connections/${id}`), {
@@ -181,14 +219,19 @@ export default function InboxSettingsClient() {
     try {
       const [pRes, tRes] = await Promise.all([
         fetch(apiUrl(`/inbox/connections/${c.id}/permissions`), { headers: { ...authHeaders() } }),
-        fetch(apiUrl("/eos/team-users"), { headers: { ...authHeaders() } }),
+        fetch(apiUrl("/users"), { headers: { ...authHeaders() } }),
       ]);
       const pBody = await pRes.json().catch(() => ({}));
       const tBody = await tRes.json().catch(() => ({}));
-      const want = new Set(["mike", "lori", "leslie", "amanda", "amelia"]);
-      const team = (Array.isArray(tBody.users) ? tBody.users : []).filter((u: TeamUser) =>
-        want.has(u.username.toLowerCase())
-      ) as TeamUser[];
+      const triageRoles = new Set(["owner", "admin", "csm", "maintenance", "operations"]);
+      const team = (Array.isArray(tBody.users) ? tBody.users : [])
+        .filter((u: { active?: boolean; role?: string }) => u.active !== false && triageRoles.has(u.role ?? ""))
+        .map((u: { id: number; username: string; displayName: string; email: string | null }) => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.displayName,
+          email: u.email,
+        })) as TeamUser[];
       setTeamUsers(team);
       const existing = (Array.isArray(pBody.permissions) ? pBody.permissions : []) as Array<{
         user_id: number;
@@ -360,11 +403,26 @@ export default function InboxSettingsClient() {
                         )}
                       </p>
                       <p className={styles.settingsMuted} style={{ margin: "0.25rem 0 0" }}>
-                        Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "—"}
-                        {c.sync_status ? <> · Job: {c.sync_status}</> : null}
-                        {c.messages_synced != null ? <> · Last run new msgs: {c.messages_synced}</> : null}
+                        Last sync:{" "}
+                        {c.delta_last_success_at
+                          ? new Date(c.delta_last_success_at).toLocaleString()
+                          : c.last_sync_at
+                            ? new Date(c.last_sync_at).toLocaleString()
+                            : "—"}
+                        {c.delta_messages_processed != null ? (
+                          <> · {c.delta_messages_processed} messages processed total</>
+                        ) : null}
+                        {c.delta_full_sync_in_progress ? <> · bootstrapping…</> : null}
                       </p>
-                      {c.error_log ? (
+                      {c.delta_last_error ? (
+                        <p style={{ color: "var(--red)", margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
+                          Sync error
+                          {c.delta_last_error_at
+                            ? ` (${new Date(c.delta_last_error_at).toLocaleString()})`
+                            : ""}
+                          : {c.delta_last_error}
+                        </p>
+                      ) : c.error_log ? (
                         <p style={{ color: "var(--red)", margin: "0.35rem 0 0", fontSize: "0.85rem" }}>{c.error_log}</p>
                       ) : null}
                     </div>
@@ -390,6 +448,14 @@ export default function InboxSettingsClient() {
                   ) : null}
 
                   <div className={styles.settingsRow} style={{ marginTop: "0.65rem" }}>
+                    <button
+                      type="button"
+                      className={styles.secondaryBtn}
+                      onClick={() => void syncOne(c.id)}
+                      disabled={syncingId === c.id}
+                    >
+                      {syncingId === c.id ? "Syncing…" : "Sync now"}
+                    </button>
                     {isConnAdmin(c) && type === "shared" ? (
                       <button type="button" className={styles.secondaryBtn} onClick={() => void openPermissions(c)}>
                         Manage permissions
@@ -405,6 +471,10 @@ export default function InboxSettingsClient() {
               );
             })}
         </section>
+
+        <SlaPoliciesPanel />
+
+        <AutomationsPanel />
 
         <SignatureManager authHeaders={authHeaders} variant="inbox" />
       </div>

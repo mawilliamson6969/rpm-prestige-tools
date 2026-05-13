@@ -1,1382 +1,271 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { apiUrl } from "../../../lib/api";
-import { sanitizeEmailHtml } from "../../../lib/sanitizeEmailHtml";
+import DetailPanelContainer from "../../../components/inbox/DetailPanelContainer";
+import ErrorBoundary from "../../../components/inbox/ErrorBoundary";
+import FilterBar from "../../../components/inbox/FilterBar";
+import InboxList from "../../../components/inbox/InboxList";
+import InboxTopBar from "../../../components/inbox/InboxTopBar";
+import MailboxSidebar from "../../../components/inbox/MailboxSidebar";
+import SaveViewModal from "../../../components/inbox/SaveViewModal";
+import ToastContainer from "../../../components/inbox/ToastContainer";
+import ViewsSection from "../../../components/inbox/ViewsSection";
+import useAIDraft from "../../../hooks/inbox/useAIDraft";
+import useBatchAIDraft from "../../../hooks/inbox/useBatchAIDraft";
+import useCompose from "../../../hooks/inbox/useCompose";
+import useInboxActions from "../../../hooks/inbox/useInboxActions";
+import useMailboxes from "../../../hooks/inbox/useMailboxes";
+import useResponsiveLayout from "../../../hooks/inbox/useResponsiveLayout";
+import useSavedViews, {
+  type SavedView,
+  type SavedViewFilters,
+} from "../../../hooks/inbox/useSavedViews";
+import useSLA from "../../../hooks/inbox/useSLA";
+import useStats from "../../../hooks/inbox/useStats";
+import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
+import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
+import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
+import useThreadList from "../../../hooks/inbox/useThreadList";
+import {
+  NotificationProvider,
+  useNotificationCenter,
+} from "../../../hooks/inbox/useNotificationCenter";
+import { ToastProvider, useToast } from "../../../hooks/inbox/useToast";
 import styles from "./inbox.module.css";
 
-type EmailSignatureRow = {
-  id: number;
-  name: string;
-  signatureHtml: string;
-  isDefault: boolean;
-};
-
-type TicketRow = {
-  id: number;
-  subject: string | null;
-  body_preview: string | null;
-  sender_name: string | null;
-  sender_email: string | null;
-  recipient_emails: string | null;
-  priority: number;
-  category: string;
-  status: string;
-  is_read: boolean;
-  is_starred: boolean;
-  received_at: string | null;
-  first_response_at?: string | null;
-  ai_summary: string | null;
-  linked_property_name: string | null;
-  linked_tenant_name: string | null;
-  linked_owner_name: string | null;
-  body_html: string | null;
-  assigned_to?: number | null;
-  assignee_username?: string | null;
-  assignee_name?: string | null;
-  has_ai_draft_ready?: boolean;
-  connection_id?: number | null;
-  mailbox_display_name?: string | null;
-  mailbox_email?: string | null;
-  mailbox_type?: string | null;
-  inbox_permission?: string | null;
-  reply_from_email?: string | null;
-};
-
-type AiDraftPayload = {
-  draft_text: string;
-  context_used: ContextUsedShape | null;
-  created_at: string;
-};
-
-type ContextUsedShape = {
-  property?: boolean;
-  propertyName?: string | null;
-  tenant?: boolean;
-  tenantName?: string | null;
-  owner?: boolean;
-  ownerName?: string | null;
-  workOrders?: number;
-  delinquency?: string | null;
-  leadsimple?: boolean;
-};
-
-type SlaPayload = {
-  hoursOpen: number | null;
-  hoursToFirstResponse: number | null;
-  isOverdue: boolean;
-  slaTarget: number;
-  receivedAt: string | null;
-  firstResponseAt: string | null;
-};
-
-type ResponseRow = {
-  id: number;
-  response_type: string;
-  body: string | null;
-  body_html: string | null;
-  sent_via: string | null;
-  created_at: string;
-  responded_by_name: string | null;
-};
-
-type Stats = {
-  totalOpen: number;
-  unread: number;
-  assignedToMe: number;
-  unassigned: number;
-  starred: number;
-  byCategory: Record<string, number>;
-};
-
-type TeamUser = { id: number; username: string; displayName: string; email?: string | null };
-
-type MailboxConnection = {
-  id: number;
-  email_address: string | null;
-  mailbox_type: string | null;
-  mailbox_email: string | null;
-  display_name: string | null;
-  is_active: boolean;
-  last_sync_at: string | null;
-  my_permission: string | null;
-  unread_count: number | null;
-};
-
-const MAILBOX_COLORS = ["#1565c0", "#2e7d32", "#6a1b9a", "#e65100", "#00897b"];
-
-function mailboxColor(connectionId: number | null | undefined) {
-  if (connectionId == null || !Number.isFinite(connectionId)) return MAILBOX_COLORS[0];
-  return MAILBOX_COLORS[Math.abs(connectionId) % MAILBOX_COLORS.length];
-}
-
-function mailboxShortLabel(t: TicketRow) {
-  const name = (t.mailbox_display_name || t.mailbox_email || "").trim();
-  if (!name) return "";
-  return name.length > 18 ? `${name.slice(0, 16)}…` : name;
-}
-
-const CATEGORY_ORDER = [
-  "maintenance",
-  "leasing",
-  "accounting",
-  "owner",
-  "tenant",
-  "vendor",
-  "other",
-] as const;
-
-const CAT_STYLE: Record<string, { bg: string; color: string }> = {
-  maintenance: { bg: "#fff3e0", color: "#e65100" },
-  leasing: { bg: "#e3f2fd", color: "#1565c0" },
-  accounting: { bg: "#e8f5e9", color: "#2e7d32" },
-  owner: { bg: "#f3e5f5", color: "#6a1b9a" },
-  tenant: { bg: "#e0f2f1", color: "#00695c" },
-  vendor: { bg: "#eceff1", color: "#546e7a" },
-  other: { bg: "#f5f5f5", color: "#757575" },
-  legal: { bg: "#ffebee", color: "#c62828" },
-  internal: { bg: "#e8eaf6", color: "#3949ab" },
-  marketing: { bg: "#f1f8e9", color: "#558b2f" },
-};
-
-function priorityBarClass(p: number) {
-  if (p >= 80) return "#b32317";
-  if (p >= 50) return "#e65100";
-  if (p >= 20) return "#f9a825";
-  return "#9e9e9e";
-}
-
-function relativeTime(iso: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day === 1) return "yesterday";
-  if (day < 7) return `${day}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function initials(name: string | null | undefined, email: string | null | undefined) {
-  const s = (name || email || "?").trim();
-  const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase().slice(0, 2);
-  return s.slice(0, 2).toUpperCase();
-}
-
-function escapeHtmlText(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-/** Builds HTML for Graph API reply: message + optional `--` + signature HTML. */
-function buildReplyEmailHtml(message: string, signatureHtml: string | null) {
-  const t = message.trim();
-  const main = escapeHtmlText(t).replace(/\r\n/g, "\n").split("\n").join("<br/>");
-  const body = `<div style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">${main}</div>`;
-  const sig = signatureHtml?.trim();
-  if (!sig) return body;
-  return `${body}<p style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">-- </p><div style="font-family:Segoe UI,system-ui,sans-serif;font-size:11pt">${sig}</div>`;
-}
-
-function priorityTier(p: number) {
-  if (p >= 85) return 95;
-  if (p >= 60) return 75;
-  if (p >= 35) return 50;
-  return 25;
-}
-
-function formatSlaDuration(hours: number) {
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
-  const rounded = Math.round(hours * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}h` : `${rounded}h`;
-}
-
-function hasNoAiContext(ctx: ContextUsedShape | null) {
-  if (!ctx) return true;
-  const wo = ctx.workOrders ?? 0;
-  return (
-    !ctx.property &&
-    !ctx.tenant &&
-    !ctx.owner &&
-    wo === 0 &&
-    (ctx.delinquency == null || ctx.delinquency === "") &&
-    !ctx.leadsimple
-  );
-}
-
 export default function InboxClient() {
-  const { authHeaders, isAdmin } = useAuth();
+  return (
+    <ToastProvider>
+      <NotificationProvider>
+        <InboxOrchestrator />
+        <ToastContainer />
+      </NotificationProvider>
+    </ToastProvider>
+  );
+}
 
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
-  const [bucket, setBucket] = useState<string>("open");
-  /** null = all mailboxes */
-  const [filterConnectionId, setFilterConnectionId] = useState<number | null>(null);
-  const [mailboxes, setMailboxes] = useState<MailboxConnection[]>([]);
-  const [category, setCategory] = useState<string | null>(null);
-  /** When set, uses bucket=all and this status (narrow view). When null, bucket controls pipeline. */
-  const [narrowStatus, setNarrowStatus] = useState<string | null>(null);
-  const [teamUserId, setTeamUserId] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [sort, setSort] = useState("newest");
+function InboxOrchestrator() {
+  const { authHeaders, isAdmin, user } = useAuth();
+  const toast = useToast();
+  const notifications = useNotificationCenter();
+  const layout = useResponsiveLayout();
 
-  const [tickets, setTickets] = useState<TicketRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [listLoading, setListLoading] = useState(true);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
+  const [selectedViewId, setSelectedViewId] = useState<number | null>(null);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<TicketRow | null>(null);
-  const [responses, setResponses] = useState<ResponseRow[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const stats = useStats();
+  const teamUsers = useTeamUsers();
+  const mailboxes = useMailboxes();
+  useSyncHealthReporter(mailboxes.mailboxes, notifications);
+  const savedViews = useSavedViews();
+  const list = useThreadList({
+    connectionId: mailboxes.currentMailbox,
+    viewId: selectedViewId,
+    onUserFilterChange: () => setSelectedViewId(null),
+  });
+  const batch = useBatchAIDraft();
 
-  const [composeMode, setComposeMode] = useState<"reply" | "note">("reply");
-  const [composeBody, setComposeBody] = useState("");
-  const [composeBusy, setComposeBusy] = useState(false);
-  const [composeExpanded, setComposeExpanded] = useState(false);
-  const [showAiDraftBanner, setShowAiDraftBanner] = useState(false);
-  const [aiContextUsed, setAiContextUsed] = useState<ContextUsedShape | null>(null);
-  const [aiDraftBusy, setAiDraftBusy] = useState(false);
-  const [aiLoadingMessage, setAiLoadingMessage] = useState<string | null>(null);
-  const [sla, setSla] = useState<SlaPayload | null>(null);
-  const [batchDraftBusy, setBatchDraftBusy] = useState(false);
-  const [batchDraftProgress, setBatchDraftProgress] = useState<string | null>(null);
-  const [batchDraftSummary, setBatchDraftSummary] = useState<string | null>(null);
-  const [signatures, setSignatures] = useState<EmailSignatureRow[]>([]);
-  /** Selected signature for reply: id, "none", or null before load. */
-  const [selectedSigId, setSelectedSigId] = useState<number | "none" | null>(null);
-
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileDetail, setMobileDetail] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
-    const fn = () => setIsMobile(mq.matches);
-    fn();
-    mq.addEventListener("change", fn);
-    return () => mq.removeEventListener("change", fn);
-  }, []);
-
-  const limit = 40;
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const loadStats = useCallback(async () => {
-    const res = await fetch(apiUrl("/inbox/stats"), { cache: "no-store", headers: { ...authHeaders() } });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) setStats(body as Stats);
-  }, [authHeaders]);
-
-  useEffect(() => {
-    loadStats();
-    const id = setInterval(loadStats, 60_000);
-    return () => clearInterval(id);
-  }, [loadStats]);
-
-  useEffect(() => {
-    (async () => {
-      const res = await fetch(apiUrl("/eos/team-users"), { headers: { ...authHeaders() } });
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(body.users)) {
-        const want = new Set(["mike", "lori", "leslie", "amanda", "amelia"]);
-        setTeamUsers(body.users.filter((u: TeamUser) => want.has(u.username.toLowerCase())));
-      }
-    })();
-  }, [authHeaders]);
-
-  const loadMailboxes = useCallback(async () => {
-    const res = await fetch(apiUrl("/inbox/connections"), { cache: "no-store", headers: { ...authHeaders() } });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok && Array.isArray(body.connections)) {
-      setMailboxes(body.connections as MailboxConnection[]);
-    }
-  }, [authHeaders]);
-
-  useEffect(() => {
-    void loadMailboxes();
-  }, [loadMailboxes]);
-
-  useEffect(() => {
-    (async () => {
-      const res = await fetch(apiUrl("/inbox/signatures"), {
-        cache: "no-store",
-        headers: { ...authHeaders() },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(body.signatures)) {
-        setSignatures(body.signatures as EmailSignatureRow[]);
-      }
-    })();
-  }, [authHeaders]);
-
-  useEffect(() => {
-    setComposeExpanded(false);
-    setComposeBody("");
-    setShowAiDraftBanner(false);
-    setAiContextUsed(null);
-    setAiLoadingMessage(null);
-    setSla(null);
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (!signatures.length) {
-      setSelectedSigId("none");
-      return;
-    }
-    const def = signatures.find((s) => s.isDefault);
-    setSelectedSigId(def?.id ?? signatures[0].id);
-  }, [selectedId, signatures]);
-
-  const queryString = useMemo(() => {
-    const p = new URLSearchParams();
-    if (narrowStatus) {
-      p.set("bucket", "all");
-      p.set("status", narrowStatus);
-    } else {
-      p.set("bucket", bucket);
-    }
-    if (category) p.set("category", category);
-    if (teamUserId != null) p.set("assignedTo", String(teamUserId));
-    if (debouncedSearch.trim()) p.set("search", debouncedSearch.trim());
-    if (sort === "oldest") p.set("sort", "oldest");
-    else if (sort === "priority") p.set("sort", "priority");
-    else if (sort === "updated") p.set("sort", "updated");
-    else p.set("sort", "newest");
-    if (filterConnectionId != null) p.set("connectionId", String(filterConnectionId));
-    p.set("limit", String(limit));
-    return p.toString();
-  }, [bucket, category, narrowStatus, teamUserId, debouncedSearch, sort, filterConnectionId]);
-
-  const loadList = useCallback(
-    async (startOffset: number, append: boolean) => {
-      setListLoading(true);
-      try {
-        const p = new URLSearchParams(queryString);
-        p.set("offset", String(startOffset));
-        const res = await fetch(apiUrl(`/inbox/tickets?${p.toString()}`), {
-          cache: "no-store",
-          headers: { ...authHeaders() },
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "List failed");
-        const rows = body.tickets as TicketRow[];
-        setTotal(body.total ?? 0);
-        setOffset(startOffset + rows.length);
-        setTickets((prev) => (append ? [...prev, ...rows] : rows));
-      } catch {
-        if (!append) setTickets([]);
-      } finally {
-        setListLoading(false);
-      }
+  const detail = useThreadDetail({
+    selectedThreadId,
+    onThreadChanged: (threadId, patch) => {
+      list.patchThread(threadId, patch);
+      void stats.refetch();
     },
-    [authHeaders, queryString]
-  );
-
-  useEffect(() => {
-    setOffset(0);
-    loadList(0, false);
-  }, [queryString, loadList]);
-
-  const loadDetail = useCallback(
-    async (id: number) => {
-      setDetailLoading(true);
-      try {
-        const res = await fetch(apiUrl(`/inbox/tickets/${id}`), {
-          cache: "no-store",
-          headers: { ...authHeaders() },
-        });
-        const body = await res.json().catch(() => ({}));
-        if (res.ok) {
-          setDetail(body.ticket as TicketRow);
-          setResponses(Array.isArray(body.responses) ? body.responses : []);
-          const ad = body.ai_draft as AiDraftPayload | undefined;
-          if (ad?.draft_text) {
-            setComposeBody(ad.draft_text);
-            setAiContextUsed(ad.context_used);
-            setShowAiDraftBanner(true);
-            setComposeMode("reply");
-            setComposeExpanded(true);
-          }
-        }
-      } finally {
-        setDetailLoading(false);
-      }
+    onAiDraftSeed: (ad) => {
+      compose.setBody(ad.draft_text);
+      compose.setMode("reply");
+      compose.setExpanded(true);
+      aiDraft.showBanner(ad.context_used);
     },
-    [authHeaders]
+  });
+
+  // useAIDraft is keyed on the seed ticket id (Graph-side reply target). When
+  // the active thread changes, the seed changes and the banner resets.
+  const aiDraft = useAIDraft({ ticketId: detail.seedTicketId });
+
+  const readOnlyMailbox = detail.thread?.my_permission === "read";
+  const compose = useCompose({
+    threadId: selectedThreadId,
+    seedTicketId: detail.seedTicketId,
+    readOnly: readOnlyMailbox,
+  });
+  const slaView = useSLA(detail.thread);
+
+  const canMetaMailbox =
+    !!detail.thread &&
+    (detail.thread.my_permission === "reply" ||
+      detail.thread.my_permission === "admin" ||
+      detail.thread.my_permission == null);
+
+  const actions = useInboxActions({
+    selectedThreadId,
+    setSelectedThreadId,
+    authHeaders,
+    toast,
+    notifications,
+    detail,
+    compose,
+    aiDraft,
+    batch,
+    list,
+    stats,
+    mailboxes,
+    layout,
+    setSyncBusy,
+  });
+
+  const eligibleBatchCount = batch.selectEligible(list.threads).length;
+
+  const applyView = useCallback((view: SavedView) => {
+    setSelectedViewId(view.id);
+    layout.setSidebarOpen(false);
+  }, [layout]);
+
+  const captureCurrentFilters = useCallback((): SavedViewFilters => {
+    const f = list.filters;
+    const out: SavedViewFilters = {};
+    if (f.bucket && f.bucket !== "open") out.bucket = f.bucket;
+    if (f.narrowStatus) out.status = f.narrowStatus;
+    if (f.category) out.category = f.category;
+    if (f.teamUserId != null) out.assignedTo = f.teamUserId;
+    if (f.search) out.search = f.search;
+    if (mailboxes.currentMailbox != null) out.connectionId = mailboxes.currentMailbox;
+    return out;
+  }, [list.filters, mailboxes.currentMailbox]);
+
+  const handleSaveView = useCallback(
+    async ({ name, icon, is_shared }: { name: string; icon?: string | null; is_shared?: boolean }) => {
+      const filters = captureCurrentFilters();
+      const sort = list.filters.sort && list.filters.sort !== "newest" ? { sort: list.filters.sort } : null;
+      const r = await savedViews.create({ name, icon: icon ?? null, filters, sort, is_shared });
+      if (!r.ok) throw new Error(r.error);
+      toast.push({ variant: "success", message: `Saved "${name}"` });
+      setSelectedViewId(r.data.id);
+    },
+    [captureCurrentFilters, list.filters.sort, savedViews, toast]
   );
 
-  useEffect(() => {
-    if (selectedId == null) {
-      setDetail(null);
-      setResponses([]);
-      return;
-    }
-    loadDetail(selectedId);
-  }, [selectedId, loadDetail]);
-
-  useEffect(() => {
-    if (selectedId == null || !detail || detail.id !== selectedId) {
-      setSla(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/sla`), {
-        cache: "no-store",
-        headers: { ...authHeaders() },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!cancelled && res.ok) setSla(body as SlaPayload);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, detail?.id, authHeaders]);
-
-  useEffect(() => {
-    if (!aiDraftBusy) return;
-    setAiLoadingMessage("Drafting response… Pulling context from AppFolio…");
-    const t = window.setTimeout(() => {
-      setAiLoadingMessage("Generating draft…");
-    }, 1600);
-    return () => window.clearTimeout(t);
-  }, [aiDraftBusy]);
-
-  useEffect(() => {
-    if (!batchDraftSummary) return;
-    const t = window.setTimeout(() => setBatchDraftSummary(null), 9000);
-    return () => window.clearTimeout(t);
-  }, [batchDraftSummary]);
-
-  const unreadDraftEligible = useMemo(() => {
-    const openStatuses = new Set(["open", "in_progress", "waiting"]);
-    return tickets.filter((t) => !t.is_read && !t.first_response_at && openStatuses.has(t.status));
-  }, [tickets]);
-  const unreadDraftIdsBatch = useMemo(
-    () => unreadDraftEligible.map((t) => t.id).slice(0, 10),
-    [unreadDraftEligible]
-  );
-
-  const openTicket = (id: number) => {
-    setSelectedId(id);
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches) {
-      setMobileDetail(true);
-    }
-    fetch(apiUrl(`/inbox/tickets/${id}`), {
-      method: "PUT",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ isRead: true }),
-    }).then(() => {
-      setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, is_read: true } : t)));
-      loadStats();
-    });
-  };
-
-  const closeMobileDetail = () => {
-    setMobileDetail(false);
-  };
-
-  const updateTicket = async (patch: Record<string, unknown>) => {
-    if (!selectedId) return;
-    const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}`), {
-      method: "PUT",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok && body.ticket) {
-      setDetail(body.ticket);
-      setTickets((prev) => prev.map((t) => (t.id === selectedId ? { ...t, ...body.ticket } : t)));
-      loadStats();
-    }
-  };
-
-  const toggleStar = async (e: React.MouseEvent, t: TicketRow) => {
-    e.stopPropagation();
-    const next = !t.is_starred;
-    await fetch(apiUrl(`/inbox/tickets/${t.id}`), {
-      method: "PUT",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ isStarred: next }),
-    });
-    setTickets((prev) => prev.map((x) => (x.id === t.id ? { ...x, is_starred: next } : x)));
-    if (detail?.id === t.id) setDetail({ ...detail, is_starred: next });
-    loadStats();
-  };
-
-  const sendCompose = async () => {
-    if (!selectedId || !composeBody.trim()) return;
-    setComposeBusy(true);
-    try {
-      const path = composeMode === "reply" ? "reply" : "note";
-      let replySigHtml: string | null = null;
-      if (composeMode === "reply" && selectedSigId !== "none" && selectedSigId !== null) {
-        const row = signatures.find((s) => s.id === selectedSigId);
-        const raw = row?.signatureHtml?.trim();
-        replySigHtml = raw ? raw : null;
-      }
-      const payload =
-        composeMode === "reply"
-          ? { body: buildReplyEmailHtml(composeBody, replySigHtml) }
-          : { body: composeBody.trim() };
-      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/${path}`), {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        if (composeMode === "reply") {
-          setShowAiDraftBanner(false);
-          setAiContextUsed(null);
-        }
-        setComposeBody("");
-        setComposeExpanded(false);
-        loadDetail(selectedId);
-        loadList(0, false);
-      }
-    } finally {
-      setComposeBusy(false);
-    }
-  };
-
-  const onSync = async () => {
-    setSyncBusy(true);
-    try {
-      await fetch(apiUrl("/inbox/sync/trigger"), { method: "POST", headers: { ...authHeaders() } });
-      await loadStats();
-      await loadMailboxes();
-      loadList(0, false);
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  const runAiDraft = async () => {
-    if (!selectedId) return;
-    setAiDraftBusy(true);
-    try {
-      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/ai-draft`), {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "Draft failed");
-      const draft = typeof body.draft === "string" ? body.draft : "";
-      if (!draft) throw new Error("Empty draft.");
-      setComposeBody(draft);
-      setAiContextUsed((body.contextUsed as ContextUsedShape) ?? null);
-      setShowAiDraftBanner(true);
-      setComposeMode("reply");
-      setComposeExpanded(true);
-      setTickets((prev) => prev.map((t) => (t.id === selectedId ? { ...t, has_ai_draft_ready: true } : t)));
-      if (detail?.id === selectedId) setDetail({ ...detail, has_ai_draft_ready: true });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setAiDraftBusy(false);
-      setAiLoadingMessage(null);
-    }
-  };
-
-  const dismissAiDraft = async () => {
-    if (!selectedId) return;
-    try {
-      const res = await fetch(apiUrl(`/inbox/tickets/${selectedId}/ai-draft`), {
-        method: "DELETE",
-        headers: { ...authHeaders() },
-      });
-      if (!res.ok && res.status !== 404) return;
-      setShowAiDraftBanner(false);
-      setAiContextUsed(null);
-      setComposeBody("");
-      setTickets((prev) => prev.map((t) => (t.id === selectedId ? { ...t, has_ai_draft_ready: false } : t)));
-      if (detail?.id === selectedId) setDetail({ ...detail, has_ai_draft_ready: false });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const draftAllUnread = async () => {
-    const ids = unreadDraftIdsBatch;
-    if (!ids.length) return;
-    setBatchDraftBusy(true);
-    setBatchDraftSummary(null);
-    setBatchDraftProgress(`Drafting 1 of ${ids.length}…`);
-    let tick = 1;
-    const interval = window.setInterval(() => {
-      tick = Math.min(ids.length, tick + 1);
-      setBatchDraftProgress(`Drafting ${tick} of ${ids.length}…`);
-    }, 720);
-    try {
-      const res = await fetch(apiUrl("/inbox/ai-draft/batch"), {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketIds: ids }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        console.error(body.error || "Batch draft failed");
-        setBatchDraftProgress(null);
+  const handleDeleteView = useCallback(
+    async (view: SavedView) => {
+      const r = await savedViews.remove(view.id);
+      if (!r.ok) {
+        toast.push({ variant: "error", message: `Couldn't delete view — ${r.error}` });
         return;
       }
-      const results = Array.isArray(body.results) ? body.results : [];
-      let ok = 0;
-      const touched = new Set<number>();
-      for (const r of results) {
-        if (r?.error) continue;
-        ok += 1;
-        const tid = Number(r.ticketId);
-        if (Number.isFinite(tid)) touched.add(tid);
-      }
-      setTickets((prev) =>
-        prev.map((t) => (touched.has(t.id) ? { ...t, has_ai_draft_ready: true } : t))
-      );
-      setBatchDraftSummary(`${ok} drafts ready for review`);
-      setBatchDraftProgress(null);
-    } finally {
-      window.clearInterval(interval);
-      setBatchDraftBusy(false);
-    }
-  };
+      if (selectedViewId === view.id) setSelectedViewId(null);
+      toast.push({ variant: "success", message: `Deleted "${view.name}"` });
+    },
+    [savedViews, selectedViewId, toast]
+  );
 
   const layoutClass = [
     styles.layout,
-    isMobile && mobileMenuOpen ? styles.sidebarOpen : "",
-    mobileDetail ? styles.showDetailMobile : "",
+    layout.isMobile && layout.sidebarOpen ? styles.sidebarOpen : "",
+    layout.detailOpen ? styles.showDetailMobile : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  const preset = (b: string) => {
-    setBucket(b);
-    setCategory(null);
-    setNarrowStatus(null);
-    setTeamUserId(null);
-    setMobileMenuOpen(false);
-  };
-
-  const teamColors: Record<string, string> = {
-    mike: "#0098d0",
-    lori: "#b32317",
-    leslie: "#1b2856",
-    amanda: "#2e7d6b",
-    amelia: "#6a1b9a",
-  };
-
-  const allActiveHighlight =
-    narrowStatus === null &&
-    bucket !== "starred" &&
-    ["open", "unread", "assignedToMe", "unassigned"].includes(bucket);
-
-  const canMetaMailbox =
-    !!detail &&
-    (detail.inbox_permission === "reply" ||
-      detail.inbox_permission === "admin" ||
-      detail.inbox_permission == null);
-  const canReplyMailbox = canMetaMailbox;
-
-  useEffect(() => {
-    if (detail?.inbox_permission === "read") {
-      setComposeMode("note");
-    }
-  }, [detail?.id, detail?.inbox_permission]);
-
-  const slaBadgeEl =
-    sla && detail?.received_at
-      ? sla.firstResponseAt != null && sla.hoursToFirstResponse != null
-        ? sla.hoursToFirstResponse <= sla.slaTarget
-          ? (
-              <span className={styles.slaBadge} data-variant="ok">
-                Responded in {formatSlaDuration(sla.hoursToFirstResponse)}
-              </span>
-            )
-          : (
-              <span className={styles.slaBadge} data-variant="late">
-                Responded in {formatSlaDuration(sla.hoursToFirstResponse)}
-              </span>
-            )
-        : sla.isOverdue
-          ? (
-              <span className={styles.slaBadge} data-variant="overdue">
-                ⚠ Overdue —{" "}
-                {sla.hoursOpen != null ? formatSlaDuration(sla.hoursOpen) : ""} without response
-              </span>
-            )
-          : (
-              <span className={styles.slaBadge} data-variant="open">
-                Open {sla.hoursOpen != null ? formatSlaDuration(sla.hoursOpen) : ""}
-              </span>
-            )
-      : null;
-
   return (
     <div className={styles.page}>
-      <header className={styles.topBar}>
-        <div>
-          <h1>Shared Inbox</h1>
-          <div className={styles.topStats}>
-            {stats ? (
-              <>
-                <span>
-                  <strong>{stats.totalOpen}</strong> open
-                </span>
-                <span>
-                  <strong>{stats.unread}</strong> unread
-                </span>
-                <span>
-                  <strong>{stats.assignedToMe}</strong> assigned to you
-                </span>
-              </>
-            ) : (
-              <span>Loading stats…</span>
-            )}
-            {batchDraftProgress || batchDraftSummary ? (
-              <span className={styles.batchStatus}>
-                {batchDraftProgress || batchDraftSummary}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className={styles.topActions}>
-          {isAdmin ? (
-            <button type="button" className={styles.iconBtn} title="Sync now" onClick={onSync} disabled={syncBusy}>
-              ⟳
-            </button>
-          ) : null}
-          {isAdmin ? (
-            <button
-              type="button"
-              className={styles.batchDraftBtn}
-              onClick={() => void draftAllUnread()}
-              disabled={batchDraftBusy || unreadDraftEligible.length === 0}
-            >
-              ✨ Draft All Unread ({unreadDraftEligible.length})
-            </button>
-          ) : null}
-          <Link href="/inbox/settings" className={styles.mutedLink}>
-            Settings
-          </Link>
-        </div>
-      </header>
+      <InboxTopBar
+        stats={stats}
+        isAdmin={isAdmin}
+        syncBusy={syncBusy}
+        onSync={() => void actions.sync()}
+        batchBusy={batch.busy}
+        batchProgress={batch.progress}
+        batchSummary={batch.summary}
+        batchEligibleCount={eligibleBatchCount}
+        onDraftAllUnread={() => void actions.draftAllUnread()}
+      />
 
-      {isMobile && mobileMenuOpen ? (
+      {layout.isMobile && layout.sidebarOpen ? (
         <button
           type="button"
           className={styles.overlaySidebar}
           aria-label="Close menu"
-          onClick={() => setMobileMenuOpen(false)}
+          onClick={() => layout.setSidebarOpen(false)}
         />
       ) : null}
 
       <div className={layoutClass}>
-        <aside className={styles.sidebar}>
-          <div className={styles.sidebarHeader}>
-            <button type="button" className={styles.menuBtn} onClick={() => setMobileMenuOpen((o) => !o)}>
-              ☰ Menu
-            </button>
-          </div>
-
-          <div className={styles.mailboxSectionLabel}>Mailboxes</div>
-          <button
-            type="button"
-            className={`${styles.mailboxNavBtn} ${filterConnectionId == null ? styles.active : ""}`}
-            onClick={() => {
-              setFilterConnectionId(null);
-              setMobileMenuOpen(false);
-            }}
-          >
-            <span className={styles.mailboxNavLabel}>All mailboxes</span>
-            <span className={styles.badgeCount}>{stats?.unread ?? "—"}</span>
-          </button>
-          {mailboxes.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`${styles.mailboxNavBtn} ${filterConnectionId === m.id ? styles.active : ""}`}
-              onClick={() => {
-                setFilterConnectionId(m.id);
-                setMobileMenuOpen(false);
-              }}
-            >
-              <span className={styles.mailboxDot} style={{ background: mailboxColor(m.id) }} aria-hidden />
-              <span className={styles.mailboxNavLabel}>
-                {(m.display_name || m.mailbox_email || m.email_address || "Mailbox").trim()}
-              </span>
-              <span className={styles.badgeCount}>{m.unread_count ?? 0}</span>
-            </button>
-          ))}
-
-          <div className={styles.divider} />
-
-          <button
-            type="button"
-            className={`${styles.presetBtn} ${bucket === "open" && !teamUserId && !category && !narrowStatus ? styles.active : ""}`}
-            onClick={() => preset("open")}
-          >
-            All Open
-            <span className={styles.badgeCount}>{stats?.totalOpen ?? "—"}</span>
-          </button>
-          <button
-            type="button"
-            className={`${styles.presetBtn} ${bucket === "unread" ? styles.active : ""}`}
-            onClick={() => preset("unread")}
-          >
-            Unread
-            <span className={styles.badgeCount}>{stats?.unread ?? "—"}</span>
-          </button>
-          <button
-            type="button"
-            className={`${styles.presetBtn} ${bucket === "starred" ? styles.active : ""}`}
-            onClick={() => preset("starred")}
-          >
-            Starred
-            <span className={styles.badgeCount}>{stats?.starred ?? "—"}</span>
-          </button>
-          <button
-            type="button"
-            className={`${styles.presetBtn} ${bucket === "assignedToMe" ? styles.active : ""}`}
-            onClick={() => {
-              preset("assignedToMe");
-            }}
-          >
-            Assigned to Me
-            <span className={styles.badgeCount}>{stats?.assignedToMe ?? "—"}</span>
-          </button>
-          <button
-            type="button"
-            className={`${styles.presetBtn} ${bucket === "unassigned" ? styles.active : ""}`}
-            onClick={() => preset("unassigned")}
-          >
-            Unassigned
-            <span className={styles.badgeCount}>{stats?.unassigned ?? "—"}</span>
-          </button>
-
-          <div className={styles.divider} />
-          <div className={styles.catLabel}>Category</div>
-          <div className={styles.pillGrid}>
-            {CATEGORY_ORDER.map((c) => {
-              const st = CAT_STYLE[c] || CAT_STYLE.other;
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  className={`${styles.pill} ${category === c ? styles.active : ""}`}
-                  style={{ background: st.bg, color: st.color }}
-                  onClick={() => {
-                    setBucket("open");
-                    setCategory(category === c ? null : c);
-                    setNarrowStatus(null);
-                    setTeamUserId(null);
-                  }}
-                >
-                  {c}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className={styles.divider} />
-          <div className={styles.catLabel}>Team</div>
-          <div className={styles.teamRow}>
-            {teamUsers.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                className={`${styles.teamAvatar} ${teamUserId === u.id ? styles.active : ""}`}
-                style={{ background: teamColors[u.username.toLowerCase()] || "#6a737b" }}
-                title={u.displayName}
-                onClick={() => {
-                  setBucket("open");
-                  setTeamUserId(teamUserId === u.id ? null : u.id);
-                  setNarrowStatus(null);
-                }}
-              >
-                {initials(u.displayName, null)}
-              </button>
-            ))}
-          </div>
-
-          <div className={styles.divider} />
-          <div className={styles.catLabel}>Status</div>
-          <div className={styles.statusRow}>
-            {(
-              [
-                [null, "All active"],
-                ["open", "Open"],
-                ["in_progress", "In progress"],
-                ["waiting", "Waiting"],
-                ["resolved", "Resolved"],
-              ] as const
-            ).map(([val, label]) => (
-              <button
-                key={label}
-                type="button"
-                className={`${styles.statusBtn} ${
-                  val == null ? (allActiveHighlight ? styles.active : "") : narrowStatus === val ? styles.active : ""
-                }`}
-                onClick={() => {
-                  if (val == null) {
-                    setNarrowStatus(null);
-                    setBucket("open");
-                  } else {
-                    setNarrowStatus(val);
-                  }
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className={styles.sidebarFooter}>
-            <Link href="/inbox/settings" className={styles.mutedLink}>
-              Inbox settings →
-            </Link>
-          </div>
-        </aside>
+        <ErrorBoundary label="sidebar">
+          <MailboxSidebar
+            mailboxes={mailboxes}
+            stats={stats}
+            teamUsers={teamUsers}
+            filters={list.filters}
+            applyPreset={list.applyPreset}
+            setBucket={list.setBucket}
+            setCategory={list.setCategory}
+            setNarrowStatus={list.setNarrowStatus}
+            setTeamUserId={list.setTeamUserId}
+            onItemClick={() => layout.setSidebarOpen(false)}
+            onToggleMenu={() => layout.setSidebarOpen(!layout.sidebarOpen)}
+            viewsSlot={
+              <ViewsSection
+                views={savedViews.views}
+                loading={savedViews.loading}
+                selectedViewId={selectedViewId}
+                isAdmin={isAdmin}
+                currentUserId={user?.id ?? null}
+                onApply={applyView}
+                onSaveCurrent={() => setSaveViewOpen(true)}
+                onDelete={handleDeleteView}
+              />
+            }
+          />
+        </ErrorBoundary>
 
         <div className={styles.listPanel}>
-          <div className={styles.listToolbar}>
-            <input
-              className={styles.search}
-              placeholder="Search tickets…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search tickets"
+          <ErrorBoundary label="ticket list">
+            <FilterBar
+              search={list.filters.search}
+              setSearch={list.setSearch}
+              sort={list.filters.sort}
+              setSort={list.setSort}
             />
-            <select className={styles.sortSel} value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="priority">Highest priority</option>
-              <option value="updated">Recently updated</option>
-            </select>
-          </div>
-          <div className={styles.ticketList}>
-            {listLoading && tickets.length === 0 ? (
-              <div className={styles.emptyDetail}>Loading…</div>
-            ) : null}
-            {tickets.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`${styles.ticketRow} ${selectedId === t.id ? styles.active : ""}`}
-                onClick={() => openTicket(t.id)}
-              >
-                <span className={styles.priBar} style={{ background: priorityBarClass(t.priority) }} />
-                {!t.is_read ? <span className={styles.unreadDot} aria-hidden /> : <span style={{ width: 8 }} />}
-                <div className={styles.ticketMain}>
-                  <div className={styles.ticketTop}>
-                    <p className={`${styles.sender} ${!t.is_read ? styles.unread : ""}`}>{t.sender_name || t.sender_email}</p>
-                    <span className={styles.ticketTopRight}>
-                      {t.has_ai_draft_ready ? (
-                        <span className={styles.draftReadyMark} title="Draft ready">
-                          ✨
-                        </span>
-                      ) : null}
-                      <span className={styles.time}>{relativeTime(t.received_at)}</span>
-                    </span>
-                  </div>
-                  <p className={styles.subject}>{t.subject || "(No subject)"}</p>
-                  <p className={styles.preview}>{t.body_preview || ""}</p>
-                  {t.connection_id != null && mailboxShortLabel(t) ? (
-                    <div className={styles.ticketMailboxTag}>
-                      <span className={styles.mailboxDot} style={{ background: mailboxColor(t.connection_id) }} />
-                      <span>📧 {mailboxShortLabel(t)}</span>
-                    </div>
-                  ) : null}
-                  <div className={styles.ticketMeta}>
-                    <span
-                      className={styles.catBadge}
-                      style={{
-                        background: (CAT_STYLE[t.category] || CAT_STYLE.other).bg,
-                        color: (CAT_STYLE[t.category] || CAT_STYLE.other).color,
-                      }}
-                    >
-                      {t.category}
-                    </span>
-                    <span
-                      className={styles.assignAv}
-                      style={{
-                        background: t.assignee_name ? "#1b2856" : "#9e9e9e",
-                      }}
-                      title={t.assignee_name || "Unassigned"}
-                    >
-                      {t.assignee_name ? initials(t.assignee_name, null) : "?"}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.starBtn}
-                      aria-label={t.is_starred ? "Unstar" : "Star"}
-                      onClick={(e) => toggleStar(e, t)}
-                    >
-                      {t.is_starred ? "★" : "☆"}
-                    </button>
-                  </div>
-                </div>
-              </button>
-            ))}
-            {tickets.length === 0 && !listLoading ? (
-              <div className={styles.emptyDetail}>No tickets match.</div>
-            ) : null}
-            {offset < total ? (
-              <div className={styles.loadMore}>
-                <button type="button" onClick={() => loadList(offset, true)} disabled={listLoading}>
-                  {listLoading ? "Loading…" : "Load more"}
-                </button>
-              </div>
-            ) : null}
-          </div>
+            <InboxList
+              list={list}
+              selectedThreadId={selectedThreadId}
+              onSelect={actions.openThread}
+              onToggleStar={(e, t) => {
+                e.stopPropagation();
+                void actions.toggleStar(t);
+              }}
+            />
+          </ErrorBoundary>
         </div>
 
-        <div className={styles.detailPanel}>
-          <div className={styles.detailBack}>
-            <button type="button" className={styles.backBtn} onClick={closeMobileDetail}>
-              ← Back
-            </button>
-          </div>
-          {!selectedId || !detail ? (
-            <div className={styles.detailScrollEmpty}>
-              <p className={styles.emptyDetail}>{detailLoading ? "Loading…" : "Select a ticket to view details"}</p>
-            </div>
-          ) : (
-            <div className={styles.detailBodyColumn}>
-              <div className={styles.detailHeaderSection}>
-                <div className={styles.detailHead}>
-                  <h2>{detail.subject || "(No subject)"}</h2>
-                  <p className={styles.metaLine}>
-                    From: {detail.sender_name || "—"} &lt;{detail.sender_email || ""}&gt;
-                  </p>
-                  <p className={styles.metaLine}>To: {detail.recipient_emails || "—"}</p>
-                  <p className={styles.metaLineReceived}>
-                    <span>
-                      Received:{" "}
-                      {detail.received_at ? new Date(detail.received_at).toLocaleString() : "—"}
-                    </span>
-                    {slaBadgeEl}
-                  </p>
-                  <p className={styles.receivedInLine}>
-                    Received in:{" "}
-                    {(detail.mailbox_display_name || detail.mailbox_email || "").trim() || "—"}
-                  </p>
-                  <button
-                    type="button"
-                    className={styles.starBtn}
-                    style={{ fontSize: "1.25rem" }}
-                    onClick={(e) => toggleStar(e, detail)}
-                  >
-                    {detail.is_starred ? "★ Starred" : "☆ Star"}
-                  </button>
-                </div>
+        <SaveViewModal
+          open={saveViewOpen}
+          isAdmin={isAdmin}
+          defaultName=""
+          initialFilters={captureCurrentFilters()}
+          onClose={() => setSaveViewOpen(false)}
+          onSave={handleSaveView}
+        />
 
-                {detail.ai_summary ? (
-                  <div className={styles.aiBox}>
-                    <strong>AI summary:</strong> {detail.ai_summary}
-                    <div className={styles.chips}>
-                      {detail.linked_property_name ? (
-                        <span className={styles.chip}>Property: {detail.linked_property_name}</span>
-                      ) : null}
-                      {detail.linked_tenant_name ? (
-                        <span className={styles.chip}>Tenant: {detail.linked_tenant_name}</span>
-                      ) : null}
-                      {detail.linked_owner_name ? (
-                        <span className={styles.chip}>Owner: {detail.linked_owner_name}</span>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className={styles.actionBar}>
-                <label>
-                  Status
-                  <select
-                    value={detail.status}
-                    disabled={!canMetaMailbox}
-                    onChange={(e) => updateTicket({ status: e.target.value })}
-                  >
-                    <option value="open">Open</option>
-                    <option value="in_progress">In progress</option>
-                    <option value="waiting">Waiting</option>
-                    <option value="resolved">Resolved</option>
-                  </select>
-                </label>
-                <label>
-                  Assigned to
-                  <select
-                    value={detail.assigned_to ?? ""}
-                    disabled={!canMetaMailbox}
-                    onChange={(e) =>
-                      updateTicket({
-                        assignedTo: e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {teamUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Priority
-                  <select
-                    value={priorityTier(detail.priority)}
-                    disabled={!canMetaMailbox}
-                    onChange={(e) => updateTicket({ priority: Number(e.target.value) })}
-                  >
-                    <option value={95}>Urgent</option>
-                    <option value={75}>High</option>
-                    <option value={50}>Normal</option>
-                    <option value={25}>Low</option>
-                  </select>
-                </label>
-                <label>
-                  Category
-                  <select
-                    value={detail.category}
-                    disabled={!canMetaMailbox}
-                    onChange={(e) => updateTicket({ category: e.target.value })}
-                  >
-                    {[
-                      "maintenance",
-                      "leasing",
-                      "accounting",
-                      "owner",
-                      "tenant",
-                      "vendor",
-                      "legal",
-                      "internal",
-                      "marketing",
-                      "other",
-                    ].map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                </div>
-              </div>
-
-              <div className={styles.detailEmailScroll}>
-                <div
-                  className={styles.bodyHtml}
-                  dangerouslySetInnerHTML={{
-                    __html: sanitizeEmailHtml(detail.body_html || "<p>(No body)</p>"),
-                  }}
-                />
-
-                {responses.length > 0 ? (
-                  <div className={styles.threadBlock}>
-                    <h3 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>Thread & notes</h3>
-                    {responses.map((r) => (
-                      <div key={r.id} className={styles.threadItem}>
-                        <div className={styles.threadMeta}>
-                          {r.response_type === "reply" ? "Reply" : "Note"} · {r.responded_by_name || "—"} ·{" "}
-                          {new Date(r.created_at).toLocaleString()}
-                        </div>
-                        <div>{r.body}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className={styles.composeDock}>
-                <div className={`${styles.compose} ${aiDraftBusy ? styles.composeBusy : ""}`}>
-                  {aiDraftBusy ? (
-                    <div className={styles.aiDraftOverlay}>
-                      <span className={styles.spinner} aria-hidden />
-                      <span>{aiLoadingMessage || "Drafting…"}</span>
-                    </div>
-                  ) : null}
-                  {!canReplyMailbox ? (
-                    <p className={styles.readOnlyReplyNote}>
-                      You have read-only access to this mailbox. You can add internal notes below; replies are
-                      disabled.
-                    </p>
-                  ) : null}
-                  <div className={styles.tabs}>
-                    {canReplyMailbox ? (
-                      <button
-                        type="button"
-                        className={`${styles.tabBtn} ${composeMode === "reply" ? styles.active : ""}`}
-                        onClick={() => {
-                          setComposeMode("reply");
-                          setComposeExpanded(false);
-                        }}
-                      >
-                        Reply
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={`${styles.tabBtn} ${composeMode === "note" ? styles.active : ""}`}
-                      onClick={() => {
-                        setComposeMode("note");
-                        setComposeExpanded(false);
-                      }}
-                    >
-                      Internal note
-                    </button>
-                    {canReplyMailbox ? (
-                      <button
-                        type="button"
-                        className={styles.aiDraftTabBtn}
-                        onClick={() => void runAiDraft()}
-                        disabled={aiDraftBusy || !selectedId}
-                      >
-                        ✨ AI Draft Reply
-                      </button>
-                    ) : null}
-                  </div>
-                  {showAiDraftBanner && composeMode === "reply" ? (
-                    <div className={styles.aiDraftBanner}>
-                      <span>AI-drafted response — review and edit before sending</span>
-                      <button type="button" className={styles.aiDraftDismiss} onClick={() => void dismissAiDraft()}>
-                        Dismiss
-                      </button>
-                    </div>
-                  ) : null}
-                  {showAiDraftBanner && composeMode === "reply" && aiContextUsed ? (
-                    <details className={styles.contextUsed}>
-                      <summary>Context used</summary>
-                      {hasNoAiContext(aiContextUsed) ? (
-                        <p className={styles.contextUsedBody}>No matching context found</p>
-                      ) : (
-                        <ul className={styles.contextUsedList}>
-                          <li>
-                            Property:{" "}
-                            {aiContextUsed.property
-                              ? `✓ ${aiContextUsed.propertyName || detail.linked_property_name || "matched"}`
-                              : "—"}
-                          </li>
-                          <li>
-                            Tenant:{" "}
-                            {aiContextUsed.tenant
-                              ? `✓ ${aiContextUsed.tenantName || detail.linked_tenant_name || "matched"}`
-                              : "—"}
-                          </li>
-                          <li>
-                            Owner:{" "}
-                            {aiContextUsed.owner
-                              ? `✓ ${aiContextUsed.ownerName || detail.linked_owner_name || "matched"}`
-                              : "—"}
-                          </li>
-                          <li>Work orders: {aiContextUsed.workOrders ?? 0} open</li>
-                          <li>
-                            Delinquency:{" "}
-                            {aiContextUsed.delinquency != null && aiContextUsed.delinquency !== ""
-                              ? aiContextUsed.delinquency
-                              : "—"}
-                          </li>
-                          <li>LeadSimple: {aiContextUsed.leadsimple ? "✓ open deals/tasks matched" : "—"}</li>
-                        </ul>
-                      )}
-                    </details>
-                  ) : null}
-                  {composeMode === "reply" && canReplyMailbox && (detail.reply_from_email || detail.mailbox_email) ? (
-                    <p className={styles.replyFromLine}>
-                      Replying from: {(detail.reply_from_email || detail.mailbox_email || "").trim()}
-                    </p>
-                  ) : null}
-                  {composeMode === "reply" && canReplyMailbox ? (
-                    <div className={styles.sigSelectRow}>
-                      <label className={styles.sigSelectLabel} htmlFor="inbox-signature-select">
-                        Signature:
-                      </label>
-                      <select
-                        id="inbox-signature-select"
-                        className={styles.sigSelect}
-                        value={
-                          selectedSigId === null
-                            ? ""
-                            : selectedSigId === "none"
-                              ? "none"
-                              : String(selectedSigId)
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === "none") setSelectedSigId("none");
-                          else setSelectedSigId(Number(v));
-                        }}
-                        aria-label="Email signature"
-                      >
-                        {selectedSigId === null ? (
-                          <option value="" disabled>
-                            Loading…
-                          </option>
-                        ) : null}
-                        {signatures.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                            {s.isDefault ? " (default)" : ""}
-                          </option>
-                        ))}
-                        <option value="none">None</option>
-                      </select>
-                    </div>
-                  ) : null}
-                  <textarea
-                    className={!composeExpanded ? styles.composeCollapsed : undefined}
-                    value={composeBody}
-                    onChange={(e) => {
-                      setComposeBody(e.target.value);
-                      if (e.target.value.length > 0) setComposeExpanded(true);
-                    }}
-                    onFocus={() => setComposeExpanded(true)}
-                    placeholder={
-                      composeMode === "reply" ? "Reply…" : "Internal note (not emailed)…"
-                    }
-                    rows={composeExpanded ? 6 : 1}
-                    aria-label={composeMode === "reply" ? "Reply" : "Internal note"}
-                  />
-                  {composeMode === "reply" && composeExpanded && selectedSigId !== "none" && selectedSigId !== null ? (
-                    (() => {
-                      const row = signatures.find((s) => s.id === selectedSigId);
-                      const sig = row?.signatureHtml?.trim();
-                      if (!sig) return null;
-                      return (
-                        <div className={styles.replySignaturePreview}>
-                          <div className={styles.replySigDivider} aria-hidden />
-                          <p className={styles.replySigDash}>--</p>
-                          <div
-                            className={styles.replySigRendered}
-                            dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(sig) }}
-                          />
-                        </div>
-                      );
-                    })()
-                  ) : null}
-                  {composeExpanded ? (
-                    <button
-                      type="button"
-                      className={styles.sendBtn}
-                      disabled={composeBusy || !composeBody.trim()}
-                      onClick={sendCompose}
-                    >
-                      {composeMode === "reply" ? "Send reply" : "Add note"}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <DetailPanelContainer
+          selectedThreadId={selectedThreadId}
+          detail={detail}
+          teamUsers={teamUsers}
+          slaView={slaView}
+          canMetaMailbox={canMetaMailbox}
+          canReplyMailbox={canMetaMailbox}
+          compose={compose}
+          aiDraft={aiDraft}
+          onCloseMobile={() => layout.setDetailOpen(false)}
+          onToggleStar={(t) => void actions.toggleStar(t)}
+          onUpdate={(patch) => void actions.update(patch)}
+          onRunAiDraft={() => void actions.runAiDraft()}
+          onDismissAiDraft={() => void actions.dismissAiDraft()}
+          onSend={() => void actions.send()}
+        />
       </div>
     </div>
   );

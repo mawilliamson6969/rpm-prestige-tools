@@ -15,21 +15,22 @@ const LS_COLLAPSED = "rpm-prestige-sidebar-collapsed";
 const LS_SUB = "rpm-prestige-sidebar-submenu";
 const MAX_PINNED = 5;
 
-type SubState = { dashboard: boolean; eos: boolean; operations: boolean };
+type SubState = { dashboard: boolean; eos: boolean; operations: boolean; agentHub: boolean };
 
 function readSub(): SubState {
-  if (typeof window === "undefined") return { dashboard: true, eos: false, operations: false };
+  if (typeof window === "undefined") return { dashboard: true, eos: false, operations: false, agentHub: false };
   try {
     const raw = localStorage.getItem(LS_SUB);
-    if (!raw) return { dashboard: true, eos: false, operations: false };
+    if (!raw) return { dashboard: true, eos: false, operations: false, agentHub: false };
     const j = JSON.parse(raw) as Partial<SubState>;
     return {
       dashboard: typeof j.dashboard === "boolean" ? j.dashboard : true,
       eos: typeof j.eos === "boolean" ? j.eos : false,
       operations: typeof j.operations === "boolean" ? j.operations : false,
+      agentHub: typeof j.agentHub === "boolean" ? j.agentHub : false,
     };
   } catch {
-    return { dashboard: true, eos: false, operations: false };
+    return { dashboard: true, eos: false, operations: false, agentHub: false };
   }
 }
 
@@ -69,8 +70,8 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const isMobile = narrow;
   const { prefs, update, saveNow, reset } = useLayoutPrefs();
 
-  const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false, operations: false });
-  const [flyout, setFlyout] = useState<null | "dashboard" | "eos" | "operations">(null);
+  const [subOpen, setSubOpen] = useState<SubState>({ dashboard: true, eos: false, operations: false, agentHub: false });
+  const [flyout, setFlyout] = useState<null | "dashboard" | "eos" | "operations" | "agentHub">(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [unread, setUnread] = useState<number | null>(null);
@@ -146,6 +147,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
   const agentsActive = pathname === "/agents" || pathname.startsWith("/agents/");
   const eosSectionActive = pathname.startsWith("/eos");
   const operationsSectionActive = pathname.startsWith("/operations");
+  const agentHubSectionActive = pathname === "/agent-hub" || pathname.startsWith("/agent-hub/");
 
   const showLabels = isMobile || !collapsed;
   const narrowColumn = !isMobile && collapsed;
@@ -196,6 +198,13 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     }
     persistSub({ ...subOpen, operations: !subOpen.operations });
   };
+  const toggleAgentHubSub = () => {
+    if (narrowColumn) {
+      setFlyout((f) => (f === "agentHub" ? null : "agentHub"));
+      return;
+    }
+    persistSub({ ...subOpen, agentHub: !subOpen.agentHub });
+  };
 
   const closeMobileIfNav = () => {
     if (isMobile) onMobileDrawerOpenChange(false);
@@ -221,6 +230,33 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         { href: "/eos/scorecards", label: "Individual Scorecards" },
         { href: "/eos/rocks", label: "Rocks" },
         { href: "/eos/l10", label: "L10 Meetings" },
+      ] as const,
+    []
+  );
+
+  const agentHubSubLinks = useMemo(
+    () =>
+      [
+        { href: "/agent-hub", label: "Dashboard" },
+        { href: "/agent-hub/insights", label: "Insights" },
+        { href: "/agent-hub/pipeline", label: "Pipeline" },
+        { href: "/agent-hub/approval-queue", label: "Approval Queue" },
+        { href: "/agent-hub/agents", label: "Agents" },
+        { href: "/agent-hub/owners", label: "Owners" },
+        { href: "/agent-hub/properties", label: "Properties" },
+        { href: "/agent-hub/brokerages", label: "Brokerages" },
+        { href: "/agent-hub/tasks", label: "Tasks" },
+        { href: "/agent-hub/automations", label: "Automations" },
+        { href: "/agent-hub/templates", label: "Templates" },
+        { href: "/agent-hub/print-queue", label: "Print Queue" },
+        { href: "/agent-hub/send-log", label: "Send Log" },
+        { href: "/agent-hub/replies", label: "Replies" },
+        { href: "/agent-hub/financials", label: "Financials" },
+        { href: "/agent-hub/leaderboard", label: "Leaderboard" },
+        { href: "/agent-hub/cohorts", label: "Cohorts" },
+        { href: "/agent-hub/market", label: "Market Data" },
+        { href: "/agent-hub/system-config", label: "System Config" },
+        { href: "/agent-hub/search", label: "Search" },
       ] as const,
     []
   );
@@ -327,7 +363,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
 
   /* ========== Render primary rows ========== */
 
-  const renderDropdownSub = (key: "dashboard" | "eos" | "operations") => {
+  const renderDropdownSub = (key: "dashboard" | "eos" | "operations" | "agentHub") => {
     if (!showLabels) return null;
     if (key === "dashboard" && subOpen.dashboard) {
       return (
@@ -393,6 +429,30 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
         </div>
       );
     }
+    if (key === "agentHub" && subOpen.agentHub) {
+      return (
+        <div className={styles.subWrap} style={{ maxHeight: 400 }}>
+          <div className={styles.subList}>
+            {agentHubSubLinks.map(({ href, label }) => {
+              const active =
+                href === "/agent-hub"
+                  ? pathname === "/agent-hub"
+                  : pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`${styles.subLink} ${active ? styles.subLinkActive : ""}`}
+                  onClick={closeMobileIfNav}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
     return null;
   };
 
@@ -400,11 +460,29 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
     const pinMark = opts.isPinnedDisplay ? <span className={styles.pinStar}>★</span> : null;
     if (item.type === "dropdown") {
       const activeCheck =
-        item.id === "dashboard" ? dashboardActive : item.id === "eos" ? eosSectionActive : operationsSectionActive;
+        item.id === "dashboard"
+          ? dashboardActive
+          : item.id === "eos"
+          ? eosSectionActive
+          : item.id === "agentHub"
+          ? agentHubSectionActive
+          : operationsSectionActive;
       const toggle =
-        item.id === "dashboard" ? toggleDashboardSub : item.id === "eos" ? toggleEosSub : toggleOperationsSub;
+        item.id === "dashboard"
+          ? toggleDashboardSub
+          : item.id === "eos"
+          ? toggleEosSub
+          : item.id === "agentHub"
+          ? toggleAgentHubSub
+          : toggleOperationsSub;
       const openState =
-        item.id === "dashboard" ? subOpen.dashboard : item.id === "eos" ? subOpen.eos : subOpen.operations;
+        item.id === "dashboard"
+          ? subOpen.dashboard
+          : item.id === "eos"
+          ? subOpen.eos
+          : item.id === "agentHub"
+          ? subOpen.agentHub
+          : subOpen.operations;
       return (
         <div key={`row-${item.id}`}>
           <button
@@ -426,7 +504,7 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
               </>
             ) : null}
           </button>
-          {renderDropdownSub(item.id as "dashboard" | "eos" | "operations")}
+          {renderDropdownSub(item.id as "dashboard" | "eos" | "operations" | "agentHub")}
         </div>
       );
     }

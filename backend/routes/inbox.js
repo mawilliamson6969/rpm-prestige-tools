@@ -1,5 +1,5 @@
 import { getPool } from "../lib/db.js";
-import { runEmailSyncOnce } from "../lib/inbox/email-sync.js";
+import { runEmailSyncOnce, syncConnection as syncConnectionDelta } from "../lib/inbox/email-delta-sync.js";
 import { sendTicketReply } from "../lib/inbox/email-send.js";
 import {
   assertInboxAdminOnConnection,
@@ -184,9 +184,13 @@ export async function getMicrosoftCallback(req, res) {
          ON CONFLICT (connection_id, user_id) DO UPDATE SET permission = 'admin'`,
         [connectionId, userId]
       );
+      // Grant admin inbox permission to anyone whose role grants 'all' (owner/admin),
+      // so the connection is manageable by every administrator from day one.
       await pool.query(
         `INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
-         SELECT $1, u.id, 'admin', $2 FROM users u WHERE lower(u.username) = 'mike'
+         SELECT $1, u.id, 'admin', $2
+         FROM users u
+         WHERE u.active = TRUE AND user_has_permission(u.id, 'all')
          ON CONFLICT (connection_id, user_id) DO NOTHING`,
         [connectionId, userId]
       );
@@ -206,13 +210,21 @@ export async function getInboxConnections(req, res) {
       `SELECT ec.id, ec.user_id, ec.email_address, ec.mailbox_type, ec.mailbox_email, ec.display_name,
         ec.is_active, ec.connected_at, ec.last_sync_at,
         ess.sync_status, ess.last_sync_at AS sync_last_at, ess.messages_synced, ess.error_log,
+        mss.last_synced_at AS delta_last_synced_at,
+        mss.last_success_at AS delta_last_success_at,
+        mss.last_error AS delta_last_error,
+        mss.last_error_at AS delta_last_error_at,
+        mss.messages_processed AS delta_messages_processed,
+        mss.full_sync_in_progress AS delta_full_sync_in_progress,
         ip.permission AS my_permission,
         (SELECT COUNT(*)::int FROM tickets t
          WHERE t.connection_id = ec.id AND t.is_read = false
-           AND t.status IN ('open','in_progress','waiting')) AS unread_count
+           AND t.status IN ('open','in_progress','waiting')
+           AND t.deleted_at IS NULL) AS unread_count
        FROM email_connections ec
        INNER JOIN inbox_permissions ip ON ip.connection_id = ec.id AND ip.user_id = $1
        LEFT JOIN email_sync_state ess ON ess.user_id = ec.user_id
+       LEFT JOIN mailbox_sync_state mss ON mss.connection_id = ec.id
        WHERE ec.is_active = true
        ORDER BY lower(COALESCE(ec.display_name, ec.mailbox_email, ec.email_address)), ec.id`,
       [req.user.id]
@@ -538,9 +550,22 @@ export async function postInboxTicketReply(req, res) {
       res.status(400).json({ error: "body is required." });
       return;
     }
-    await sendTicketReply({ ticketId: id, body, userId: req.user.id });
-    res.json({ ok: true });
+    const result = await sendTicketReply({ ticketId: id, body, userId: req.user.id });
+    res.json({ ok: true, response: result });
   } catch (e) {
+    if (e.code === "FORBIDDEN") {
+      res.status(403).json({ error: e.message });
+      return;
+    }
+    if (e.code === "SEND_FAILED") {
+      // Send failed at Graph but we have a tracked failed row — return 502
+      // so the caller can flag it to the user without losing the audit row.
+      res.status(502).json({
+        error: e.message || "Microsoft Graph rejected the message.",
+        responseId: e.responseId ?? null,
+      });
+      return;
+    }
     console.error(e);
     res.status(500).json({ error: e.message || "Could not send reply." });
   }
@@ -679,6 +704,39 @@ export async function postInboxSyncTrigger(req, res) {
     res.json({ ok: true, results });
   } catch (e) {
     console.error(e);
+    res.status(500).json({ error: e.message || "Sync failed." });
+  }
+}
+
+/**
+ * Manual per-mailbox sync. Lets a user with `read` (or higher) inbox
+ * permission on the connection re-pull just that mailbox.
+ */
+export async function postInboxConnectionSync(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid connection id." });
+      return;
+    }
+    const pool = getPool();
+    const perm = await getUserPermissionOnConnection(pool, req.user.id, id);
+    if (!permissionAtLeast(perm, "read")) {
+      res.status(403).json({ error: "You don't have access to this mailbox." });
+      return;
+    }
+    const { rows } = await pool.query(
+      `SELECT * FROM email_connections WHERE id = $1 AND is_active = true`,
+      [id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Mailbox not found." });
+      return;
+    }
+    const result = await syncConnectionDelta(rows[0]);
+    res.json({ ok: true, connectionId: id, ...result });
+  } catch (e) {
+    console.error("[inbox] manual sync failed", e.message || e);
     res.status(500).json({ error: e.message || "Sync failed." });
   }
 }
@@ -955,11 +1013,13 @@ export async function postInboxConnectionGrantTeam(req, res) {
     const pool = getPool();
     await assertInboxAdminOnConnection(pool, req.user.id, id);
     const permission = normalizeInboxPermission(req.body?.permission) || "read";
+    // "Grant team" = every active user whose role participates in inbox triage.
     await pool.query(
       `INSERT INTO inbox_permissions (connection_id, user_id, permission, granted_by)
        SELECT $1::int, u.id, $2::varchar, $3::int
        FROM users u
-       WHERE lower(u.username) = ANY(ARRAY['mike','lori','leslie','amanda','amelia']::text[])
+       WHERE u.active = TRUE
+         AND u.role IN ('owner', 'admin', 'csm', 'maintenance', 'operations')
        ON CONFLICT (connection_id, user_id) DO NOTHING`,
       [id, permission, req.user.id]
     );

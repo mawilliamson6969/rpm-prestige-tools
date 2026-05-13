@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getPool } from "../lib/db.js";
-import { signUserToken } from "../lib/auth.js";
+import { getUserPermissions, signUserToken } from "../lib/auth.js";
 
 export async function postLogin(req, res) {
   if (!process.env.JWT_SECRET?.trim()) {
@@ -23,7 +23,8 @@ export async function postLogin(req, res) {
   }
   try {
     const { rows } = await pool.query(
-      `SELECT id, username, password_hash, display_name, role, email FROM users WHERE lower(username) = $1`,
+      `SELECT id, username, password_hash, display_name, role, email, active
+       FROM users WHERE lower(username) = $1`,
       [username]
     );
     if (!rows.length) {
@@ -31,12 +32,20 @@ export async function postLogin(req, res) {
       return;
     }
     const row = rows[0];
+    if (row.active === false) {
+      res.status(401).json({ error: "Account is inactive." });
+      return;
+    }
     const ok = await bcrypt.compare(password, row.password_hash);
     if (!ok) {
       res.status(401).json({ error: "Invalid username or password." });
       return;
     }
     const token = signUserToken(row);
+    pool
+      .query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [row.id])
+      .catch(() => {});
+    const permissions = await getUserPermissions(row.id);
     res.json({
       token,
       user: {
@@ -44,6 +53,7 @@ export async function postLogin(req, res) {
         username: row.username,
         displayName: row.display_name,
         role: row.role,
+        permissions,
       },
     });
   } catch (e) {
@@ -52,13 +62,15 @@ export async function postLogin(req, res) {
   }
 }
 
-export function getMe(req, res) {
+export async function getMe(req, res) {
+  const permissions = await getUserPermissions(req.user.id);
   res.json({
     user: {
       id: req.user.id,
       username: req.user.username,
       displayName: req.user.displayName,
       role: req.user.role,
+      permissions,
     },
   });
 }

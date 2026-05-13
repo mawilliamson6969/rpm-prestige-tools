@@ -481,7 +481,6 @@ export async function putScorecardEntry(req, res) {
       res.status(400).json({ error: "Nothing to update." });
       return;
     }
-    vals.push(id);
     const { rows } = await pool.query(
       `UPDATE scorecard_entries SET ${updates.join(", ")}, entered_by = $${n++}, entered_at = NOW() WHERE id = $${n} RETURNING *`,
       [...vals, req.user.id, id]

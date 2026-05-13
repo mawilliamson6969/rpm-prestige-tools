@@ -123,7 +123,7 @@ export async function postDocument(req, res) {
     const owner =
       typeof body.owner === "string" && body.owner.trim()
         ? body.owner.trim()
-        : req.user?.displayName || req.user?.username || "Mike";
+        : req.user?.displayName || req.user?.username || "Unknown";
     const tags = parseTags(body.tags);
     const pinned = parseBool(body.pinned);
 

@@ -113,6 +113,13 @@ export async function ensureFormsSchema() {
       created_at TIMESTAMP DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS form_favorites (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      form_id INTEGER NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, form_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status, is_active);
     CREATE INDEX IF NOT EXISTS idx_forms_slug ON forms(slug);
     CREATE INDEX IF NOT EXISTS idx_forms_token ON forms(access_token);
@@ -121,5 +128,7 @@ export async function ensureFormsSchema() {
     CREATE INDEX IF NOT EXISTS idx_form_submissions_form ON form_submissions(form_id, submitted_at DESC);
     CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
     CREATE INDEX IF NOT EXISTS idx_form_analytics_form ON form_analytics(form_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_form_favorites_user ON form_favorites(user_id);
+    CREATE INDEX IF NOT EXISTS idx_form_favorites_form ON form_favorites(form_id);
   `);
 }

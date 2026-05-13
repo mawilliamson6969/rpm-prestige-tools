@@ -125,6 +125,7 @@ function mapForm(r) {
     ipLimit: r.ip_limit,
     requiresApproval: r.requires_approval,
     approvalConfig: r.approval_config,
+    favorited: r.favorited != null ? Boolean(r.favorited) : undefined,
   };
 }
 
@@ -211,29 +212,68 @@ export async function getForms(req, res) {
     const category = typeof req.query.category === "string" ? req.query.category.trim() : "";
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const includeArchived = req.query.includeArchived === "1" || req.query.includeArchived === "true";
-    if (!includeArchived) filters.push(`is_active = true`);
+    if (!includeArchived) filters.push(`f.is_active = true`);
     if (status && FORM_STATUSES.has(status)) {
-      filters.push(`status = $${n++}`);
+      filters.push(`f.status = $${n++}`);
       vals.push(status);
     }
     if (category) {
-      filters.push(`category = $${n++}`);
+      filters.push(`f.category = $${n++}`);
       vals.push(category);
     }
     if (search) {
-      filters.push(`(LOWER(name) LIKE $${n} OR LOWER(description) LIKE $${n})`);
+      filters.push(`(LOWER(f.name) LIKE $${n} OR LOWER(f.description) LIKE $${n})`);
       vals.push(`%${search.toLowerCase()}%`);
       n++;
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const uid = Number(req.user?.id);
+    const favSub =
+      Number.isFinite(uid) && uid > 0
+        ? `(EXISTS (SELECT 1 FROM form_favorites ff WHERE ff.form_id = f.id AND ff.user_id = $${n})) AS favorited`
+        : `false AS favorited`;
+    const favoritedVals = [...vals];
+    if (Number.isFinite(uid) && uid > 0) favoritedVals.push(uid);
     const { rows } = await pool.query(
-      `SELECT * FROM forms ${where} ORDER BY updated_at DESC`,
-      vals
+      `SELECT f.*, ${favSub}
+       FROM forms f
+       ${where}
+       ORDER BY f.updated_at DESC`,
+      favoritedVals
     );
     res.json({ forms: rows.map(mapForm) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load forms." });
+  }
+}
+
+/** POST /forms/:id/favorite — toggle favorite for current user */
+export async function postFormFavorite(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid form id." });
+  const userId = req.user?.id;
+  if (!Number.isFinite(userId)) return res.status(401).json({ error: "Authentication required." });
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(`SELECT id FROM forms WHERE id = $1`, [id]);
+    if (!rows.length) return res.status(404).json({ error: "Form not found." });
+    const { rows: fav } = await pool.query(
+      `SELECT 1 FROM form_favorites WHERE user_id = $1 AND form_id = $2`,
+      [userId, id]
+    );
+    if (fav.length) {
+      await pool.query(`DELETE FROM form_favorites WHERE user_id = $1 AND form_id = $2`, [
+        userId,
+        id,
+      ]);
+      return res.json({ favorited: false });
+    }
+    await pool.query(`INSERT INTO form_favorites (user_id, form_id) VALUES ($1, $2)`, [userId, id]);
+    res.json({ favorited: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not update favorite." });
   }
 }
 
