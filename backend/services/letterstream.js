@@ -148,11 +148,23 @@ async function postForm(fields, { multipartFile = null } = {}) {
   }
 }
 
+function stringifyMessage(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
 function parseSubmitResponse(resp) {
-  if (resp.__error) return { success: false, code: "NETWORK", message: resp.__error, data: null };
+  if (resp.__error) return { success: false, code: "NETWORK", message: stringifyMessage(resp.__error), data: null };
+  if (resp.__raw) {
+    // Non-JSON body — LetterStream returned HTML or unexpected stream
+    const snippet = (resp.text || "").slice(0, 200);
+    return { success: false, code: "PARSE", message: `Non-JSON response: ${snippet}`, data: null };
+  }
   const data = resp.data || {};
   const code = data.code != null ? String(data.code) : "UNKNOWN";
-  const message = data.details || data.message || "";
+  // `details` is normally a string but with debug=3 LetterStream can return an object — flatten it.
+  const message = stringifyMessage(data.details ?? data.message);
   const ok = ["-100", "-105", "-200"].includes(code);
   return { success: ok, code, message, data };
 }

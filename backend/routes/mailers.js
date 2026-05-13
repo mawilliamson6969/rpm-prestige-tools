@@ -70,6 +70,12 @@ function asUser(req) {
   return req.user?.displayName || req.user?.username || "System";
 }
 
+function errString(v, fallback) {
+  if (v == null) return fallback;
+  if (typeof v === "string") return v;
+  try { return JSON.stringify(v); } catch { return fallback; }
+}
+
 /* ============================ CRUD ============================ */
 
 export async function getMailers(req, res) {
@@ -316,7 +322,7 @@ export async function postMailerQuote(req, res) {
          VALUES ($1, 'quote_failed', $2, $3, 'system')`,
         [id, result.message || `LetterStream code ${result.code}`, JSON.stringify(result.data || {})]
       );
-      return res.status(502).json({ error: result.message || "Quote failed.", code: result.code });
+      return res.status(502).json({ error: errString(result.message, "Quote failed."), code: result.code });
     }
 
     const data = result.data || {};
@@ -374,7 +380,7 @@ export async function postMailerQuote(req, res) {
        VALUES ($1, 'quote_failed', $2, 'system')`,
       [id, e.message || "Quote failed"]
     ).catch(() => {});
-    res.status(502).json({ error: e.message || "Failed to quote mailer." });
+    res.status(502).json({ error: errString(e?.message, "Failed to quote mailer.") });
   }
 }
 
@@ -405,7 +411,7 @@ export async function postMailerConfirmSend(req, res) {
          VALUES ($1, 'send_failed', $2, $3, 'system')`,
         [id, result.message || `LetterStream code ${result.code}`, JSON.stringify(result.data || {})]
       );
-      return res.status(502).json({ error: result.message || "Send failed.", code: result.code });
+      return res.status(502).json({ error: errString(result.message, "Send failed."), code: result.code });
     }
 
     const newStatus = result.code === "-105" ? "sent_test" : "sent";
@@ -430,7 +436,7 @@ export async function postMailerConfirmSend(req, res) {
     res.json({ mailer: rowToMailer(updated[0]) });
   } catch (e) {
     console.error("[mailers] confirm-send", e);
-    res.status(502).json({ error: e.message || "Failed to confirm send." });
+    res.status(502).json({ error: errString(e?.message, "Failed to confirm send.") });
   }
 }
 
@@ -542,7 +548,7 @@ export async function getMailerTracking(req, res) {
 
     const result = await getTracking(mailer.provider_doc_id);
     if (!result.success) {
-      return res.status(502).json({ error: result.message || "Tracking lookup failed.", code: result.code });
+      return res.status(502).json({ error: errString(result.message, "Tracking lookup failed."), code: result.code });
     }
 
     const data = result.data || {};
@@ -613,7 +619,7 @@ export async function getMailerSignature(req, res) {
     if (!filePath || !fs.existsSync(filePath)) {
       const result = await getSignatureFile(mailer.provider_tracking_number);
       if (!result.success) {
-        return res.status(502).json({ error: result.message || "Could not retrieve signature.", code: result.code });
+        return res.status(502).json({ error: errString(result.message, "Could not retrieve signature."), code: result.code });
       }
       filePath = result.data.path;
       await pool.query(`UPDATE mailers SET signature_file_path = $1 WHERE id = $2`, [filePath, id]);
@@ -644,7 +650,7 @@ export async function getMailerAccountBalance(req, res) {
     }
     const result = await getAccountBalance();
     if (!result.success) {
-      return res.status(502).json({ error: result.message || "Could not load balance.", code: result.code });
+      return res.status(502).json({ error: errString(result.message, "Could not load balance."), code: result.code });
     }
     _balanceCache = { fetchedAt: now, data: { balance: result.data.balance, balanceCents: result.data.balanceCents } };
     res.json({ ..._balanceCache.data, cached: false });

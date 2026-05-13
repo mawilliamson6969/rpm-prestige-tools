@@ -408,6 +408,23 @@ export default function MailersPageClient() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
+  // Always render an alertable string — server may have wrapped an object in `error`
+  // (rare, but happens when LetterStream `details` is an object with debug=3).
+  function errorText(d: unknown, fallback: string): string {
+    if (d == null) return fallback;
+    if (typeof d === "string") return d;
+    if (typeof d === "object") {
+      const obj = d as Record<string, unknown>;
+      const candidate = obj.error ?? obj.message ?? obj.details;
+      if (typeof candidate === "string") return candidate;
+      if (candidate && typeof candidate === "object") {
+        try { return JSON.stringify(candidate); } catch { return fallback; }
+      }
+      try { return JSON.stringify(obj); } catch { return fallback; }
+    }
+    return fallback;
+  }
+
   // Two-step send flow: /quote gets price + authcode, /confirm-send releases the job.
   async function handleQuote(id: number) {
     setActionLoading(true);
@@ -419,8 +436,10 @@ export default function MailersPageClient() {
       });
       const d = await r.json();
       if (!r.ok) {
-        setQuoteError(d.error || "Failed to get quote.");
-        alert(d.error || "Failed to get quote.");
+        const msg = errorText(d, "Failed to get quote.");
+        console.error("[mailer quote]", r.status, d);
+        setQuoteError(msg);
+        alert(msg);
         return;
       }
       setSelectedMailer(d.mailer);
@@ -448,8 +467,10 @@ export default function MailersPageClient() {
       });
       const d = await r.json();
       if (!r.ok) {
-        setQuoteError(d.error || "Failed to send.");
-        alert(d.error || "Failed to send.");
+        const msg = errorText(d, "Failed to send.");
+        console.error("[mailer confirm-send]", r.status, d);
+        setQuoteError(msg);
+        alert(msg);
         return;
       }
       setSelectedMailer(d.mailer);
@@ -470,7 +491,8 @@ export default function MailersPageClient() {
       });
       const d = await r.json();
       if (!r.ok) {
-        alert(d.error || "Failed to refresh tracking.");
+        console.error("[mailer tracking]", r.status, d);
+        alert(errorText(d, "Failed to refresh tracking."));
         return;
       }
       setSelectedMailer(d.mailer);
@@ -489,7 +511,8 @@ export default function MailersPageClient() {
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        alert(d.error || "Signature not available yet.");
+        console.error("[mailer signature]", r.status, d);
+        alert(errorText(d, "Signature not available yet."));
         return;
       }
       const blob = await r.blob();
@@ -566,7 +589,7 @@ export default function MailersPageClient() {
         headers: authHeaders(),
       });
       const d = await r.json();
-      if (!r.ok) { alert(d.error || "Failed."); return; }
+      if (!r.ok) { alert(errorText(d, "Failed.")); return; }
       setSelectedMailer(d.mailer);
       await loadMailers();
     } finally {
@@ -582,7 +605,7 @@ export default function MailersPageClient() {
         headers: authHeaders(),
       });
       const d = await r.json();
-      if (!r.ok) { alert(d.error || "Failed."); return; }
+      if (!r.ok) { alert(errorText(d, "Failed.")); return; }
       setSelectedId(d.mailer.id);
       await loadMailers();
     } finally {
