@@ -4,7 +4,7 @@ import { getPool } from "../lib/db.js";
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v10-artifact-based-success";
+export const BACKEND_VERSION = "v11-verbose-error";
 import {
   submitMailer,
   confirmPreauth,
@@ -330,25 +330,29 @@ export async function postMailerQuote(req, res) {
     const result = await submitMailer(mailer, { pdfBuffer, pageCount, preauth: false });
 
     if (!result.success) {
+      // Build a verbose error message so the user-facing banner surfaces the
+      // actual shape LetterStream returned (otherwise we end up with an empty
+      // string when result.message resolves to '').
+      const dbg = {
+        code: result.code,
+        dataKeys: result.data ? Object.keys(result.data) : null,
+        dataPreview: JSON.stringify(result.data ?? null).slice(0, 800),
+      };
+      const verboseError =
+        result.message
+          ? `${result.message} | debug=${JSON.stringify(dbg)}`
+          : `Empty response from LetterStream | debug=${JSON.stringify(dbg)}`;
+
       await pool.query(
         `INSERT INTO mailer_events (mailer_id, event_type, event_detail, raw_payload, created_by)
          VALUES ($1, 'quote_failed', $2, $3, 'system')`,
-        [id, errString(result.message, `LetterStream code ${result.code}`).slice(0, 500), JSON.stringify(result.data || {})]
+        [id, verboseError.slice(0, 800), JSON.stringify(result.data || {})]
       );
-      // DIAGNOSTIC: include backendVersion + the raw LetterStream data so we can
-      // see exactly what made parseSubmitResponse return success=false.
       return res.status(502).json({
         backendVersion: BACKEND_VERSION,
-        error: errString(result.message, "Quote failed."),
+        error: verboseError,
         code: result.code,
-        debug: {
-          dataKeys: result.data ? Object.keys(result.data) : null,
-          dataCode: result.data?.code ?? null,
-          dataDetails: typeof result.data?.details === "string"
-            ? result.data.details.slice(0, 300)
-            : (result.data?.details ?? null),
-          dataCodeType: typeof result.data?.code,
-        },
+        debug: dbg,
       });
     }
 
