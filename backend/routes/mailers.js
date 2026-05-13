@@ -4,7 +4,7 @@ import { getPool } from "../lib/db.js";
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v11-verbose-error";
+export const BACKEND_VERSION = "v12-message-wrapper";
 import {
   submitMailer,
   confirmPreauth,

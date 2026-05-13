@@ -172,8 +172,10 @@ function parseSubmitResponse(resp) {
     (o.code != null || o.batch != null || o.doc != null || o.authcode != null ||
      (typeof o.tracking === "string" && o.tracking.length > 0));
 
+  // LetterStream's actual response shape is { apiid, message: { code, details, batch, doc } }.
+  // We also handle several other wrappers seen in their docs across endpoints.
   if (!isPayloadLike(data)) {
-    for (const k of ["details", "response", "result", "data", "body"]) {
+    for (const k of ["message", "details", "response", "result", "data", "body"]) {
       if (isPayloadLike(data?.[k])) { data = data[k]; break; }
     }
   }
