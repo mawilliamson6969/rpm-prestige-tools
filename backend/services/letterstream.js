@@ -163,25 +163,35 @@ function parseSubmitResponse(resp) {
   }
   let data = resp.data || {};
 
-  // LetterStream's JSON response can be wrapped under a `details` key when their
-  // SimpleXMLElement → JSON converter sees a <details> root in their XML.
-  // The real response then sits at data.details (with its own `code`, `details`,
-  // `batch`, `doc`, etc). Unwrap so the rest of our code can stay shape-agnostic.
-  if (data && typeof data === "object" && data.code == null
-      && data.details && typeof data.details === "object" && data.details.code != null) {
-    data = data.details;
+  // LetterStream's JSON response is sometimes wrapped under a `details` key
+  // (their SimpleXMLElement → JSON conversion). The real response sits inside.
+  // Try several unwrap candidates and pick the one with `code` or `doc`/`batch`/
+  // `tracking` set, since those are the meaningful payload fields.
+  const isPayloadLike = (o) =>
+    o && typeof o === "object" &&
+    (o.code != null || o.batch != null || o.doc != null || o.authcode != null ||
+     (typeof o.tracking === "string" && o.tracking.length > 0));
+
+  if (!isPayloadLike(data)) {
+    for (const k of ["details", "response", "result", "data", "body"]) {
+      if (isPayloadLike(data?.[k])) { data = data[k]; break; }
+    }
   }
 
   const code = data.code != null ? String(data.code) : "UNKNOWN";
-  // After unwrap, `data.details` is normally a string description like
-  // 'SuccessTestMode' / 'Successful preauth: …'. Fall back to data.message
-  // for older API versions.
   const message = stringifyMessage(
     typeof data.details === "string" ? data.details
     : typeof data.message === "string" ? data.message
     : ""
   );
-  const ok = ["-100", "-105", "-200"].includes(code);
+
+  // SUCCESS if either the code is one we recognize, OR LetterStream gave us
+  // back a real job/tracking/authcode artifact (which means the submit
+  // actually went through, regardless of what they put in `code`).
+  const hasArtifact = data.batch != null || data.doc != null || data.authcode != null;
+  const codeOk = ["-100", "-105", "-200"].includes(code);
+  const ok = codeOk || (hasArtifact && code !== "NETWORK" && code !== "PARSE" && !code.startsWith("-9"));
+
   return { success: ok, code, message, data };
 }
 
