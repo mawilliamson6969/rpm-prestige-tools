@@ -466,6 +466,8 @@ export async function ensureInboxSchema() {
 
   await migrateInboxContextNotes(p);
 
+  await migrateInboxSettingsTables(p);
+
   await migrateAutomationRules(p);
 
   await migrateInboxAttachments(p);
@@ -1205,6 +1207,116 @@ async function migrateInboxContextNotes(p) {
     `CREATE INDEX IF NOT EXISTS idx_thread_entity_notes_entity
        ON thread_entity_notes(entity_kind, entity_key, created_at DESC)`
   );
+}
+
+/**
+ * Phase 8: settings-screen tables (tag_definitions + canned_responses).
+ * Idempotent. Mirrored in migrations/034_inbox_settings_tables.sql.
+ */
+async function migrateInboxSettingsTables(p) {
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS tag_definitions (
+      id           SERIAL PRIMARY KEY,
+      name         TEXT NOT NULL,
+      color        TEXT NOT NULL DEFAULT '#6A737B',
+      description  TEXT,
+      created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (length(name) BETWEEN 1 AND 64)
+    )
+  `);
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_tag_definitions_name ON tag_definitions(name)`
+  );
+  await p.query(`
+    INSERT INTO tag_definitions (name, color, description) VALUES
+      ('urgent',         '#B32317', 'High-priority issue needing same-day attention'),
+      ('renewal',        '#1F8A5B', 'Lease renewal-related conversation'),
+      ('legal',          '#6A1B9A', 'Attorney involvement or eviction-adjacent'),
+      ('repair',         '#0098D0', 'Maintenance repair coordination'),
+      ('waiting:tenant', '#B45309', 'Waiting on tenant response'),
+      ('waiting:owner',  '#B45309', 'Waiting on owner response'),
+      ('waiting:vendor', '#B45309', 'Waiting on vendor response')
+    ON CONFLICT (name) DO NOTHING
+  `);
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS canned_responses (
+      id           SERIAL PRIMARY KEY,
+      name         TEXT NOT NULL,
+      shortcut     TEXT,
+      body         TEXT NOT NULL,
+      owner_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      is_shared    BOOLEAN NOT NULL DEFAULT FALSE,
+      use_count    INTEGER NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_canned_responses_owner ON canned_responses(owner_id)`);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_canned_responses_shared ON canned_responses(is_shared) WHERE is_shared = TRUE`
+  );
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_responses_shared_name
+       ON canned_responses(name) WHERE is_shared = TRUE`
+  );
+
+  // Seed three shared starter responses. Uses dollar-quoted bodies to
+  // keep newlines readable.
+  await p.query(`
+    INSERT INTO canned_responses (name, shortcut, body, owner_id, is_shared) VALUES
+      (
+        'Maintenance acknowledgement',
+        '/ack-maint',
+        $body$Hi,
+
+Thanks for letting us know. We've logged this and a vendor will reach out within 24 business hours to schedule the visit. If this is an emergency (water, gas, electrical, no heat in winter) please reply EMERGENCY and we will escalate immediately.
+
+Best,
+RPM Prestige$body$,
+        NULL,
+        TRUE
+      ),
+      (
+        'Owner statement explainer',
+        '/owner-statement',
+        $body$Hi,
+
+Your monthly statement has been posted in the owner portal under Reports → Statements. The most common questions we get:
+
+  • Reserves are held in the trust account for unexpected repairs.
+  • Management fees are debited at month close (always the same day).
+  • Maintenance >$300 is approved by you before work begins.
+
+Let me know if anything looks off and I'll loop in accounting.
+
+Best,
+RPM Prestige$body$,
+        NULL,
+        TRUE
+      ),
+      (
+        'Lease renewal cadence',
+        '/renewal-cadence',
+        $body$Hi,
+
+A quick note on the renewal timing for your lease:
+
+  • 90 days out: we send a renewal offer with the new rate.
+  • 60 days out: we confirm the lease terms.
+  • 30 days out: lease is signed or we list the property.
+
+We'll keep you in the loop at each step.
+
+Best,
+RPM Prestige$body$,
+        NULL,
+        TRUE
+      )
+    ON CONFLICT DO NOTHING
+  `);
 }
 
 /**

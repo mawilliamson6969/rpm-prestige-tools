@@ -5,7 +5,7 @@
 // (Reply / Internal note / Forward) layout from the design. Forward is
 // shown but disabled — no forward path exists yet.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./conversation.module.css";
 import { sanitizeEmailHtml } from "../../../lib/sanitizeEmailHtml";
 import type { ThreadRow } from "../../../hooks/inbox/types";
@@ -16,6 +16,10 @@ import type {
   AiSuggestionKind,
   UseAiSuggestions,
 } from "../../../hooks/inbox/useAiSuggestions";
+import type {
+  CannedResponse,
+  UseCannedResponses,
+} from "../../../hooks/inbox/useCannedResponses";
 import { hasNoAiContext } from "../inboxConstants";
 
 type Props = {
@@ -35,6 +39,8 @@ type Props = {
   aiSuggestions?: UseAiSuggestions | null;
   /** Phase 6: handler invoked when an AI-suggest chip is clicked. */
   onAiSuggestionAction?: (s: { label: string; kind: AiSuggestionKind }) => void;
+  /** Phase 8: canned responses available for insertion. */
+  canned?: UseCannedResponses | null;
 };
 
 export default function ConvoComposer({
@@ -49,6 +55,7 @@ export default function ConvoComposer({
   onAutomationActed,
   aiSuggestions = null,
   onAiSuggestionAction,
+  canned = null,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isNote = compose.mode === "note";
@@ -477,6 +484,17 @@ export default function ConvoComposer({
               </button>
             </>
           ) : null}
+          {canned && canReply ? (
+            <CannedResponsePicker
+              canned={canned}
+              onInsert={(c) => {
+                const sep = compose.body && !compose.body.endsWith("\n\n") ? "\n\n" : "";
+                compose.setBody(compose.body + sep + c.body);
+                compose.setExpanded(true);
+                canned.markUsed(c.id);
+              }}
+            />
+          ) : null}
         </div>
         <div className={styles.cvCompActions}>
           <button
@@ -699,4 +717,159 @@ function describeSuggestion(
     default:
       return action;
   }
+}
+
+function CannedResponsePicker({
+  canned,
+  onInsert,
+}: {
+  canned: UseCannedResponses;
+  onInsert: (c: CannedResponse) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className={styles.cvCompTool}
+        title="Insert canned response"
+        aria-label="Insert canned response"
+        onClick={() => setOpen((s) => !s)}
+      >
+        ⚡
+      </button>
+      {open ? (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 60,
+            minWidth: 280,
+            maxWidth: 360,
+            maxHeight: 320,
+            overflowY: "auto",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            boxShadow: "0 12px 32px rgba(15,23,42,0.12)",
+            padding: 4,
+            fontFamily: "var(--inbox-font-sans)",
+          }}
+        >
+          {canned.canned.length === 0 ? (
+            <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-3)" }}>
+              No canned responses yet. Add some in{" "}
+              <a
+                href="/inbox/settings"
+                style={{ color: "var(--accent)", textDecoration: "underline" }}
+              >
+                Settings → Canned responses
+              </a>
+              .
+            </div>
+          ) : (
+            canned.canned.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  onInsert(c);
+                  setOpen(false);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  padding: "8px 10px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {c.name}
+                  {c.shortcut ? (
+                    <span
+                      style={{
+                        fontFamily: "var(--inbox-font-mono), ui-monospace, monospace",
+                        fontSize: 10.5,
+                        padding: "1px 5px",
+                        borderRadius: 4,
+                        background: "var(--panel-2)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-3)",
+                      }}
+                    >
+                      {c.shortcut}
+                    </span>
+                  ) : null}
+                  {c.is_shared ? (
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        fontSize: 10,
+                        color: "var(--accent)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Shared
+                    </span>
+                  ) : null}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--text-3)",
+                    marginTop: 2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                  }}
+                >
+                  {c.body}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 }
