@@ -90,6 +90,8 @@ type Props = {
   aiSuggestions?: UseAiSuggestions | null;
   /** Phase 6: fire the chip's action. */
   onAiSuggestionAction?: (s: { label: string; kind: AiSuggestionKind }) => void;
+  /** Phase 8: canned responses for the composer's insert-from-library button. */
+  canned?: import("../../../hooks/inbox/useCannedResponses").UseCannedResponses | null;
 };
 
 type ConversationEntry =
@@ -141,6 +143,7 @@ export default function ConversationView({
   onSelectPastThread,
   aiSuggestions = null,
   onAiSuggestionAction,
+  canned = null,
 }: Props) {
   const t = detail.thread;
   const [assigneeOpen, setAssigneeOpen] = useState(false);
@@ -539,6 +542,7 @@ export default function ConversationView({
         onAutomationActed={onPatchThreadRefresh}
         aiSuggestions={aiSuggestions}
         onAiSuggestionAction={onAiSuggestionAction}
+        canned={canned}
       />
 
       {/* Popovers */}

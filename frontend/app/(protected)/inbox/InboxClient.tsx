@@ -20,6 +20,7 @@ import { useToast } from "../../../hooks/inbox/useToast";
 import useSLA from "../../../hooks/inbox/useSLA";
 import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
 import useAiSuggestions from "../../../hooks/inbox/useAiSuggestions";
+import useCannedResponses from "../../../hooks/inbox/useCannedResponses";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadAutomations from "../../../hooks/inbox/useThreadAutomations";
 import useBulkActions, { type BulkOp } from "../../../hooks/inbox/useBulkActions";
@@ -177,6 +178,8 @@ function InboxOrchestrator() {
   // Phase 6: right-hand context panel + AI suggest tab.
   const threadContext = useThreadContext(selectedThreadId);
   const aiSuggestions = useAiSuggestions();
+  // Phase 8: canned responses available to the composer.
+  const canned = useCannedResponses();
   const [showContextPanel, setShowContextPanel] = useState<boolean>(true);
   useEffect(() => {
     try {
@@ -609,6 +612,7 @@ function InboxOrchestrator() {
             onToggleContextPanel={onToggleContextPanel}
             onSelectPastThread={actions.openThread}
             aiSuggestions={aiSuggestions}
+            canned={canned}
             onAiSuggestionAction={onAiSuggestionAction}
           />
         </ErrorBoundary>

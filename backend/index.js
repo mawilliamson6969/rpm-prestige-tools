@@ -406,6 +406,17 @@ import {
 } from "./routes/inboxContext.js";
 import { postInboxThreadsBulk } from "./routes/inboxBulk.js";
 import {
+  deleteInboxCannedResponse,
+  deleteInboxTagDefinition,
+  getInboxCannedResponses,
+  getInboxTagDefinitions,
+  patchInboxCannedResponse,
+  patchInboxTagDefinition,
+  postInboxCannedResponse,
+  postInboxCannedResponseUsed,
+  postInboxTagDefinition,
+} from "./routes/inboxSettings.js";
+import {
   getInboxAttachmentDownload,
   getInboxAttachmentPreview,
   inboxAttachmentUpload,
@@ -1360,6 +1371,17 @@ app.post(
 
 // Phase 7 — bulk triage on threads.
 app.post("/inbox/threads/bulk", requireAuth, postInboxThreadsBulk);
+
+// Phase 8 — settings: tag definitions + canned responses.
+app.get("/inbox/tag-definitions", requireAuth, getInboxTagDefinitions);
+app.post("/inbox/tag-definitions", requireAuth, postInboxTagDefinition);
+app.patch("/inbox/tag-definitions/:id", requireAuth, patchInboxTagDefinition);
+app.delete("/inbox/tag-definitions/:id", requireAuth, deleteInboxTagDefinition);
+app.get("/inbox/canned-responses", requireAuth, getInboxCannedResponses);
+app.post("/inbox/canned-responses", requireAuth, postInboxCannedResponse);
+app.patch("/inbox/canned-responses/:id", requireAuth, patchInboxCannedResponse);
+app.delete("/inbox/canned-responses/:id", requireAuth, deleteInboxCannedResponse);
+app.post("/inbox/canned-responses/:id/used", requireAuth, postInboxCannedResponseUsed);
 
 // Phase 5 attachments. Download + preview accept ?token= so plain
 // <a download> + <img src> work without bespoke client fetch logic.

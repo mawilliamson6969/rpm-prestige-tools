@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import styles from "./inbox-shell.module.css";
 import { useInboxShell, type InboxSection } from "./InboxShellContext";
@@ -367,16 +367,15 @@ export default function InboxSidebar() {
             onClick: row.onClick,
           })
         )}
-        {userViews.map((v) =>
-          renderItem({
-            sectionId: "views",
-            label: v.name,
-            icon: <FolderIcon size={16} />,
-            count: v.open_count ?? null,
-            active: isViewActive(v.id),
-            onClick: () => goSection({ kind: "view", viewId: v.id }),
-          })
-        )}
+        {userViews.length ? (
+          <UserViewRows
+            views={userViews}
+            collapsed={collapsed}
+            isActive={isViewActive}
+            onSelect={(id) => goSection({ kind: "view", viewId: id })}
+            savedViews={savedViews}
+          />
+        ) : null}
 
         {sectionHd("Tools")}
         {renderItem({
@@ -442,5 +441,344 @@ export default function InboxSidebar() {
         </button>
       </div>
     </aside>
+  );
+}
+
+/* ────────────────────── User-saved views w/ DnD + context menu ──────────────────────
+ *
+ * Renders the user-created saved views (the "+ Save view" stuff). Drag handle
+ * on hover reorders via savedViews.update({position}). Right-click opens a
+ * small context menu: Rename, Share/Make personal, Delete.
+ */
+
+function UserViewRows({
+  views,
+  collapsed,
+  isActive,
+  onSelect,
+  savedViews,
+}: {
+  views: SavedView[];
+  collapsed: boolean;
+  isActive: (id: number) => boolean;
+  onSelect: (id: number) => void;
+  savedViews: ReturnType<typeof import("../../../hooks/inbox/useSavedViews").default>;
+}) {
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{ view: SavedView; x: number; y: number } | null>(null);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  // Close the context menu on outside click / Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const onClick = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  const onDrop = useCallback(
+    async (fromId: number, toId: number) => {
+      if (fromId === toId) return;
+      const fromIdx = views.findIndex((v) => v.id === fromId);
+      const toIdx = views.findIndex((v) => v.id === toId);
+      if (fromIdx < 0 || toIdx < 0) return;
+      // Compute the new linear order, then PATCH each affected row's
+      // position with its new index. Cheap for the handful of views a
+      // user has; on dozens we'd batch.
+      const next = [...views];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      const updates = next.map((v, i) =>
+        v.position !== i ? savedViews.update(v.id, { position: i }) : null
+      );
+      await Promise.all(updates.filter(Boolean) as Promise<unknown>[]);
+      void savedViews.refetch();
+    },
+    [savedViews, views]
+  );
+
+  return (
+    <>
+      {views.map((v) => (
+        <UserViewRow
+          key={v.id}
+          view={v}
+          collapsed={collapsed}
+          active={isActive(v.id)}
+          dragging={dragId === v.id}
+          dragOver={overId === v.id}
+          renaming={renamingId === v.id}
+          renameDraft={renameDraft}
+          onRenameChange={setRenameDraft}
+          onRenameCommit={async () => {
+            const next = renameDraft.trim();
+            setRenamingId(null);
+            if (!next || next === v.name) return;
+            await savedViews.update(v.id, { name: next });
+          }}
+          onRenameCancel={() => setRenamingId(null)}
+          onSelect={() => onSelect(v.id)}
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(v.id));
+            setDragId(v.id);
+          }}
+          onDragOver={(e) => {
+            if (dragId && dragId !== v.id) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setOverId(v.id);
+            }
+          }}
+          onDragLeave={() => {
+            if (overId === v.id) setOverId(null);
+          }}
+          onDropRow={(e) => {
+            e.preventDefault();
+            const fromIdRaw = e.dataTransfer.getData("text/plain");
+            const fromId = Number(fromIdRaw);
+            setDragId(null);
+            setOverId(null);
+            if (Number.isFinite(fromId)) void onDrop(fromId, v.id);
+          }}
+          onDragEnd={() => {
+            setDragId(null);
+            setOverId(null);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ view: v, x: e.clientX, y: e.clientY });
+          }}
+        />
+      ))}
+
+      {menu ? (
+        <ViewContextMenu
+          view={menu.view}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={() => {
+            setRenameDraft(menu.view.name);
+            setRenamingId(menu.view.id);
+            setMenu(null);
+          }}
+          onToggleShare={async () => {
+            setMenu(null);
+            await savedViews.update(menu.view.id, { is_shared: !menu.view.is_shared });
+          }}
+          onDelete={async () => {
+            setMenu(null);
+            if (!window.confirm(`Delete view "${menu.view.name}"?`)) return;
+            await savedViews.remove(menu.view.id);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function UserViewRow(props: {
+  view: SavedView;
+  collapsed: boolean;
+  active: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  renaming: boolean;
+  renameDraft: string;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  onSelect: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDropRow: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}) {
+  const {
+    view: v,
+    collapsed,
+    active,
+    dragging,
+    dragOver,
+    renaming,
+    renameDraft,
+    onRenameChange,
+    onRenameCommit,
+    onRenameCancel,
+    onSelect,
+    onDragStart,
+    onDragOver,
+    onDragLeave,
+    onDropRow,
+    onDragEnd,
+    onContextMenu,
+  } = props;
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (renaming) inputRef.current?.focus();
+  }, [renaming]);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        opacity: dragging ? 0.5 : 1,
+        borderTop: dragOver ? "2px solid var(--accent)" : "2px solid transparent",
+      }}
+      onContextMenu={onContextMenu}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDropRow}
+    >
+      {renaming && !collapsed ? (
+        <input
+          ref={inputRef}
+          className={styles.sbItem}
+          style={{ paddingLeft: 30, fontWeight: 550 }}
+          value={renameDraft}
+          onChange={(e) => onRenameChange(e.target.value)}
+          onBlur={onRenameCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onRenameCommit();
+            } else if (e.key === "Escape") {
+              onRenameCancel();
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className={styles.sbItem}
+          data-active={active ? "true" : "false"}
+          onClick={onSelect}
+          draggable={!collapsed}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          title={collapsed ? v.name : "Drag to reorder · right-click for options"}
+        >
+          {active ? <span className={styles.sbBar} aria-hidden /> : null}
+          <span className={styles.sbIconWrap}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M3 7a2 2 0 0 1 2-2h4.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          {!collapsed ? <span className={styles.sbLabel}>{v.name}</span> : null}
+          {!collapsed && v.open_count != null ? (
+            <span className={styles.sbMeta}>
+              <span className={styles.sbCount}>{v.open_count}</span>
+            </span>
+          ) : null}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ViewContextMenu({
+  view,
+  x,
+  y,
+  onClose,
+  onRename,
+  onToggleShare,
+  onDelete,
+}: {
+  view: SavedView;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onRename: () => void;
+  onToggleShare: () => void;
+  onDelete: () => void;
+}) {
+  // Clamp to viewport so the menu doesn't render off the right edge.
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 180);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : 800) - 200);
+  void onClose;
+  return (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        left,
+        top,
+        zIndex: 100,
+        minWidth: 180,
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        boxShadow: "0 8px 24px rgba(15,23,42,0.12)",
+        padding: 4,
+        fontFamily: "var(--inbox-font-sans)",
+      }}
+    >
+      <MenuItem label="Rename" onClick={onRename} />
+      <MenuItem
+        label={view.is_shared ? "Make personal" : "Share with team"}
+        onClick={onToggleShare}
+      />
+      <MenuItem label="Edit filters…" onClick={() => alert("Edit-filters modal lands in a follow-up. For now, navigate to the view and re-save with the new filters.")} />
+      <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+      <MenuItem label="Delete" onClick={onDelete} danger />
+    </div>
+  );
+}
+
+function MenuItem({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        width: "100%",
+        padding: "7px 10px",
+        border: "none",
+        background: "transparent",
+        color: danger ? "#B32317" : "var(--text-2)",
+        fontSize: 12.5,
+        fontWeight: 500,
+        textAlign: "left",
+        borderRadius: 6,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = danger ? "rgba(179,35,23,0.08)" : "var(--hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {label}
+    </button>
   );
 }
