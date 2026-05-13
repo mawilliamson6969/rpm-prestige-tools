@@ -386,6 +386,7 @@ import {
   postInboxThreadAiSuggestions,
   postInboxThreadNote,
 } from "./routes/inboxContext.js";
+import { postInboxThreadsBulk } from "./routes/inboxBulk.js";
 import {
   getInboxAttachmentDownload,
   getInboxAttachmentPreview,
@@ -1338,6 +1339,9 @@ app.post(
   requireAuth,
   postInboxThreadAiSuggestions
 );
+
+// Phase 7 — bulk triage on threads.
+app.post("/inbox/threads/bulk", requireAuth, postInboxThreadsBulk);
 
 // Phase 5 attachments. Download + preview accept ?token= so plain
 // <a download> + <img src> work without bespoke client fetch logic.

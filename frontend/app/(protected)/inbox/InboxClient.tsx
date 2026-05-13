@@ -22,6 +22,7 @@ import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
 import useAiSuggestions from "../../../hooks/inbox/useAiSuggestions";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadAutomations from "../../../hooks/inbox/useThreadAutomations";
+import useBulkActions, { type BulkOp } from "../../../hooks/inbox/useBulkActions";
 import useThreadContext from "../../../hooks/inbox/useThreadContext";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
@@ -170,6 +171,9 @@ function InboxOrchestrator() {
   const slaView = useSLA(detail.thread);
   // Phase 4: pending suggested actions + recent auto firings on this thread.
   const automations = useThreadAutomations(selectedThreadId);
+  // Phase 7: bulk-action plumbing for the list.
+  const bulk = useBulkActions(list);
+  const [bulkPopover, setBulkPopover] = useState<null | "assign" | "status" | "tag" | "snooze">(null);
   // Phase 6: right-hand context panel + AI suggest tab.
   const threadContext = useThreadContext(selectedThreadId);
   const aiSuggestions = useAiSuggestions();
@@ -199,6 +203,60 @@ function InboxOrchestrator() {
     aiSuggestions.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedThreadId]);
+
+  // Phase 7: bulk-action chooser. Some ops fire immediately (Close,
+  // Reopen, mark read/unread); some open a popover for parameter entry
+  // (Assign / Status / Tag / Snooze).
+  const runBulkOp = useCallback(
+    async (op: BulkOp) => {
+      const r = await bulk.runBulk(op);
+      if (r.ok) {
+        toast.push({
+          variant: "success",
+          message: `${r.updated ?? 0} conversation${r.updated === 1 ? "" : "s"} updated.`,
+        });
+        bulk.setBulkMode(false);
+      } else if (r.error) {
+        toast.push({ variant: "error", message: r.error });
+      }
+    },
+    [bulk, toast]
+  );
+
+  const onBulkActionClick = useCallback(
+    (action: import("../../../components/inbox/conversation/ConversationList").BulkActionKey) => {
+      if (action === "close") {
+        void runBulkOp({ op: "close" });
+        return;
+      }
+      if (action === "reopen") {
+        void runBulkOp({ op: "reopen" });
+        return;
+      }
+      if (action === "mark_read") {
+        void runBulkOp({ op: "mark_read" });
+        return;
+      }
+      if (action === "mark_unread") {
+        void runBulkOp({ op: "mark_unread" });
+        return;
+      }
+      // assign / status / tag / snooze / more → open a popover.
+      if (action === "more") {
+        // For now "more" just exposes mark-read and reopen as a quick menu.
+        // Cheapest implementation: cycle through using browser confirm.
+        const choice = window.prompt(
+          "More bulk actions:\n  1) Mark as read\n  2) Mark as unread\n  3) Reopen\nEnter 1, 2, or 3:"
+        );
+        if (choice?.trim() === "1") void runBulkOp({ op: "mark_read" });
+        else if (choice?.trim() === "2") void runBulkOp({ op: "mark_unread" });
+        else if (choice?.trim() === "3") void runBulkOp({ op: "reopen" });
+        return;
+      }
+      setBulkPopover(action);
+    },
+    [runBulkOp]
+  );
 
   const onAiSuggestionAction = useCallback(
     (s: { label: string; kind: "task" | "work_order" | "sms" | "checklist" | "info" }) => {
@@ -493,8 +551,23 @@ function InboxOrchestrator() {
             }}
             density={density}
             onDensityChange={setDensity}
+            bulk={bulk}
+            onBulkActionClick={onBulkActionClick}
           />
         </ErrorBoundary>
+
+        {bulkPopover ? (
+          <BulkActionPopover
+            kind={bulkPopover}
+            count={bulk.selectedCount}
+            teamUsers={teamUsers}
+            onClose={() => setBulkPopover(null)}
+            onSubmit={async (payload) => {
+              setBulkPopover(null);
+              await runBulkOp(payload);
+            }}
+          />
+        ) : null}
 
         <SaveViewModal
           open={saveViewOpen}
@@ -541,5 +614,273 @@ function InboxOrchestrator() {
         </ErrorBoundary>
       </div>
     </div>
+  );
+}
+
+/* ────────────────────── Bulk action popover ────────────────────── */
+
+const SUGGESTED_BULK_TAGS = ["urgent", "renewal", "legal", "repair", "waiting:tenant", "waiting:owner"];
+
+function BulkActionPopover({
+  kind,
+  count,
+  teamUsers,
+  onClose,
+  onSubmit,
+}: {
+  kind: "assign" | "status" | "tag" | "snooze";
+  count: number;
+  teamUsers: ReturnType<typeof useTeamUsers>;
+  onClose: () => void;
+  onSubmit: (op: BulkOp) => Promise<void> | void;
+}) {
+  const [tagValue, setTagValue] = useState("");
+  const [tagMode, setTagMode] = useState<"add" | "remove">("add");
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.35)",
+        zIndex: 100,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "12vh",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 360,
+          maxWidth: "90vw",
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          boxShadow: "0 16px 48px rgba(15,23,42,0.18)",
+          overflow: "hidden",
+          fontFamily: "var(--inbox-font-sans)",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "baseline",
+            gap: 8,
+          }}
+        >
+          <strong style={{ fontSize: 14, color: "var(--text)" }}>
+            {kind === "assign"
+              ? "Assign to…"
+              : kind === "status"
+                ? "Set status…"
+                : kind === "tag"
+                  ? "Tag conversations…"
+                  : "Snooze conversations…"}
+          </strong>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+            {count} selected
+          </span>
+        </div>
+
+        <div style={{ padding: 12 }}>
+          {kind === "assign" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <PopoverRow
+                label="Unassigned"
+                onClick={() => void onSubmit({ op: "assign", assignee_id: null })}
+              />
+              {teamUsers.teamUsers.map((u) => (
+                <PopoverRow
+                  key={u.id}
+                  label={u.displayName}
+                  onClick={() => void onSubmit({ op: "assign", assignee_id: u.id })}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {kind === "status" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <PopoverRow label="Open" onClick={() => void onSubmit({ op: "set_status", status: "open" })} />
+              <PopoverRow label="Snoozed" onClick={() => void onSubmit({ op: "set_status", status: "snoozed" })} />
+              <PopoverRow label="Closed" onClick={() => void onSubmit({ op: "set_status", status: "closed" })} />
+            </div>
+          ) : null}
+
+          {kind === "snooze" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {[
+                { label: "1 hour", hours: 1 },
+                { label: "3 hours", hours: 3 },
+                { label: "Tomorrow morning", hours: 16, alignToHour: 8 },
+                { label: "Next Monday", hours: 24 * 7, alignToHour: 8 },
+              ].map((opt) => (
+                <PopoverRow
+                  key={opt.label}
+                  label={opt.label}
+                  onClick={() => {
+                    const d = new Date();
+                    d.setMilliseconds(0);
+                    d.setSeconds(0);
+                    if (opt.alignToHour != null) d.setHours(opt.alignToHour, 0, 0, 0);
+                    d.setTime(d.getTime() + opt.hours * 60 * 60 * 1000);
+                    void onSubmit({ op: "snooze", until: d.toISOString() });
+                  }}
+                />
+              ))}
+              <PopoverRow
+                label="Snooze (no wake-up)"
+                onClick={() => void onSubmit({ op: "snooze", until: null })}
+              />
+            </div>
+          ) : null}
+
+          {kind === "tag" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "inline-flex", gap: 4 }}>
+                {(["add", "remove"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTagMode(m)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      background: tagMode === m ? "var(--selected)" : "var(--bg)",
+                      color: tagMode === m ? "var(--accent)" : "var(--text-2)",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {m === "add" ? "Add tag" : "Remove tag"}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={tagValue}
+                onChange={(e) => setTagValue(e.target.value)}
+                placeholder="Tag name (e.g. urgent, renewal)"
+                style={{
+                  padding: "8px 10px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 7,
+                  fontSize: 12.5,
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                  fontFamily: "inherit",
+                }}
+              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {SUGGESTED_BULK_TAGS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTagValue(t)}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      border: "1px solid var(--border)",
+                      background: "var(--panel-2)",
+                      color: "var(--text-2)",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  style={{
+                    padding: "6px 11px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 7,
+                    background: "var(--bg)",
+                    fontSize: 12,
+                    color: "var(--text-2)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!tagValue.trim()}
+                  onClick={() => {
+                    const tag = tagValue.trim();
+                    if (!tag) return;
+                    void onSubmit({
+                      op: tagMode === "add" ? "add_tags" : "remove_tags",
+                      tags: [tag],
+                    });
+                  }}
+                  style={{
+                    padding: "6px 11px",
+                    border: "none",
+                    borderRadius: 7,
+                    background: "var(--accent)",
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 550,
+                    cursor: tagValue.trim() ? "pointer" : "not-allowed",
+                    opacity: tagValue.trim() ? 1 : 0.5,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {tagMode === "add" ? "Add tag" : "Remove tag"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PopoverRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        width: "100%",
+        padding: "8px 10px",
+        border: "none",
+        background: "transparent",
+        color: "var(--text)",
+        fontSize: 13,
+        textAlign: "left",
+        borderRadius: 6,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {label}
+    </button>
   );
 }
