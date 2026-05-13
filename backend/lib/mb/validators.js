@@ -28,7 +28,33 @@ export const COLUMN_TYPES = new Set([
   "longtext",
   "url",
   "file",
+  "dropdown",
 ]);
+
+/**
+ * Column types the Phase 3.5 admin UI lets users create. The wider
+ * COLUMN_TYPES set exists for backwards compatibility with anything
+ * the schema applier or AppFolio sync might produce, but admins are
+ * intentionally restricted to a curated subset.
+ */
+export const USER_CREATABLE_COLUMN_TYPES = new Set([
+  "text",
+  "number",
+  "date",
+  "status",
+  "person",
+  "dropdown",
+]);
+
+export function vUserCreatableColumnType(v) {
+  const s = String(v ?? "");
+  if (!USER_CREATABLE_COLUMN_TYPES.has(s)) {
+    throw bad(
+      "column_type must be one of: text, number, date, status, person, dropdown."
+    );
+  }
+  return s;
+}
 
 export const SUBITEM_STATUSES = new Set([
   "pending",

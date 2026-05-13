@@ -18,6 +18,7 @@ import { getPool } from "./db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FOUNDATION_PATH = path.join(__dirname, "..", "migrations", "029_mb_foundation.sql");
 const RENEWALS_SEED_PATH = path.join(__dirname, "..", "migrations", "030_mb_renewals_seed.sql");
+const CUSTOMIZATION_PATH = path.join(__dirname, "..", "migrations", "031_mb_customization.sql");
 
 const cache = new Map();
 
@@ -42,4 +43,17 @@ export async function ensureMbSchema() {
 export async function ensureMbRenewalsSeed() {
   const pool = getPool();
   await pool.query(loadSql(RENEWALS_SEED_PATH));
+}
+
+/**
+ * Phase 3.5: customization additions (is_system flag, column archive,
+ * dropdown column type). Idempotent ALTER TABLE … ADD COLUMN IF NOT
+ * EXISTS plus a DO block that replaces the column_type CHECK.
+ *
+ * Order: this MUST run after the renewals seed so the system-board
+ * flag can be applied to the seeded Renewals row.
+ */
+export async function ensureMbCustomizationSchema() {
+  const pool = getPool();
+  await pool.query(loadSql(CUSTOMIZATION_PATH));
 }

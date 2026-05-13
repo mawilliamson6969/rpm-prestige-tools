@@ -33,7 +33,19 @@ export type ColumnType =
   | "score"
   | "longtext"
   | "url"
-  | "file";
+  | "file"
+  | "dropdown";
+
+/** Column types the Phase 3.5 admin UI lets users create. */
+export const USER_CREATABLE_COLUMN_TYPES = [
+  "text",
+  "number",
+  "date",
+  "status",
+  "person",
+  "dropdown",
+] as const;
+export type UserCreatableColumnType = (typeof USER_CREATABLE_COLUMN_TYPES)[number];
 
 export type SubitemStatus =
   | "pending"
@@ -151,6 +163,8 @@ export interface Board {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  /** Phase 3.5: system boards (e.g., Renewals) can't be renamed or archived via the UI. */
+  is_system: boolean;
 }
 
 export interface BoardColumn {
@@ -165,6 +179,8 @@ export interface BoardColumn {
   is_required: boolean;
   appfolio_field: string | null;
   created_at: string;
+  /** Phase 3.5: soft-delete (null = active). */
+  archived_at: string | null;
 }
 
 export interface Group {

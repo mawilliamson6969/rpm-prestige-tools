@@ -25,10 +25,15 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
-import { ensureMbSchema, ensureMbRenewalsSeed } from "./lib/mbSchema.js";
+import {
+  ensureMbSchema,
+  ensureMbRenewalsSeed,
+  ensureMbCustomizationSchema,
+} from "./lib/mbSchema.js";
 import {
   listBoards as listMbBoards,
-  createBoard as createMbBoard,
+  // createBoard (raw, no defaults) intentionally not routed; Phase 3.5
+  // POST /mb/boards uses createBoardWithDefaults below.
   getBoard as getMbBoard,
   updateBoard as updateMbBoard,
   deleteBoard as deleteMbBoard,
@@ -59,6 +64,20 @@ import {
   createSubitemUpdate as createMbSubitemUpdate,
 } from "./routes/mbUpdates.js";
 import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
+import {
+  createBoardWithDefaults as createMbBoardWithDefaults,
+  createColumn as createMbColumn,
+  updateColumn as updateMbColumn,
+  deleteColumn as deleteMbColumn,
+  reorderColumns as reorderMbColumns,
+  createColumnOption as createMbColumnOption,
+  updateColumnOption as updateMbColumnOption,
+  deleteColumnOption as deleteMbColumnOption,
+  createGroup as createMbGroup,
+  updateGroup as updateMbGroup,
+  deleteGroup as deleteMbGroup,
+  reorderGroups as reorderMbGroups,
+} from "./routes/mbCustomization.js";
 import {
   ensureAgentHubPhase2Schema,
   refreshAgentLifetimeValue,
@@ -2255,10 +2274,27 @@ app.delete("/esign/requests/:id", requireAuth, deleteEsignRequest);
 
 /** Monday-style boards (Phase 1 foundation — additive; existing process boards untouched). */
 app.get("/mb/boards", requireAuth, listMbBoards);
-app.post("/mb/boards", requireAuth, requireAdminRole, createMbBoard);
+// Phase 3.5: POST creates with defaults (group "Items" + Name + Status cols).
+// The original raw create is still available via createMbBoard but isn't routed.
+app.post("/mb/boards", requireAuth, requireAdminRole, createMbBoardWithDefaults);
 app.get("/mb/boards/:id", requireAuth, getMbBoard);
 app.patch("/mb/boards/:id", requireAuth, requireAdminRole, updateMbBoard);
 app.delete("/mb/boards/:id", requireAuth, requireAdminRole, deleteMbBoard);
+
+// Phase 3.5: column management.
+app.post("/mb/boards/:boardId/columns", requireAuth, requireAdminRole, createMbColumn);
+app.post("/mb/boards/:boardId/columns/reorder", requireAuth, requireAdminRole, reorderMbColumns);
+app.patch("/mb/columns/:id", requireAuth, requireAdminRole, updateMbColumn);
+app.delete("/mb/columns/:id", requireAuth, requireAdminRole, deleteMbColumn);
+app.post("/mb/columns/:id/options", requireAuth, requireAdminRole, createMbColumnOption);
+app.patch("/mb/columns/:id/options/:option_id", requireAuth, requireAdminRole, updateMbColumnOption);
+app.delete("/mb/columns/:id/options/:option_id", requireAuth, requireAdminRole, deleteMbColumnOption);
+
+// Phase 3.5: group management.
+app.post("/mb/boards/:boardId/groups", requireAuth, requireAdminRole, createMbGroup);
+app.post("/mb/boards/:boardId/groups/reorder", requireAuth, requireAdminRole, reorderMbGroups);
+app.patch("/mb/groups/:id", requireAuth, requireAdminRole, updateMbGroup);
+app.delete("/mb/groups/:id", requireAuth, requireAdminRole, deleteMbGroup);
 
 app.get("/mb/boards/:boardId/items", requireAuth, listMbItems);
 app.post("/mb/boards/:boardId/items", requireAuth, createMbItem);
@@ -2333,6 +2369,7 @@ async function start() {
       ["agent_hub_* phase 4", ensureAgentHubPhase4Schema],
       ["mb_* monday-style boards", ensureMbSchema],
       ["mb_* renewals seed", ensureMbRenewalsSeed],
+      ["mb_* customization", ensureMbCustomizationSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

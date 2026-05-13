@@ -17,7 +17,12 @@ export default function OperationsTopBar({ actions }: { actions?: ReactNode }) {
     { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
     { href: "/operations/analytics", label: "Analytics" },
     { href: "/operations/insights", label: "AI Insights" },
-    ...(isAdmin ? [{ href: "/operations/templates", label: "Templates" }] : []),
+    ...(isAdmin
+      ? [
+          { href: "/operations/boards/manage", label: "Manage Boards" },
+          { href: "/operations/templates", label: "Templates" },
+        ]
+      : []),
   ];
   return (
     <div className={styles.topBar}>
