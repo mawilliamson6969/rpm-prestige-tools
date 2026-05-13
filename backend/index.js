@@ -25,6 +25,40 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
+import { ensureMbSchema } from "./lib/mbSchema.js";
+import {
+  listBoards as listMbBoards,
+  createBoard as createMbBoard,
+  getBoard as getMbBoard,
+  updateBoard as updateMbBoard,
+  deleteBoard as deleteMbBoard,
+} from "./routes/mbBoards.js";
+import {
+  listItems as listMbItems,
+  createItem as createMbItem,
+  getItem as getMbItem,
+  updateItem as updateMbItem,
+  deleteItem as deleteMbItem,
+} from "./routes/mbItems.js";
+import {
+  listSubitems as listMbSubitems,
+  createSubitem as createMbSubitem,
+  updateSubitem as updateMbSubitem,
+  deleteSubitem as deleteMbSubitem,
+} from "./routes/mbSubitems.js";
+import {
+  listSubitemTemplates as listMbTemplates,
+  createSubitemTemplate as createMbTemplate,
+  updateSubitemTemplate as updateMbTemplate,
+  deleteSubitemTemplate as deleteMbTemplate,
+} from "./routes/mbTemplates.js";
+import {
+  listItemUpdates as listMbItemUpdates,
+  createItemUpdate as createMbItemUpdate,
+  listSubitemUpdates as listMbSubitemUpdates,
+  createSubitemUpdate as createMbSubitemUpdate,
+} from "./routes/mbUpdates.js";
+import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
 import {
   ensureAgentHubPhase2Schema,
   refreshAgentLifetimeValue,
@@ -2121,6 +2155,42 @@ app.get("/esign/requests/:id/download", requireAuth, getEsignRequestDownload);
 app.post("/esign/requests/:id/resend", requireAuth, postEsignRequestResend);
 app.delete("/esign/requests/:id", requireAuth, deleteEsignRequest);
 
+/** Monday-style boards (Phase 1 foundation — additive; existing process boards untouched). */
+app.get("/mb/boards", requireAuth, listMbBoards);
+app.post("/mb/boards", requireAuth, requireAdminRole, createMbBoard);
+app.get("/mb/boards/:id", requireAuth, getMbBoard);
+app.patch("/mb/boards/:id", requireAuth, requireAdminRole, updateMbBoard);
+app.delete("/mb/boards/:id", requireAuth, requireAdminRole, deleteMbBoard);
+
+app.get("/mb/boards/:boardId/items", requireAuth, listMbItems);
+app.post("/mb/boards/:boardId/items", requireAuth, createMbItem);
+app.get("/mb/items/:id", requireAuth, getMbItem);
+app.patch("/mb/items/:id", requireAuth, updateMbItem);
+app.delete("/mb/items/:id", requireAuth, deleteMbItem);
+
+app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitems);
+app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitem);
+app.patch("/mb/subitems/:id", requireAuth, updateMbSubitem);
+app.delete("/mb/subitems/:id", requireAuth, deleteMbSubitem);
+
+app.get("/mb/boards/:boardId/subitem-templates", requireAuth, listMbTemplates);
+app.post(
+  "/mb/boards/:boardId/subitem-templates",
+  requireAuth,
+  requireAdminRole,
+  createMbTemplate
+);
+app.patch("/mb/subitem-templates/:id", requireAuth, requireAdminRole, updateMbTemplate);
+app.delete("/mb/subitem-templates/:id", requireAuth, requireAdminRole, deleteMbTemplate);
+
+app.get("/mb/items/:itemId/updates", requireAuth, listMbItemUpdates);
+app.post("/mb/items/:itemId/updates", requireAuth, createMbItemUpdate);
+app.get("/mb/subitems/:subitemId/updates", requireAuth, listMbSubitemUpdates);
+app.post("/mb/subitems/:subitemId/updates", requireAuth, createMbSubitemUpdate);
+
+/** AppFolio webhook receiver (public — AppFolio server-to-server). JWS verification is Phase 2. */
+app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     try {
@@ -2189,6 +2259,8 @@ async function start() {
       console.log("Database schema OK (agent_hub_* phase 3).");
       await ensureAgentHubPhase4Schema();
       console.log("Database schema OK (agent_hub_* phase 4).");
+      await ensureMbSchema();
+      console.log("Database schema OK (mb_* monday-style boards).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }
