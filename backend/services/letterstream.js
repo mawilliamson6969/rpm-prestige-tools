@@ -180,10 +180,27 @@ function fmtAddress({ name1 = "", name2 = "", addr1 = "", addr2 = "", city = "",
     .join(":");
 }
 
-function shortIdSafe(prefix, value, maxTotal = 20) {
-  const cleaned = String(value).replace(/-/g, "").replace(/[^a-zA-Z0-9]/g, "");
-  const allowedLen = Math.max(1, maxTotal - prefix.length);
-  return `${prefix}${cleaned.slice(0, allowedLen)}`;
+/**
+ * Build a LetterStream identifier that:
+ *  - starts with `prefix`
+ *  - is at least `minTotal` chars (LetterStream rejects job names < 8 chars)
+ *  - is at most `maxTotal` chars
+ *  - contains only [a-zA-Z0-9_-]
+ *  - is unique across retries by appending the last 6 digits of Date.now()
+ */
+function shortIdSafe(prefix, value, { minTotal = 8, maxTotal = 20, alnumOnly = false } = {}) {
+  const cleaned = String(value).replace(/[^a-zA-Z0-9]/g, "");
+  // Append last 6 digits of Date.now() so retries don't collide.
+  // Separator is "_" for job names; for alnumOnly identifiers (doc) we skip it.
+  const sep = alnumOnly ? "" : "_";
+  const tailSuffix = `${sep}${String(Date.now()).slice(-6)}`;
+  const reserved = tailSuffix.length;
+  const idBudget = Math.max(0, maxTotal - prefix.length - reserved);
+  const truncatedId = cleaned.slice(0, idBudget);
+  // Pad the id portion with leading zeros so prefix+id+tail meets the minimum length
+  const minIdLen = Math.max(0, minTotal - prefix.length - reserved);
+  const paddedId = truncatedId.padStart(minIdLen, "0");
+  return `${prefix}${paddedId}${tailSuffix}`.slice(0, maxTotal);
 }
 
 const LS_MAIL_TYPE_MAP = {
@@ -217,8 +234,13 @@ export async function submitMailer(mailer, { pdfBuffer, pageCount, preauth = fal
   }
 
   const auth = buildAuth();
-  const jobName = shortIdSafe("pd_", mailer.id, 20);
-  const docName = shortIdSafe("d", mailer.id, 20);
+  // job name: LetterStream requires 8–20 chars, [a-zA-Z0-9_-]. Pad short IDs and tail with
+  // last 6 digits of Date.now() so retries don't collide.
+  // Example for mailer id=6: pd_000006_851234 → 15 chars.
+  const jobName = shortIdSafe("pd_", mailer.id, { minTotal: 8, maxTotal: 20 });
+  // doc identifier: max 20 alphanumeric only — no underscore separator.
+  // Example for mailer id=6: d0000006851234 → 14 chars.
+  const docName = shortIdSafe("d", mailer.id, { minTotal: 8, maxTotal: 20, alnumOnly: true });
 
   const fromStr = fmtAddress({
     name1: mailer.sender_name || "Real Property Management Prestige",
