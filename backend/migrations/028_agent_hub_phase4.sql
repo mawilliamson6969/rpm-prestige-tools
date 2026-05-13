@@ -43,8 +43,16 @@ CREATE TABLE IF NOT EXISTS agent_hub_agent_engagement_scores (
 );
 
 -- Idempotency: one row per agent per calendar day. UPSERT on conflict.
+-- calculated_at is TIMESTAMPTZ; timestamptz::date is STABLE (depends on
+-- session timezone) and Postgres rejects it from index expressions.
+-- AT TIME ZONE 'UTC' returns timestamp WITHOUT time zone, and that
+-- ::date is immutable. UTC is the right anchor — "one row per global
+-- calendar day," not per-viewer.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_engagement_scores_agent_day
-  ON agent_hub_agent_engagement_scores (agent_id, (calculated_at::date));
+  ON agent_hub_agent_engagement_scores (
+    agent_id,
+    (((calculated_at AT TIME ZONE 'UTC')::date))
+  );
 CREATE INDEX IF NOT EXISTS idx_agent_hub_engagement_scores_agent
   ON agent_hub_agent_engagement_scores (agent_id, calculated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_hub_engagement_scores_score
@@ -110,9 +118,13 @@ CREATE INDEX IF NOT EXISTS idx_agent_hub_flags_severity
   WHERE resolved_at IS NULL AND dismissed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_agent_hub_flags_agent
   ON agent_hub_predictive_flags (agent_id, last_seen_at DESC);
+-- snooze_until > NOW() cannot live in an index predicate (NOW() is
+-- STABLE). Narrow to "has a snooze," and let the query apply the
+-- "still active" filter at execution time — that part is cheap to
+-- evaluate against the indexed column.
 CREATE INDEX IF NOT EXISTS idx_agent_hub_flags_snoozed
   ON agent_hub_predictive_flags (agent_id, flag_type, snooze_until)
-  WHERE snooze_until IS NOT NULL AND snooze_until > NOW();
+  WHERE snooze_until IS NOT NULL;
 
 -- ============================================================
 -- 4. agent_hub_market_intelligence (manual zip+month data)
