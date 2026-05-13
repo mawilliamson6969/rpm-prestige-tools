@@ -162,3 +162,33 @@ export async function getValidAccessTokenForConnection(connectionId) {
   const { rows: again } = await pool.query(`SELECT * FROM email_connections WHERE id = $1`, [connectionId]);
   return { accessToken: tokens.access_token, connection: again[0] };
 }
+
+/**
+ * Pick an active Microsoft email connection to send from. Prefers a
+ * connection owned by `senderUserId`; falls back to any active connection
+ * so a system-initiated send (no caller user) still works.
+ *
+ * Returns the full email_connections row, or null if none are active.
+ *
+ * Imported by lib/agentHub/sendChannels.js and lib/agentHub/engine.js —
+ * those modules already pull this symbol from here, so the missing export
+ * was crashing the backend at startup with a SyntaxError. A near-duplicate
+ * exists at lib/process-messaging.js:19 from before this file became the
+ * Graph auth home; folding the two callers together is future cleanup.
+ */
+export async function pickEmailConnection(senderUserId) {
+  const pool = getPool();
+  if (Number.isFinite(Number(senderUserId))) {
+    const { rows } = await pool.query(
+      `SELECT * FROM email_connections
+        WHERE user_id = $1 AND is_active = true
+        ORDER BY id DESC LIMIT 1`,
+      [Number(senderUserId)]
+    );
+    if (rows.length) return rows[0];
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM email_connections WHERE is_active = true ORDER BY id ASC LIMIT 1`
+  );
+  return rows[0] || null;
+}
