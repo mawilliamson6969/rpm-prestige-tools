@@ -258,7 +258,11 @@ export async function getInboxThreads(req, res) {
                  AND tt.deleted_at IS NULL
                ORDER BY tt.received_at DESC NULLS LAST, tt.id DESC
                LIMIT 1
-             ) AS latest_message
+             ) AS latest_message,
+             (
+               SELECT COUNT(*)::int FROM attachments a
+                WHERE a.thread_id = th.thread_id AND a.is_inline = FALSE
+             ) AS attachment_count
         FROM threads th
         LEFT JOIN users u ON u.id = th.assignee_id
         LEFT JOIN email_connections ec ON ec.id = th.connection_id

@@ -429,7 +429,14 @@ function ThreadRowCard({
               <TagPill key={tag} tag={tag} />
             ))}
             {t.has_attachments ? (
-              <span className={styles.clAttach}>
+              <span
+                className={styles.clAttach}
+                title={
+                  (t.attachment_count ?? 0) > 1
+                    ? `${t.attachment_count} attachments`
+                    : "1 attachment"
+                }
+              >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path
                     d="M16 9v8a4 4 0 0 1-8 0V7a3 3 0 0 1 6 0v9a2 2 0 0 1-4 0V8"
@@ -439,6 +446,7 @@ function ThreadRowCard({
                     strokeLinejoin="round"
                   />
                 </svg>
+                {(t.attachment_count ?? 0) > 1 ? <span>{t.attachment_count}</span> : null}
               </span>
             ) : null}
             {t.connection_id != null && (t.mailbox_display_name || t.mailbox_email) ? (

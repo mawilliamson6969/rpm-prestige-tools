@@ -154,6 +154,9 @@ export type ThreadRow = {
   message_count: number;
   unread_count: number;
   has_attachments: boolean;
+  /** Phase 5: total non-inline attachments across all messages on the
+   *  thread. Computed via sub-SELECT in /inbox/threads. */
+  attachment_count?: number;
   /** D0: distinct sender count on the thread. Default 1. */
   participant_count?: number;
   /** D0: user ids who have been @-mentioned anywhere in the thread. */

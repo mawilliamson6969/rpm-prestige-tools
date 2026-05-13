@@ -5,7 +5,7 @@
 // (Reply / Internal note / Forward) layout from the design. Forward is
 // shown but disabled — no forward path exists yet.
 
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import styles from "./conversation.module.css";
 import { sanitizeEmailHtml } from "../../../lib/sanitizeEmailHtml";
 import type { ThreadRow } from "../../../hooks/inbox/types";
@@ -58,8 +58,61 @@ export default function ConvoComposer({
     compose.selectedSigId !== null &&
     !!sigPreviewHtml;
 
+  // Drag-and-drop: a small dragging state drives the dashed-outline
+  // highlight via [data-dragging] on .cvComposer. Counter pattern handles
+  // child-dragenter without flicker.
+  const dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const onDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!allowAttachments || !e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      dragDepth.current += 1;
+      setDragging(true);
+    },
+    [allowAttachments]
+  );
+  const onDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!allowAttachments) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    [allowAttachments]
+  );
+  const onDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!allowAttachments) return;
+      e.preventDefault();
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    },
+    [allowAttachments]
+  );
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!allowAttachments) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      const files = e.dataTransfer?.files;
+      if (files && files.length) {
+        compose.addAttachments(files);
+        compose.setExpanded(true);
+      }
+    },
+    [allowAttachments, compose]
+  );
+
   return (
-    <div className={styles.cvComposer}>
+    <div
+      className={styles.cvComposer}
+      data-dragging={dragging ? "true" : "false"}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className={styles.cvCompTabs} role="tablist" aria-label="Composer mode">
         {canReply ? (
           <button
@@ -299,37 +352,21 @@ export default function ConvoComposer({
       ) : null}
 
       {hasFiles ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+        <div className={styles.cvCompFiles}>
           {compose.attachments.map((f, idx) => (
             <span
               key={`${f.name}-${idx}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "3px 8px",
-                background: "var(--panel-2)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                fontSize: 11.5,
-                color: "var(--text-2)",
-                fontWeight: 500,
-              }}
+              className={styles.cvCompChipSm}
+              title={`${f.name} · ${formatComposerFileSize(f.size)}`}
             >
-              📎 {f.name}
+              <span aria-hidden>📎</span>
+              <span className={styles.cvCompChipName}>{f.name}</span>
+              <span className={styles.cvCompChipSize}>{formatComposerFileSize(f.size)}</span>
               <button
                 type="button"
+                className={styles.cvCompChipRemove}
                 onClick={() => compose.removeAttachment(idx)}
                 aria-label={`Remove ${f.name}`}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "var(--text-3)",
-                  fontSize: 14,
-                  lineHeight: 1,
-                  padding: 0,
-                }}
               >
                 ×
               </button>
@@ -410,6 +447,13 @@ export default function ConvoComposer({
       </div>
     </div>
   );
+}
+
+function formatComposerFileSize(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function describeSuggestion(
