@@ -17,6 +17,9 @@ export type ThreadListFilters = {
   teamUserId: number | null;
   search: string;
   sort: ListSort;
+  /** Phase 3: "SLA at risk" filter — open, not paused, due within 2h or
+   *  already breached. Mutually overrides bucket/status. */
+  slaAtRisk: boolean;
 };
 
 export type UseThreadList = {
@@ -33,6 +36,7 @@ export type UseThreadList = {
   setTeamUserId: (id: number | null) => void;
   setSearch: (s: string) => void;
   setSort: (s: ListSort) => void;
+  setSlaAtRisk: (v: boolean) => void;
   applyPreset: (bucket: string) => void;
 
   refetch: () => Promise<void>;
@@ -71,6 +75,7 @@ export default function useThreadList(opts: UseThreadListOptions): UseThreadList
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<ListSort>("newest");
+  const [slaAtRisk, setSlaAtRisk] = useState<boolean>(false);
 
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -85,7 +90,12 @@ export default function useThreadList(opts: UseThreadListOptions): UseThreadList
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
-    if (narrowStatus) {
+    if (slaAtRisk) {
+      // sla_at_risk implies open + not paused on the backend; bucket=all
+      // skips the trigger's "active = not closed" preset.
+      p.set("bucket", "all");
+      p.set("sla_at_risk", "true");
+    } else if (narrowStatus) {
       p.set("bucket", "all");
       p.set("status", narrowStatus);
     } else {
@@ -101,7 +111,7 @@ export default function useThreadList(opts: UseThreadListOptions): UseThreadList
     if (connectionId != null) p.set("connectionId", String(connectionId));
     p.set("limit", String(PAGE_LIMIT));
     return p.toString();
-  }, [bucket, category, narrowStatus, teamUserId, debouncedSearch, sort, connectionId]);
+  }, [bucket, category, narrowStatus, teamUserId, debouncedSearch, sort, connectionId, slaAtRisk]);
 
   const loadList = useCallback(
     async (startOffset: number, append: boolean) => {
@@ -162,11 +172,12 @@ export default function useThreadList(opts: UseThreadListOptions): UseThreadList
     setCategory(null);
     setNarrowStatus(null);
     setTeamUserId(null);
+    setSlaAtRisk(false);
   }, []);
 
   const filters = useMemo<ThreadListFilters>(
-    () => ({ bucket, category, narrowStatus, teamUserId, search, sort }),
-    [bucket, category, narrowStatus, teamUserId, search, sort]
+    () => ({ bucket, category, narrowStatus, teamUserId, search, sort, slaAtRisk }),
+    [bucket, category, narrowStatus, teamUserId, search, sort, slaAtRisk]
   );
 
   return {
@@ -182,6 +193,7 @@ export default function useThreadList(opts: UseThreadListOptions): UseThreadList
     setTeamUserId: wrap(setTeamUserId),
     setSearch: wrap(setSearch),
     setSort: wrap(setSort),
+    setSlaAtRisk: wrap(setSlaAtRisk),
     applyPreset: wrap(applyPreset),
     refetch,
     loadMore,

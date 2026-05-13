@@ -304,7 +304,7 @@ function ThreadRowCard({
     "(unknown)";
   const fromInitials = avatarInitials(t.latest_message?.sender_name, t.latest_message?.sender_email);
   const fromColor = avatarColor(t.latest_message?.sender_email || t.latest_message?.sender_name || t.thread_id);
-  const sla = deriveSlaChip(t.sla_due_at, t.sla_paused, t.status);
+  const sla = deriveSlaChip(t);
   const snoozedUntil = extractSnoozeUntil(t.tags);
   const tags = Array.isArray(t.tags) ? t.tags.filter((x) => !x.startsWith("snooze:until:")) : [];
   const preview = t.latest_message?.body_preview || "";
