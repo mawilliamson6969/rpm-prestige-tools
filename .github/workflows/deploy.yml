@@ -46,7 +46,10 @@ jobs:
             # Rebuild images if Dockerfiles or app code changed, then restart containers.
             # --pull keeps base images fresh; --force-recreate ensures the running
             # container is replaced even if the image hash happened to match.
-            docker compose build --pull backend frontend
+            # --no-cache: force-rebuild every layer (slower but guarantees the
+            # latest source files end up in the image; without this, Docker
+            # sometimes serves a cached COPY layer with stale code).
+            docker compose build --pull --no-cache backend frontend
             docker compose up -d --force-recreate --remove-orphans backend frontend
             # Show backend image build timestamp so we can see if it actually rebuilt
             echo "→ Backend container info:"
