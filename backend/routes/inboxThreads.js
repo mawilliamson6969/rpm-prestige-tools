@@ -17,9 +17,35 @@ import {
   permissionAtLeast,
 } from "../lib/inbox/inbox-permissions.js";
 
-const ACTIVE_STATUSES = ["open", "waiting_on_tenant", "waiting_on_owner", "waiting_on_vendor", "snoozed"];
-const VALID_THREAD_STATUSES = new Set([...ACTIVE_STATUSES, "closed"]);
+// D0-aligned vocabulary: status is open | snoozed | closed. The legacy
+// waiting_on_* values are preserved here so older clients PATCHing them
+// still work — they're normalized to "open" + a matching tag below.
+const D0_STATUSES = new Set(["open", "snoozed", "closed"]);
+const LEGACY_WAITING_STATUSES = new Set([
+  "waiting_on_tenant",
+  "waiting_on_owner",
+  "waiting_on_vendor",
+]);
+const VALID_THREAD_STATUSES = new Set([...D0_STATUSES, ...LEGACY_WAITING_STATUSES]);
 const VALID_PRIORITIES = new Set(["emergency", "high", "normal", "low"]);
+
+/** Map a legacy status value to its D0 normalized form, returning both the
+ *  status and any tag that should be added. Returns null for fields we
+ *  don't recognize. */
+function normalizeStatusInput(s) {
+  if (s == null) return null;
+  const v = String(s).trim();
+  if (D0_STATUSES.has(v)) return { status: v, addTag: null };
+  if (LEGACY_WAITING_STATUSES.has(v)) {
+    const map = {
+      waiting_on_tenant: "waiting:tenant",
+      waiting_on_owner: "waiting:owner",
+      waiting_on_vendor: "waiting:vendor",
+    };
+    return { status: "open", addTag: map[v] };
+  }
+  return null;
+}
 
 const PRIORITY_ORDER_SQL = `CASE priority
   WHEN 'emergency' THEN 4
@@ -55,8 +81,50 @@ export function buildThreadWhere(req, allowedConnectionIds) {
   }
 
   if (req.query.status) {
-    parts.push(`th.status = $${n++}`);
-    params.push(req.query.status);
+    const raw = String(req.query.status);
+    if (raw === "all") {
+      /* explicit pass-through: no status filter */
+    } else if (D0_STATUSES.has(raw)) {
+      parts.push(`th.status = $${n++}`);
+      params.push(raw);
+    } else if (LEGACY_WAITING_STATUSES.has(raw)) {
+      // Legacy clients asking for waiting_on_X — translate to the new
+      // representation (status=open + tag).
+      const tagMap = {
+        waiting_on_tenant: "waiting:tenant",
+        waiting_on_owner: "waiting:owner",
+        waiting_on_vendor: "waiting:vendor",
+      };
+      parts.push(`th.status = 'open' AND $${n++} = ANY(th.tags)`);
+      params.push(tagMap[raw]);
+    }
+  }
+  // D0: filter by tag (single or array). Tags use a GIN index so this is cheap.
+  if (req.query.tag) {
+    const list = Array.isArray(req.query.tag) ? req.query.tag : [req.query.tag];
+    const clean = list.map((t) => String(t)).filter(Boolean);
+    if (clean.length === 1) {
+      parts.push(`$${n++} = ANY(th.tags)`);
+      params.push(clean[0]);
+    } else if (clean.length > 1) {
+      parts.push(`th.tags && $${n++}::text[]`);
+      params.push(clean);
+    }
+  }
+  // D0: SLA at risk — open, not paused, due within the next 2h or already breached.
+  if (req.query.sla_at_risk === "true" || req.query.sla_at_risk === "1") {
+    parts.push(
+      `th.status = 'open' AND th.sla_paused = FALSE AND th.sla_due_at IS NOT NULL AND th.sla_due_at < NOW() + INTERVAL '2 hours'`
+    );
+  }
+  // D0: `mailbox` is an alias for connectionId, retained for the new sidebar.
+  const mbRaw = req.query.mailbox;
+  if (mbRaw != null && mbRaw !== "" && req.query.connectionId == null) {
+    const mb = Number(mbRaw);
+    if (Number.isFinite(mb) && allowedConnectionIds.includes(mb)) {
+      parts.push(`th.connection_id = $${n++}`);
+      params.push(mb);
+    }
   }
   if (req.query.category) {
     parts.push(`th.category = $${n++}`);
@@ -436,15 +504,18 @@ export async function patchInboxThread(req, res) {
     let n = 1;
     const body = req.body ?? {};
 
+    let pendingAddTag = null;
     if (body.status !== undefined) {
-      if (!VALID_THREAD_STATUSES.has(String(body.status))) {
+      const norm = normalizeStatusInput(body.status);
+      if (!norm) {
         res.status(400).json({
-          error: `status must be one of: ${[...VALID_THREAD_STATUSES].join(", ")}.`,
+          error: `status must be one of: ${[...D0_STATUSES].join(", ")}.`,
         });
         return;
       }
       sets.push(`status = $${n++}`);
-      vals.push(String(body.status));
+      vals.push(norm.status);
+      pendingAddTag = norm.addTag;
     }
     if (body.assignee_id !== undefined || body.assignedTo !== undefined) {
       const raw = body.assignee_id !== undefined ? body.assignee_id : body.assignedTo;
@@ -483,10 +554,31 @@ export async function patchInboxThread(req, res) {
       sets.push(`starred = $${n++}`);
       vals.push(!!v);
     }
+    // D0: full tag replacement. Use POST /tags for additive operations.
+    if (body.tags !== undefined) {
+      if (!Array.isArray(body.tags)) {
+        res.status(400).json({ error: "tags must be an array of strings." });
+        return;
+      }
+      const clean = body.tags
+        .map((t) => (typeof t === "string" ? t.trim() : ""))
+        .filter(Boolean);
+      sets.push(`tags = $${n++}::text[]`);
+      vals.push(clean);
+    }
 
-    if (!sets.length) {
+    if (!sets.length && !pendingAddTag) {
       res.status(400).json({ error: "No valid fields to update." });
       return;
+    }
+    // If the caller submitted a legacy waiting_on_* status, fold the tag in
+    // alongside the status update so the row reflects both at once.
+    if (pendingAddTag) {
+      sets.push(
+        `tags = CASE WHEN $${n} = ANY(tags) THEN tags ELSE array_append(tags, $${n}) END`
+      );
+      vals.push(pendingAddTag);
+      n++;
     }
 
     sets.push(`last_touched_by = $${n++}`);
@@ -535,6 +627,130 @@ function threadStatusToTicketStatus(s) {
   if (s && s.startsWith("waiting_on_")) return "waiting";
   if (s === "snoozed") return "waiting";
   return null;
+}
+
+/** POST /inbox/threads/:thread_id/snooze — set status=snoozed and (optionally)
+ *  record an `until` timestamp. Auto-reopen on new inbound is handled by the
+ *  trigger. */
+export async function postInboxThreadSnooze(req, res) {
+  try {
+    const threadId = String(req.params.thread_id || "").trim();
+    if (!threadId) {
+      res.status(400).json({ error: "thread_id is required." });
+      return;
+    }
+    const pool = getPool();
+    const { rows: existing } = await pool.query(
+      `SELECT * FROM threads WHERE thread_id = $1`,
+      [threadId]
+    );
+    if (!existing.length) {
+      res.status(404).json({ error: "Thread not found." });
+      return;
+    }
+    if (!(await userCanViewThread(pool, req.user.id, existing[0]))) {
+      res.status(403).json({ error: "You don't have access to this mailbox." });
+      return;
+    }
+
+    // `until` is stored as a tag (snooze:until:<iso>) so we can render the
+    // chip without adding a dedicated column. A wake-up worker will land in
+    // a later phase.
+    let untilTag = null;
+    if (req.body?.until) {
+      const d = new Date(req.body.until);
+      if (!Number.isFinite(d.getTime())) {
+        res.status(400).json({ error: "until must be an ISO date string." });
+        return;
+      }
+      untilTag = `snooze:until:${d.toISOString()}`;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE threads
+          SET status = 'snoozed',
+              tags = CASE
+                WHEN $2::text IS NULL THEN tags
+                WHEN $2 = ANY(tags) THEN tags
+                ELSE array_append(
+                  (SELECT array_agg(t) FROM unnest(tags) AS t WHERE t NOT LIKE 'snooze:until:%'),
+                  $2
+                )
+              END,
+              last_touched_by = $3,
+              last_touched_at = NOW(),
+              updated_at = NOW()
+        WHERE thread_id = $1
+        RETURNING *`,
+      [threadId, untilTag, req.user.id]
+    );
+    res.json({ thread: rows[0] });
+  } catch (e) {
+    console.error("[inbox] snooze thread", e);
+    res.status(500).json({ error: "Could not snooze thread." });
+  }
+}
+
+/** POST /inbox/threads/:thread_id/tags — additive tag operation. Body shape:
+ *  { add?: string[]; remove?: string[] }. Duplicates ignored; ordering
+ *  preserved. */
+export async function postInboxThreadTags(req, res) {
+  try {
+    const threadId = String(req.params.thread_id || "").trim();
+    if (!threadId) {
+      res.status(400).json({ error: "thread_id is required." });
+      return;
+    }
+    const add = Array.isArray(req.body?.add)
+      ? req.body.add.map((t) => String(t).trim()).filter(Boolean)
+      : [];
+    const remove = Array.isArray(req.body?.remove)
+      ? req.body.remove.map((t) => String(t).trim()).filter(Boolean)
+      : [];
+    if (!add.length && !remove.length) {
+      res.status(400).json({ error: "Supply at least one of `add` or `remove`." });
+      return;
+    }
+    const pool = getPool();
+    const { rows: existing } = await pool.query(
+      `SELECT * FROM threads WHERE thread_id = $1`,
+      [threadId]
+    );
+    if (!existing.length) {
+      res.status(404).json({ error: "Thread not found." });
+      return;
+    }
+    if (!(await userCanViewThread(pool, req.user.id, existing[0]))) {
+      res.status(403).json({ error: "You don't have access to this mailbox." });
+      return;
+    }
+
+    // Compute new tags in JS to keep the SQL simple and the ordering
+    // deterministic. Strings are case-sensitive by design — `Urgent` and
+    // `urgent` are distinct tags so a future Phase 7 tag manager can rename
+    // them without ambiguity.
+    const current = Array.isArray(existing[0].tags) ? existing[0].tags : [];
+    const removeSet = new Set(remove);
+    const next = current.filter((t) => !removeSet.has(t));
+    for (const t of add) {
+      if (!next.includes(t)) next.push(t);
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE threads
+          SET tags = $1::text[],
+              last_touched_by = $2,
+              last_touched_at = NOW(),
+              updated_at = NOW()
+        WHERE thread_id = $3
+        RETURNING *`,
+      [next, req.user.id, threadId]
+    );
+    res.json({ thread: rows[0] });
+  } catch (e) {
+    console.error("[inbox] thread tags", e);
+    res.status(500).json({ error: "Could not update tags." });
+  }
 }
 
 /** POST /inbox/threads/:thread_id/messages — send a reply on the thread.

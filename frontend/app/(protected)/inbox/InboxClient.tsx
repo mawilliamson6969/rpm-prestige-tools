@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import DetailPanelContainer from "../../../components/inbox/DetailPanelContainer";
 import ErrorBoundary from "../../../components/inbox/ErrorBoundary";
-import FilterBar from "../../../components/inbox/FilterBar";
-import FilterDrawer from "../../../components/inbox/FilterDrawer";
-import InboxList from "../../../components/inbox/InboxList";
 import InboxTopBar from "../../../components/inbox/InboxTopBar";
 import SaveViewModal from "../../../components/inbox/SaveViewModal";
+import ConversationList, {
+  type Density,
+} from "../../../components/inbox/conversation/ConversationList";
+import ConversationView from "../../../components/inbox/conversation/ConversationView";
 import { useInboxShell } from "../../../components/inbox/shell/InboxShellContext";
 import useAIDraft from "../../../hooks/inbox/useAIDraft";
 import useBatchAIDraft from "../../../hooks/inbox/useBatchAIDraft";
@@ -23,12 +23,40 @@ import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
 import type { SavedViewFilters } from "../../../hooks/inbox/useSavedViews";
+import { apiUrl } from "../../../lib/api";
+import { parseApiError } from "../../../lib/apiResult";
 import styles from "./inbox.module.css";
 
+type StatusTab = "open" | "snoozed" | "closed" | "all";
+
+const DENSITY_LS = "rpm-inbox-density";
+const STATUS_TAB_LS_PREFIX = "rpm-inbox-status:";
+
+function readDensity(): Density {
+  if (typeof window === "undefined") return "cozy";
+  try {
+    const v = localStorage.getItem(DENSITY_LS);
+    if (v === "compact" || v === "cozy" || v === "comfortable") return v;
+  } catch {
+    /* ignore */
+  }
+  return "cozy";
+}
+
+function readStatusForKey(key: string): StatusTab {
+  if (typeof window === "undefined") return "open";
+  try {
+    const v = localStorage.getItem(STATUS_TAB_LS_PREFIX + key);
+    if (v === "open" || v === "snoozed" || v === "closed" || v === "all") return v;
+  } catch {
+    /* ignore */
+  }
+  return "open";
+}
+
 export default function InboxClient() {
-  // The /inbox layout already supplies ToastProvider, NotificationProvider,
-  // and InboxShellProvider. This component just orchestrates the inbox
-  // content pane.
+  // The /inbox layout supplies the Toast / Notification / InboxShell
+  // providers. This component just orchestrates the inbox content pane.
   return <InboxOrchestrator />;
 }
 
@@ -44,6 +72,20 @@ function InboxOrchestrator() {
   const [selectedViewId, setSelectedViewId] = useState<number | null>(null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
 
+  // Density preference — persisted, applied to the list.
+  const [density, setDensityState] = useState<Density>("cozy");
+  useEffect(() => {
+    setDensityState(readDensity());
+  }, []);
+  const setDensity = useCallback((next: Density) => {
+    setDensityState(next);
+    try {
+      localStorage.setItem(DENSITY_LS, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const teamUsers = useTeamUsers();
   useSyncHealthReporter(mailboxes.mailboxes, notifications);
 
@@ -53,6 +95,52 @@ function InboxOrchestrator() {
     onUserFilterChange: () => setSelectedViewId(null),
   });
   const batch = useBatchAIDraft();
+
+  // Status tab — D0-aligned (Open/Snoozed/Closed/All). Persisted per mailbox
+  // so each shared inbox remembers its own tab. The mailbox key falls back
+  // to "__all__" for the all-mailboxes view and to the section key for
+  // personal / builtin / saved-view sections.
+  const statusKey = useMemo(() => {
+    if (section.kind === "mailbox") return `mb:${section.connectionId}`;
+    if (section.kind === "view") return `view:${section.viewId}`;
+    if (section.kind === "builtin") return `builtin:${section.key}`;
+    return `personal:${section.kind === "personal" ? section.bucket : "open"}`;
+  }, [section]);
+  const [statusTab, setStatusTab] = useState<StatusTab>("open");
+  useEffect(() => {
+    setStatusTab(readStatusForKey(statusKey));
+  }, [statusKey]);
+  const onStatusChange = useCallback(
+    (next: StatusTab) => {
+      setStatusTab(next);
+      try {
+        localStorage.setItem(STATUS_TAB_LS_PREFIX + statusKey, next);
+      } catch {
+        /* ignore */
+      }
+      // Update the list filter to match. The bucket stays bound to the
+      // sidebar's section (Inbox / Assigned / Builtin); the status tab
+      // narrows it further.
+      list.setNarrowStatus(next === "all" || next === "open" ? null : next);
+      // The "Open" tab maps to status=open exactly (excludes snoozed). The
+      // legacy bucket=open used `<> closed`, so we also need to push status
+      // into the API call. We do that by setting narrowStatus=null and
+      // letting the trigger include all open threads — for explicit Open we
+      // override narrowStatus.
+      if (next === "open") list.setNarrowStatus("open");
+      if (next === "closed") list.setNarrowStatus("closed");
+    },
+    [list, statusKey]
+  );
+  // Re-apply the persisted status when the active key changes (mailbox
+  // switch, view select, etc.).
+  useEffect(() => {
+    const persisted = readStatusForKey(statusKey);
+    if (persisted === "open") list.setNarrowStatus("open");
+    else if (persisted === "all") list.setNarrowStatus(null);
+    else list.setNarrowStatus(persisted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusKey]);
 
   const detail = useThreadDetail({
     selectedThreadId,
@@ -104,10 +192,6 @@ function InboxOrchestrator() {
   const eligibleBatchCount = batch.selectEligible(list.threads).length;
 
   // ── Section → list filter wiring ────────────────────────────────────
-  // The shell sidebar drives the `section` value. We translate that into
-  // the legacy bucket/status/sort filters that useThreadList already knows
-  // how to apply. `applyPreset` short-circuits filter-change events so the
-  // selected saved view isn't cleared.
   const lastSectionKeyRef = useRef<string>("");
   useEffect(() => {
     const key = JSON.stringify(section);
@@ -117,7 +201,6 @@ function InboxOrchestrator() {
       case "personal":
         if (section.bucket === "open") list.applyPreset("open");
         else if (section.bucket === "assignedToMe") list.applyPreset("assignedToMe");
-        // mentions/drafts: disabled in sidebar; ignored if dispatched.
         setSelectedViewId(null);
         break;
       case "mailbox":
@@ -133,9 +216,6 @@ function InboxOrchestrator() {
           list.setCategory(null);
           list.setTeamUserId(null);
         } else if (section.key === "sla-at-risk") {
-          // No dedicated SLA filter on the API yet; the closest visual
-          // approximation is "oldest open threads bubble up." Sorted by
-          // oldest so threads near their deadline appear first.
           list.applyPreset("open");
           list.setSort("oldest");
         }
@@ -145,8 +225,6 @@ function InboxOrchestrator() {
         setSelectedViewId(section.viewId);
         break;
     }
-    // Intentionally only re-run when `section` identity changes — the
-    // list mutators are stable refs from useThreadList.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -157,7 +235,7 @@ function InboxOrchestrator() {
     return () => window.removeEventListener("inbox:open-save-view", onOpen);
   }, []);
 
-  // ── Save-view helpers (unchanged from pre-D0) ────────────────────────
+  // ── Save-view helpers ──────────────────────────────────────────────
   const captureCurrentFilters = useCallback((): SavedViewFilters => {
     const f = list.filters;
     const out: SavedViewFilters = {};
@@ -171,9 +249,18 @@ function InboxOrchestrator() {
   }, [list.filters, mailboxes.currentMailbox]);
 
   const handleSaveView = useCallback(
-    async ({ name, icon, is_shared }: { name: string; icon?: string | null; is_shared?: boolean }) => {
+    async ({
+      name,
+      icon,
+      is_shared,
+    }: {
+      name: string;
+      icon?: string | null;
+      is_shared?: boolean;
+    }) => {
       const filters = captureCurrentFilters();
-      const sort = list.filters.sort && list.filters.sort !== "newest" ? { sort: list.filters.sort } : null;
+      const sort =
+        list.filters.sort && list.filters.sort !== "newest" ? { sort: list.filters.sort } : null;
       const r = await savedViews.create({ name, icon: icon ?? null, filters, sort, is_shared });
       if (!r.ok) throw new Error(r.error);
       toast.push({ variant: "success", message: `Saved "${name}"` });
@@ -182,7 +269,101 @@ function InboxOrchestrator() {
     [captureCurrentFilters, list.filters.sort, savedViews, toast]
   );
 
-  // ── Inbox content layout (single-pane shell + list + detail) ─────────
+  // ── New Phase-1 actions: snooze + tag operations ──────────────────
+  const callApi = useCallback(
+    async (path: string, init: RequestInit = {}) => {
+      const res = await fetch(apiUrl(path), {
+        ...init,
+        headers: {
+          ...authHeaders(),
+          ...(init.body ? { "Content-Type": "application/json" } : {}),
+          ...(init.headers || {}),
+        },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = parseApiError(body, res.status);
+        throw new Error(err);
+      }
+      return body;
+    },
+    [authHeaders]
+  );
+
+  const onSnooze = useCallback(
+    async (untilIso: string | null) => {
+      if (!selectedThreadId) return;
+      try {
+        const body = await callApi(`/inbox/threads/${selectedThreadId}/snooze`, {
+          method: "POST",
+          body: JSON.stringify(untilIso ? { until: untilIso } : {}),
+        });
+        if (body?.thread) {
+          list.patchThread(selectedThreadId, body.thread);
+          await detail.refetch();
+        }
+        toast.push({
+          variant: "success",
+          message: untilIso ? `Snoozed until ${new Date(untilIso).toLocaleString()}` : "Snoozed",
+        });
+      } catch (e) {
+        toast.push({
+          variant: "error",
+          message: `Couldn't snooze — ${e instanceof Error ? e.message : "unknown error"}`,
+        });
+      }
+    },
+    [selectedThreadId, callApi, list, detail, toast]
+  );
+
+  const onTagOp = useCallback(
+    async (op: { add?: string[]; remove?: string[] }) => {
+      if (!selectedThreadId) return;
+      try {
+        const body = await callApi(`/inbox/threads/${selectedThreadId}/tags`, {
+          method: "POST",
+          body: JSON.stringify(op),
+        });
+        if (body?.thread) {
+          list.patchThread(selectedThreadId, body.thread);
+          await detail.refetch();
+        }
+      } catch (e) {
+        toast.push({
+          variant: "error",
+          message: `Couldn't update tags — ${e instanceof Error ? e.message : "unknown error"}`,
+        });
+      }
+    },
+    [selectedThreadId, callApi, list, detail, toast]
+  );
+
+  // ── Title + mailbox label for the list/view ─────────────────────────
+  const { listTitle, mailboxLabel } = useMemo(() => {
+    if (section.kind === "mailbox") {
+      const m = mailboxes.mailboxes.find((x) => x.id === section.connectionId);
+      const name = (m?.display_name || m?.mailbox_email || m?.email_address || "Mailbox").trim();
+      return { listTitle: name, mailboxLabel: name };
+    }
+    if (section.kind === "view") {
+      const v = savedViews.views.find((x) => x.id === section.viewId);
+      return { listTitle: v?.name ?? "View", mailboxLabel: null };
+    }
+    if (section.kind === "builtin") {
+      const map: Record<typeof section.key, string> = {
+        "all-open": "All open",
+        "sla-at-risk": "SLA at risk",
+        snoozed: "Snoozed",
+        starred: "Starred",
+      };
+      return { listTitle: map[section.key], mailboxLabel: null };
+    }
+    // personal
+    if (section.bucket === "assignedToMe") return { listTitle: "Assigned to me", mailboxLabel: null };
+    return { listTitle: "Inbox", mailboxLabel: null };
+  }, [section, mailboxes.mailboxes, savedViews.views]);
+
+  // ── Inbox content layout ────────────────────────────────────────────
   const layoutClass = [
     styles.layout,
     styles.layoutNoSidebar,
@@ -207,33 +388,22 @@ function InboxOrchestrator() {
       />
 
       <div className={layoutClass}>
-        <div className={styles.listPanel}>
-          <ErrorBoundary label="ticket list">
-            <FilterBar
-              search={list.filters.search}
-              setSearch={list.setSearch}
-              sort={list.filters.sort}
-              setSort={list.setSort}
-            />
-            <FilterDrawer
-              filters={list.filters}
-              teamUsers={teamUsers}
-              setBucket={list.setBucket}
-              setCategory={list.setCategory}
-              setNarrowStatus={list.setNarrowStatus}
-              setTeamUserId={list.setTeamUserId}
-            />
-            <InboxList
-              list={list}
-              selectedThreadId={selectedThreadId}
-              onSelect={actions.openThread}
-              onToggleStar={(e, t) => {
-                e.stopPropagation();
-                void actions.toggleStar(t);
-              }}
-            />
-          </ErrorBoundary>
-        </div>
+        <ErrorBoundary label="conversation list">
+          <ConversationList
+            title={listTitle}
+            list={list}
+            status={statusTab}
+            onStatusChange={onStatusChange}
+            selectedThreadId={selectedThreadId}
+            onSelect={actions.openThread}
+            onToggleStar={(e, t) => {
+              e.stopPropagation();
+              void actions.toggleStar(t);
+            }}
+            density={density}
+            onDensityChange={setDensity}
+          />
+        </ErrorBoundary>
 
         <SaveViewModal
           open={saveViewOpen}
@@ -244,22 +414,28 @@ function InboxOrchestrator() {
           onSave={handleSaveView}
         />
 
-        <DetailPanelContainer
-          selectedThreadId={selectedThreadId}
-          detail={detail}
-          teamUsers={teamUsers}
-          slaView={slaView}
-          canMetaMailbox={canMetaMailbox}
-          canReplyMailbox={canMetaMailbox}
-          compose={compose}
-          aiDraft={aiDraft}
-          onCloseMobile={() => layout.setDetailOpen(false)}
-          onToggleStar={(t) => void actions.toggleStar(t)}
-          onUpdate={(patch) => void actions.update(patch)}
-          onRunAiDraft={() => void actions.runAiDraft()}
-          onDismissAiDraft={() => void actions.dismissAiDraft()}
-          onSend={() => void actions.send()}
-        />
+        <ErrorBoundary label="conversation view">
+          <ConversationView
+            detail={detail}
+            teamUsers={teamUsers}
+            slaView={slaView}
+            canMetaMailbox={canMetaMailbox}
+            canReplyMailbox={canMetaMailbox}
+            compose={compose}
+            aiDraft={aiDraft}
+            mailboxLabel={mailboxLabel}
+            onCloseMobile={() => layout.setDetailOpen(false)}
+            onToggleStar={(t) => void actions.toggleStar(t)}
+            onUpdate={(patch) => void actions.update(patch)}
+            onRunAiDraft={() => void actions.runAiDraft()}
+            onDismissAiDraft={() => void actions.dismissAiDraft()}
+            onSend={() => void actions.send()}
+            onSnooze={onSnooze}
+            onTagOp={onTagOp}
+            onStatusChange={(next) => void actions.update({ status: next })}
+            presence={null}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );
