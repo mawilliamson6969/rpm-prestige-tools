@@ -4,7 +4,7 @@ import { getPool } from "../lib/db.js";
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-const BACKEND_VERSION = "v5-letterstream-quote-fix";
+export const BACKEND_VERSION = "v6-mailers-routes-probe";
 import {
   submitMailer,
   confirmPreauth,
