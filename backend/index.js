@@ -25,7 +25,7 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
-import { ensureMbSchema } from "./lib/mbSchema.js";
+import { ensureMbSchema, ensureMbRenewalsSeed } from "./lib/mbSchema.js";
 import {
   listBoards as listMbBoards,
   createBoard as createMbBoard,
@@ -2338,6 +2338,8 @@ async function start() {
       console.log("Database schema OK (agent_hub_* phase 4).");
       await ensureMbSchema();
       console.log("Database schema OK (mb_* monday-style boards).");
+      await ensureMbRenewalsSeed();
+      console.log("Database schema OK (mb_* renewals seed).");
     } catch (e) {
       console.error("Could not ensure database schema:", e.message);
     }

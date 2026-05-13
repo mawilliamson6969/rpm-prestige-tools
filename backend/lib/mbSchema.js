@@ -16,18 +16,30 @@ import { fileURLToPath } from "node:url";
 import { getPool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION_PATH = path.join(__dirname, "..", "migrations", "029_mb_foundation.sql");
+const FOUNDATION_PATH = path.join(__dirname, "..", "migrations", "029_mb_foundation.sql");
+const RENEWALS_SEED_PATH = path.join(__dirname, "..", "migrations", "030_mb_renewals_seed.sql");
 
-let cachedSql = null;
+const cache = new Map();
 
-function loadMigration() {
-  if (cachedSql) return cachedSql;
-  cachedSql = fs.readFileSync(MIGRATION_PATH, "utf8");
-  return cachedSql;
+function loadSql(p) {
+  if (cache.has(p)) return cache.get(p);
+  const sql = fs.readFileSync(p, "utf8");
+  cache.set(p, sql);
+  return sql;
 }
 
 export async function ensureMbSchema() {
   const pool = getPool();
-  const sql = loadMigration();
-  await pool.query(sql);
+  await pool.query(loadSql(FOUNDATION_PATH));
+}
+
+/**
+ * Phase 3: seed the Renewals board. Idempotent — re-running refreshes
+ * read-only/derived values (renewal_score, tenant_name, property,
+ * lease_end_date) but preserves user edits to editable columns
+ * (status, owner, notes, etc.).
+ */
+export async function ensureMbRenewalsSeed() {
+  const pool = getPool();
+  await pool.query(loadSql(RENEWALS_SEED_PATH));
 }
