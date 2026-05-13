@@ -7,6 +7,16 @@ on:
   push:
     branches: [main]
 
+# Two pushes to `main` in quick succession used to race each other on the
+# VPS — both runs called `docker compose up -d` concurrently and one
+# killed the other mid-recreate, leaving a renamed orphan that blocked
+# the next deploy. Serialize: a queued run waits for the in-flight one
+# to finish before SSHing in. `cancel-in-progress: false` keeps every
+# commit's deploy on the books rather than skipping the older one.
+concurrency:
+  group: deploy-linode
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
