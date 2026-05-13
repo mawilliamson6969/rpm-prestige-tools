@@ -475,7 +475,10 @@ export type FinancialsSummary = {
 // Phase 3 types
 // ============================================================
 
-export type Channel = "email" | "sms" | "postcard" | "letter";
+// Phase 3 send channel — message delivery medium for templates and
+// automations. Distinct from the Phase 1 `Channel` (agent contact
+// preference: email/text/call/mail) which is unrelated to send infra.
+export type MessageChannel = "email" | "sms" | "postcard" | "letter";
 export type TriggerType = "time_based" | "event_based" | "manual";
 export type RunStatus = "pending_approval" | "approved" | "running" | "completed" | "failed" | "skipped" | "cancelled" | "simulator";
 export type ActionType =
@@ -538,7 +541,7 @@ export type Template = {
   slug: string;
   name: string;
   description: string | null;
-  channel: Channel;
+  channel: MessageChannel;
   subject: string | null;
   body: string;
   body_html: string | null;
@@ -554,7 +557,7 @@ export type SendLogEntry = {
   id: number;
   agent_id: number;
   agent_name: string | null;
-  channel: Channel;
+  channel: MessageChannel;
   direction: "outbound" | "inbound";
   automation_run_id: number | null;
   template_id: number | null;
