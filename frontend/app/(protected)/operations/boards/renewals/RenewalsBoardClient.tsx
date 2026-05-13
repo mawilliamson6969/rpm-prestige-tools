@@ -23,6 +23,30 @@ import type { BoardColumn, Group, Item } from "@/types/mb";
 
 const BOARD_SLUG = "renewals";
 
+/**
+ * Pull a human-readable failure detail out of a non-2xx Response. The
+ * backend mb/* routes return JSON like {error: "..."}; if parsing fails
+ * we fall back to status + first 200 chars of the body so the user can
+ * still tell whether they hit Nginx, the API, or a CORS preflight.
+ */
+async function describeFailure(res: Response): Promise<string> {
+  const status = `${res.status} ${res.statusText || ""}`.trim();
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    return status;
+  }
+  if (!text) return status;
+  try {
+    const body = JSON.parse(text);
+    if (typeof body?.error === "string") return `${status}: ${body.error}`;
+    return `${status}: ${text.slice(0, 200)}`;
+  } catch {
+    return `${status}: ${text.slice(0, 200)}`;
+  }
+}
+
 export default function RenewalsBoardClient() {
   const { authHeaders, token } = useAuth();
   const [data, setData] = useState<RenewalsBoardData | null>(null);
@@ -54,14 +78,17 @@ export default function RenewalsBoardClient() {
         headers: { ...authHeaders() },
         cache: "no-store",
       });
-      if (!boardsRes.ok) throw new Error("Could not load boards.");
+      if (!boardsRes.ok) {
+        const detail = await describeFailure(boardsRes);
+        throw new Error(`GET /mb/boards failed — ${detail}`);
+      }
       const boardsBody = await boardsRes.json();
       const boards: Array<{ id: number; name: string; slug: string }> =
         boardsBody.boards || [];
       const board = boards.find((b) => b.slug === BOARD_SLUG);
       if (!board) {
         throw new Error(
-          "Renewals board has not been seeded. Run migration 030_mb_renewals_seed.sql."
+          "Renewals board has not been seeded. Backend must run migration 030_mb_renewals_seed.sql (it runs at startup via ensureMbRenewalsSeed)."
         );
       }
 
@@ -75,8 +102,14 @@ export default function RenewalsBoardClient() {
           cache: "no-store",
         }),
       ]);
-      if (!schemaRes.ok) throw new Error("Could not load board schema.");
-      if (!itemsRes.ok) throw new Error("Could not load board items.");
+      if (!schemaRes.ok) {
+        const detail = await describeFailure(schemaRes);
+        throw new Error(`GET /mb/boards/${board.id} failed — ${detail}`);
+      }
+      if (!itemsRes.ok) {
+        const detail = await describeFailure(itemsRes);
+        throw new Error(`GET /mb/boards/${board.id}/items failed — ${detail}`);
+      }
       const schemaBody = await schemaRes.json();
       const itemsBody = await itemsRes.json();
       const columns: BoardColumn[] = schemaBody.columns || [];
