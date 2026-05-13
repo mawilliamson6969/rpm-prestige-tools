@@ -1,66 +1,52 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import DetailPanelContainer from "../../../components/inbox/DetailPanelContainer";
 import ErrorBoundary from "../../../components/inbox/ErrorBoundary";
 import FilterBar from "../../../components/inbox/FilterBar";
+import FilterDrawer from "../../../components/inbox/FilterDrawer";
 import InboxList from "../../../components/inbox/InboxList";
 import InboxTopBar from "../../../components/inbox/InboxTopBar";
-import MailboxSidebar from "../../../components/inbox/MailboxSidebar";
 import SaveViewModal from "../../../components/inbox/SaveViewModal";
-import ToastContainer from "../../../components/inbox/ToastContainer";
-import ViewsSection from "../../../components/inbox/ViewsSection";
+import { useInboxShell } from "../../../components/inbox/shell/InboxShellContext";
 import useAIDraft from "../../../hooks/inbox/useAIDraft";
 import useBatchAIDraft from "../../../hooks/inbox/useBatchAIDraft";
 import useCompose from "../../../hooks/inbox/useCompose";
 import useInboxActions from "../../../hooks/inbox/useInboxActions";
-import useMailboxes from "../../../hooks/inbox/useMailboxes";
 import useResponsiveLayout from "../../../hooks/inbox/useResponsiveLayout";
-import useSavedViews, {
-  type SavedView,
-  type SavedViewFilters,
-} from "../../../hooks/inbox/useSavedViews";
+import { useNotificationCenter } from "../../../hooks/inbox/useNotificationCenter";
+import { useToast } from "../../../hooks/inbox/useToast";
 import useSLA from "../../../hooks/inbox/useSLA";
-import useStats from "../../../hooks/inbox/useStats";
 import useSyncHealthReporter from "../../../hooks/inbox/useSyncHealthReporter";
 import useTeamUsers from "../../../hooks/inbox/useTeamUsers";
 import useThreadDetail from "../../../hooks/inbox/useThreadDetail";
 import useThreadList from "../../../hooks/inbox/useThreadList";
-import {
-  NotificationProvider,
-  useNotificationCenter,
-} from "../../../hooks/inbox/useNotificationCenter";
-import { ToastProvider, useToast } from "../../../hooks/inbox/useToast";
+import type { SavedViewFilters } from "../../../hooks/inbox/useSavedViews";
 import styles from "./inbox.module.css";
 
 export default function InboxClient() {
-  return (
-    <ToastProvider>
-      <NotificationProvider>
-        <InboxOrchestrator />
-        <ToastContainer />
-      </NotificationProvider>
-    </ToastProvider>
-  );
+  // The /inbox layout already supplies ToastProvider, NotificationProvider,
+  // and InboxShellProvider. This component just orchestrates the inbox
+  // content pane.
+  return <InboxOrchestrator />;
 }
 
 function InboxOrchestrator() {
-  const { authHeaders, isAdmin, user } = useAuth();
+  const { authHeaders, isAdmin } = useAuth();
   const toast = useToast();
   const notifications = useNotificationCenter();
   const layout = useResponsiveLayout();
+  const { mailboxes, stats, savedViews, section, setMobileDrawerOpen } = useInboxShell();
 
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [selectedViewId, setSelectedViewId] = useState<number | null>(null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
 
-  const stats = useStats();
   const teamUsers = useTeamUsers();
-  const mailboxes = useMailboxes();
   useSyncHealthReporter(mailboxes.mailboxes, notifications);
-  const savedViews = useSavedViews();
+
   const list = useThreadList({
     connectionId: mailboxes.currentMailbox,
     viewId: selectedViewId,
@@ -82,8 +68,6 @@ function InboxOrchestrator() {
     },
   });
 
-  // useAIDraft is keyed on the seed ticket id (Graph-side reply target). When
-  // the active thread changes, the seed changes and the banner resets.
   const aiDraft = useAIDraft({ ticketId: detail.seedTicketId });
 
   const readOnlyMailbox = detail.thread?.my_permission === "read";
@@ -119,11 +103,61 @@ function InboxOrchestrator() {
 
   const eligibleBatchCount = batch.selectEligible(list.threads).length;
 
-  const applyView = useCallback((view: SavedView) => {
-    setSelectedViewId(view.id);
-    layout.setSidebarOpen(false);
-  }, [layout]);
+  // ── Section → list filter wiring ────────────────────────────────────
+  // The shell sidebar drives the `section` value. We translate that into
+  // the legacy bucket/status/sort filters that useThreadList already knows
+  // how to apply. `applyPreset` short-circuits filter-change events so the
+  // selected saved view isn't cleared.
+  const lastSectionKeyRef = useRef<string>("");
+  useEffect(() => {
+    const key = JSON.stringify(section);
+    if (lastSectionKeyRef.current === key) return;
+    lastSectionKeyRef.current = key;
+    switch (section.kind) {
+      case "personal":
+        if (section.bucket === "open") list.applyPreset("open");
+        else if (section.bucket === "assignedToMe") list.applyPreset("assignedToMe");
+        // mentions/drafts: disabled in sidebar; ignored if dispatched.
+        setSelectedViewId(null);
+        break;
+      case "mailbox":
+        list.applyPreset("open");
+        setSelectedViewId(null);
+        break;
+      case "builtin":
+        if (section.key === "all-open") list.applyPreset("open");
+        else if (section.key === "starred") list.applyPreset("starred");
+        else if (section.key === "snoozed") {
+          list.setBucket("all");
+          list.setNarrowStatus("snoozed");
+          list.setCategory(null);
+          list.setTeamUserId(null);
+        } else if (section.key === "sla-at-risk") {
+          // No dedicated SLA filter on the API yet; the closest visual
+          // approximation is "oldest open threads bubble up." Sorted by
+          // oldest so threads near their deadline appear first.
+          list.applyPreset("open");
+          list.setSort("oldest");
+        }
+        setSelectedViewId(null);
+        break;
+      case "view":
+        setSelectedViewId(section.viewId);
+        break;
+    }
+    // Intentionally only re-run when `section` identity changes — the
+    // list mutators are stable refs from useThreadList.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
 
+  // ── Save-view modal trigger from sidebar (+ button on VIEWS header) ──
+  useEffect(() => {
+    const onOpen = () => setSaveViewOpen(true);
+    window.addEventListener("inbox:open-save-view", onOpen);
+    return () => window.removeEventListener("inbox:open-save-view", onOpen);
+  }, []);
+
+  // ── Save-view helpers (unchanged from pre-D0) ────────────────────────
   const captureCurrentFilters = useCallback((): SavedViewFilters => {
     const f = list.filters;
     const out: SavedViewFilters = {};
@@ -148,22 +182,10 @@ function InboxOrchestrator() {
     [captureCurrentFilters, list.filters.sort, savedViews, toast]
   );
 
-  const handleDeleteView = useCallback(
-    async (view: SavedView) => {
-      const r = await savedViews.remove(view.id);
-      if (!r.ok) {
-        toast.push({ variant: "error", message: `Couldn't delete view — ${r.error}` });
-        return;
-      }
-      if (selectedViewId === view.id) setSelectedViewId(null);
-      toast.push({ variant: "success", message: `Deleted "${view.name}"` });
-    },
-    [savedViews, selectedViewId, toast]
-  );
-
+  // ── Inbox content layout (single-pane shell + list + detail) ─────────
   const layoutClass = [
     styles.layout,
-    layout.isMobile && layout.sidebarOpen ? styles.sidebarOpen : "",
+    styles.layoutNoSidebar,
     layout.detailOpen ? styles.showDetailMobile : "",
   ]
     .filter(Boolean)
@@ -181,46 +203,10 @@ function InboxOrchestrator() {
         batchSummary={batch.summary}
         batchEligibleCount={eligibleBatchCount}
         onDraftAllUnread={() => void actions.draftAllUnread()}
+        onOpenMenu={() => setMobileDrawerOpen(true)}
       />
 
-      {layout.isMobile && layout.sidebarOpen ? (
-        <button
-          type="button"
-          className={styles.overlaySidebar}
-          aria-label="Close menu"
-          onClick={() => layout.setSidebarOpen(false)}
-        />
-      ) : null}
-
       <div className={layoutClass}>
-        <ErrorBoundary label="sidebar">
-          <MailboxSidebar
-            mailboxes={mailboxes}
-            stats={stats}
-            teamUsers={teamUsers}
-            filters={list.filters}
-            applyPreset={list.applyPreset}
-            setBucket={list.setBucket}
-            setCategory={list.setCategory}
-            setNarrowStatus={list.setNarrowStatus}
-            setTeamUserId={list.setTeamUserId}
-            onItemClick={() => layout.setSidebarOpen(false)}
-            onToggleMenu={() => layout.setSidebarOpen(!layout.sidebarOpen)}
-            viewsSlot={
-              <ViewsSection
-                views={savedViews.views}
-                loading={savedViews.loading}
-                selectedViewId={selectedViewId}
-                isAdmin={isAdmin}
-                currentUserId={user?.id ?? null}
-                onApply={applyView}
-                onSaveCurrent={() => setSaveViewOpen(true)}
-                onDelete={handleDeleteView}
-              />
-            }
-          />
-        </ErrorBoundary>
-
         <div className={styles.listPanel}>
           <ErrorBoundary label="ticket list">
             <FilterBar
@@ -228,6 +214,14 @@ function InboxOrchestrator() {
               setSearch={list.setSearch}
               sort={list.filters.sort}
               setSort={list.setSort}
+            />
+            <FilterDrawer
+              filters={list.filters}
+              teamUsers={teamUsers}
+              setBucket={list.setBucket}
+              setCategory={list.setCategory}
+              setNarrowStatus={list.setNarrowStatus}
+              setTeamUserId={list.setTeamUserId}
             />
             <InboxList
               list={list}

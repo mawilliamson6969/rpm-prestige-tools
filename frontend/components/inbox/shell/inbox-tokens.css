@@ -1,0 +1,70 @@
+/* Design tokens — Shared Inbox (D0).
+ * Source: design/shared-inbox-ux-and-ui/project/styles.css lines 34–51.
+ * Loaded by the /inbox layout. Token values are verbatim from the handoff
+ * bundle; do not round or normalize.
+ */
+:root {
+  /* Accent — RPM brand navy */
+  --inbox-accent: #1B2856;
+
+  /* Surfaces */
+  --inbox-bg: #FFFFFF;
+  --inbox-canvas: #F4F5F7;
+  --inbox-panel: #FAFBFC;
+  --inbox-panel-2: #F7F8FA;
+
+  /* Borders */
+  --inbox-border: #ECEEF2;
+  --inbox-border-strong: #D9DDE3;
+
+  /* Text */
+  --inbox-text: #0F172A;
+  --inbox-text-2: #475569;
+  --inbox-text-3: #6A737B;
+  --inbox-text-4: #94A3B8;
+
+  /* States */
+  --inbox-hover: rgba(15, 23, 42, 0.04);
+  --inbox-selected: color-mix(in srgb, var(--inbox-accent) 8%, white);
+  --inbox-selected-strong: color-mix(in srgb, var(--inbox-accent) 14%, white);
+  --inbox-ring: color-mix(in srgb, var(--inbox-accent) 32%, transparent);
+
+  /* Semantic — SLA */
+  --inbox-sla-ok: #1F8A5B;
+  --inbox-sla-warn: #B45309;
+  --inbox-sla-late: #B32317;
+
+  /* Typography. Geist is loaded via Google Fonts <link> in app/layout.tsx.
+   * The stack falls through to Hanken Grotesk and the system stack so the
+   * shell renders cleanly even if the CDN is slow. */
+  --inbox-font-sans: 'Geist', 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --inbox-font-mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+/* The shell root sets unprefixed aliases so the design CSS reads exactly
+ * like the handoff (--accent, --bg, --border, etc.) without leaking into
+ * the surrounding app.
+ */
+.inbox-root {
+  --accent: var(--inbox-accent);
+  --bg: var(--inbox-bg);
+  --canvas: var(--inbox-canvas);
+  --panel: var(--inbox-panel);
+  --panel-2: var(--inbox-panel-2);
+  --border: var(--inbox-border);
+  --border-strong: var(--inbox-border-strong);
+  --text: var(--inbox-text);
+  --text-2: var(--inbox-text-2);
+  --text-3: var(--inbox-text-3);
+  --text-4: var(--inbox-text-4);
+  --hover: var(--inbox-hover);
+  --selected: var(--inbox-selected);
+  --selected-strong: var(--inbox-selected-strong);
+  --ring: var(--inbox-ring);
+
+  color: var(--text);
+  font-family: var(--inbox-font-sans);
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
