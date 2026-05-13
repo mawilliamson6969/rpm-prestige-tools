@@ -99,8 +99,18 @@ CREATE INDEX IF NOT EXISTS idx_agent_hub_runs_pending_execution
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_runs_event
   ON agent_hub_automation_runs (automation_id, agent_id, triggered_by_event_id)
   WHERE triggered_by_event_id IS NOT NULL AND triggered_by != 'simulator';
+-- triggered_at is TIMESTAMPTZ. Casting timestamptz -> date is STABLE
+-- (it depends on the session timezone) so Postgres refuses to use it
+-- in an index expression. Anchoring to UTC via AT TIME ZONE 'UTC' yields
+-- a timestamp WITHOUT time zone, and timestamp::date IS immutable. UTC
+-- is the right anchor because the idempotency window is "one run per
+-- calendar day globally," not per-viewer.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_runs_daily
-  ON agent_hub_automation_runs (automation_id, agent_id, (triggered_at::date))
+  ON agent_hub_automation_runs (
+    automation_id,
+    agent_id,
+    (((triggered_at AT TIME ZONE 'UTC')::date))
+  )
   WHERE triggered_by_event_id IS NULL AND triggered_by != 'simulator';
 
 -- ============================================================
