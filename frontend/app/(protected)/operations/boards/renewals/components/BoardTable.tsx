@@ -12,6 +12,7 @@ import {
   TextCell,
 } from "./CellEditors";
 import type { SortDir, TeamUser } from "./types";
+import MentionBadge from "../../components/MentionBadge";
 
 interface BoardTableProps {
   columns: BoardColumn[];
@@ -22,6 +23,8 @@ interface BoardTableProps {
   onSort: (columnKey: string) => void;
   onOpenItem: (id: number) => void;
   onSaveValue: (itemId: number, columnKey: string, next: unknown) => Promise<void>;
+  /** Phase 4: map of item id -> unseen @mention count, rendered as a badge next to the title. */
+  mentionCountByItem?: Record<number, number>;
 }
 
 export default function BoardTable({
@@ -33,6 +36,7 @@ export default function BoardTable({
   onSort,
   onOpenItem,
   onSaveValue,
+  mentionCountByItem,
 }: BoardTableProps) {
   if (items.length === 0) return null;
 
@@ -79,6 +83,7 @@ export default function BoardTable({
                   users={users}
                   onOpenItem={onOpenItem}
                   onSave={(next) => onSaveValue(item.id, c.key, next)}
+                  mentionCount={mentionCountByItem?.[item.id] ?? 0}
                 />
               </td>
             ))}
@@ -95,12 +100,14 @@ function CellDispatcher({
   users,
   onOpenItem,
   onSave,
+  mentionCount,
 }: {
   column: BoardColumn;
   item: Item;
   users: TeamUser[];
   onOpenItem: (id: number) => void;
   onSave: (next: unknown) => Promise<void>;
+  mentionCount: number;
 }) {
   const raw = item.values?.[column.key];
   const isTenantName = column.key === "tenant_name";
@@ -117,6 +124,7 @@ function CellDispatcher({
         >
           {label}
         </button>
+        <MentionBadge count={mentionCount} />
       </div>
     );
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 import styles from "../renewals.module.css";
 import type { BoardColumn, Item } from "@/types/mb";
@@ -64,14 +65,25 @@ export default function ItemDrawer({
               ) : null}
             </p>
           </div>
-          <button
-            type="button"
-            className={styles.drawerClose}
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <Link
+              href={`/operations/boards/renewals/items/${item.id}`}
+              className={styles.drawerClose}
+              aria-label="Expand to full view"
+              title="Expand to full view"
+              style={{ fontSize: "1.1rem", textDecoration: "none" }}
+            >
+              ⤢
+            </Link>
+            <button
+              type="button"
+              className={styles.drawerClose}
+              onClick={onClose}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className={styles.drawerBody}>

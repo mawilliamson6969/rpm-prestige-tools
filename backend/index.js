@@ -29,6 +29,7 @@ import {
   ensureMbSchema,
   ensureMbRenewalsSeed,
   ensureMbCustomizationSchema,
+  ensureMbUpdatesSchema,
 } from "./lib/mbSchema.js";
 import {
   listBoards as listMbBoards,
@@ -64,6 +65,23 @@ import {
   createSubitemUpdate as createMbSubitemUpdate,
 } from "./routes/mbUpdates.js";
 import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
+import {
+  listItemUpdates as listMbDetailUpdates,
+  createItemUpdate as createMbDetailUpdate,
+  createReply as createMbReply,
+  updateOwnComment as updateMbOwnComment,
+  deleteOwnComment as deleteMbOwnComment,
+  addReaction as addMbReaction,
+  removeReaction as removeMbReaction,
+  createAttachment as createMbAttachment,
+  deleteAttachment as deleteMbAttachment,
+  downloadAttachment as downloadMbAttachment,
+  uploadMbAttachmentMiddleware,
+  markMentionsSeen as markMbMentionsSeen,
+  listUnseenMentions as listMbUnseenMentions,
+  getItemContext as getMbItemContext,
+  getRelatedItems as getMbRelatedItems,
+} from "./routes/mbItemDetail.js";
 import {
   createBoardWithDefaults as createMbBoardWithDefaults,
   createColumn as createMbColumn,
@@ -2321,8 +2339,40 @@ app.post(
 app.patch("/mb/subitem-templates/:id", requireAuth, requireAdminRole, updateMbTemplate);
 app.delete("/mb/subitem-templates/:id", requireAuth, requireAdminRole, deleteMbTemplate);
 
-app.get("/mb/items/:itemId/updates", requireAuth, listMbItemUpdates);
-app.post("/mb/items/:itemId/updates", requireAuth, createMbItemUpdate);
+// Phase 4: updates feed (replaces Phase 1's simple list/create with the
+// richer item-detail handlers that hydrate reactions, mentions, and
+// attachments). The /:itemId/updates path is kept as-is for backwards
+// compat with any existing client code.
+app.get("/mb/items/:id/updates", requireAuth, listMbDetailUpdates);
+app.post("/mb/items/:id/updates", requireAuth, createMbDetailUpdate);
+// Backwards-compat alias (Phase 1 used :itemId).
+app.get("/mb/items/:itemId/updates-legacy", requireAuth, listMbItemUpdates);
+app.post("/mb/items/:itemId/updates-legacy", requireAuth, createMbItemUpdate);
+
+app.post("/mb/updates/:id/replies", requireAuth, createMbReply);
+app.patch("/mb/updates/:id", requireAuth, updateMbOwnComment);
+app.delete("/mb/updates/:id", requireAuth, deleteMbOwnComment);
+
+app.post("/mb/updates/:id/reactions", requireAuth, addMbReaction);
+app.delete("/mb/updates/:id/reactions", requireAuth, removeMbReaction);
+
+app.post(
+  "/mb/updates/:id/attachments",
+  requireAuth,
+  uploadMbAttachmentMiddleware,
+  createMbAttachment
+);
+app.delete("/mb/attachments/:id", requireAuth, deleteMbAttachment);
+// Token may be in the Authorization header (normal) or in the `?token=`
+// query (so <img src=…> previews work — browsers can't attach headers).
+app.get("/mb/attachments/:id/download", requireAuthOrQueryToken, downloadMbAttachment);
+
+app.post("/mb/items/:id/mark-mentions-seen", requireAuth, markMbMentionsSeen);
+app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
+
+app.get("/mb/items/:id/context", requireAuth, getMbItemContext);
+app.get("/mb/items/:id/related", requireAuth, getMbRelatedItems);
+
 app.get("/mb/subitems/:subitemId/updates", requireAuth, listMbSubitemUpdates);
 app.post("/mb/subitems/:subitemId/updates", requireAuth, createMbSubitemUpdate);
 
@@ -2374,6 +2424,7 @@ async function start() {
       ["mb_* monday-style boards", ensureMbSchema],
       ["mb_* renewals seed", ensureMbRenewalsSeed],
       ["mb_* customization", ensureMbCustomizationSchema],
+      ["mb_* updates (Phase 4)", ensureMbUpdatesSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

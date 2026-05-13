@@ -323,6 +323,78 @@ export interface ItemUpdate {
   posted_to_appfolio: boolean;
   appfolio_note_id: string | null;
   created_at: string;
+  /** Phase 4 additions: */
+  parent_update_id?: number | null;
+  body_html?: string | null;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  user_display_name?: string | null;
+  user_username?: string | null;
+  reactions?: ReactionGroup[];
+  mentions?: MentionRef[];
+  attachments?: AttachmentRef[];
+}
+
+export type ReactionEmoji = "👍" | "❤️" | "😄" | "🎉" | "😢" | "🚀";
+
+export interface ReactionGroup {
+  emoji: ReactionEmoji | string;
+  count: number;
+  users: Array<{ user_id: number; display_name: string | null }>;
+}
+
+export interface MentionRef {
+  mentioned_user_id: number;
+  seen_at: string | null;
+  display_name: string | null;
+}
+
+export interface AttachmentRef {
+  id: number;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_by: number | null;
+  created_at: string;
+}
+
+export interface ItemContext {
+  linked: boolean;
+  tenant: {
+    linked: boolean;
+    synced_at: string | null;
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    lease_from?: string | null;
+    lease_to?: string | null;
+    rent?: string | number | null;
+    balance?: string | number | null;
+  };
+  property: {
+    linked: boolean;
+    synced_at: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    property_type?: string | null;
+    owner_name?: string | null;
+    owner_email?: string | null;
+    owner_phone?: string | null;
+    unit_count?: number | string | null;
+    occupied_count?: number | string | null;
+  };
+}
+
+export interface RelatedItemRef {
+  id: number;
+  board_id: number;
+  board_name: string;
+  board_slug: string;
+  title: string;
+  tenant_name: string | null;
+  property: string | null;
+  status: string | null;
 }
 
 export interface SubitemUpdate {

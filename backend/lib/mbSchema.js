@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FOUNDATION_PATH = path.join(__dirname, "..", "migrations", "029_mb_foundation.sql");
 const RENEWALS_SEED_PATH = path.join(__dirname, "..", "migrations", "030_mb_renewals_seed.sql");
 const CUSTOMIZATION_PATH = path.join(__dirname, "..", "migrations", "031_mb_customization.sql");
+const UPDATES_PATH = path.join(__dirname, "..", "migrations", "032_mb_updates.sql");
 
 const cache = new Map();
 
@@ -56,4 +57,13 @@ export async function ensureMbRenewalsSeed() {
 export async function ensureMbCustomizationSchema() {
   const pool = getPool();
   await pool.query(loadSql(CUSTOMIZATION_PATH));
+}
+
+/**
+ * Phase 4: extend mb_item_updates and add mentions/reactions/attachments
+ * tables. Includes the "no nested replies" trigger.
+ */
+export async function ensureMbUpdatesSchema() {
+  const pool = getPool();
+  await pool.query(loadSql(UPDATES_PATH));
 }
