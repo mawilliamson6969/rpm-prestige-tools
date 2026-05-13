@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { getPool } from "../lib/db.js";
+
+// Version tag included in every quote/confirm-send response so we can verify
+// in the browser DevTools that the deployed backend is running the latest code.
+const BACKEND_VERSION = "v5-letterstream-quote-fix";
 import {
   submitMailer,
   confirmPreauth,
@@ -390,6 +394,7 @@ export async function postMailerQuote(req, res) {
     }
 
     res.json({
+      backendVersion: BACKEND_VERSION,
       mailer: rowToMailer(savedMailer),
       quote: {
         authcode,
@@ -407,7 +412,10 @@ export async function postMailerQuote(req, res) {
        VALUES ($1, 'quote_failed', $2, 'system')`,
       [id, errString(e?.message, "Quote failed").slice(0, 500)]
     ).catch(() => {});
-    res.status(502).json({ error: errString(e?.message, "Failed to quote mailer.") });
+    res.status(502).json({
+      backendVersion: BACKEND_VERSION,
+      error: errString(e?.message, "Failed to quote mailer."),
+    });
   }
 }
 

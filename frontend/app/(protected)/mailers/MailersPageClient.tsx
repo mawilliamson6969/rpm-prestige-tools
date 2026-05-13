@@ -466,7 +466,9 @@ export default function MailersPageClient() {
       // from a browser extension.
       const msg = errorText(d, "Failed to get quote.");
       console.error("[mailer quote] failed", r.status, d ?? text);
-      setQuoteError(`[v4 status=${r.status}] ${msg}`);
+      const backendVer = (d && typeof d === "object" && typeof d.backendVersion === "string")
+        ? String(d.backendVersion) : "MISSING (old backend!)";
+      setQuoteError(`[v5 fe / backend=${backendVer} / http=${r.status}] ${msg}`);
     } catch (fetchErr) {
       console.error("[mailer quote] fetch threw:", fetchErr);
       setQuoteError(`[v4 fetch error] ${String((fetchErr as Error)?.message || fetchErr)}`);
@@ -827,7 +829,7 @@ export default function MailersPageClient() {
       <div className={styles.dashContent}>
         {/* Build marker — confirms which version of the bundle is loaded */}
         <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginBottom: "0.5rem", textAlign: "right" }}>
-          mailers UI build: v4-error-banner
+          mailers UI build: v5-fe + backend version probe
         </div>
         {/* Config health banner — only shows when LetterStream isn't fully wired up */}
         {health && !health.ready && (
