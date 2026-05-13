@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { getPool } from "../lib/db.js";
 import {
   submitMailer,
@@ -867,6 +868,68 @@ export async function getMailerSuggestions(req, res) {
     console.error("[mailers] suggestions", e);
     res.status(500).json({ error: "Could not load suggestions." });
   }
+}
+
+/**
+ * GET /api/mailers/health
+ * Reports whether the LetterStream integration is fully configured.
+ * Returns booleans for each piece — never returns the actual key values.
+ */
+export async function getMailerHealth(_req, res) {
+  const apiId = (process.env.LETTERSTREAM_API_ID || "").trim();
+  const apiKey = (process.env.LETTERSTREAM_API_KEY || "").trim();
+  const webhookKey = (process.env.LETTERSTREAM_WEBHOOK_KEY || "").trim();
+  const baseUrl = (process.env.LETTERSTREAM_BASE_URL || "https://www.letterstream.com/apis/").trim();
+  const testModeRaw = (process.env.LETTERSTREAM_TEST_MODE || "true").trim().toLowerCase();
+  const testMode = testModeRaw === "true";
+
+  // Check that chromium binary exists (puppeteer-core needs it to render PDFs)
+  const chromiumPath = process.env.CHROMIUM_PATH || "/usr/bin/chromium-browser";
+  let chromiumAvailable = false;
+  let chromiumPathChecked = chromiumPath;
+  try {
+    chromiumAvailable = fs.existsSync(chromiumPath);
+    if (!chromiumAvailable) {
+      // Try the common Alpine alias
+      const alt = "/usr/bin/chromium";
+      if (fs.existsSync(alt)) {
+        chromiumAvailable = true;
+        chromiumPathChecked = alt;
+      }
+    }
+  } catch { chromiumAvailable = false; }
+
+  // Sanity-check the uploads dir for signatures
+  const sigDir = path.join(process.cwd(), "uploads", "signatures");
+  let signaturesDirWritable = false;
+  try {
+    await fs.promises.mkdir(sigDir, { recursive: true });
+    await fs.promises.access(sigDir, fs.constants.W_OK);
+    signaturesDirWritable = true;
+  } catch { signaturesDirWritable = false; }
+
+  const ready = !!(apiId && apiKey && chromiumAvailable);
+
+  const issues = [];
+  if (!apiId) issues.push("LETTERSTREAM_API_ID is not set");
+  if (!apiKey) issues.push("LETTERSTREAM_API_KEY is not set");
+  if (!webhookKey) issues.push("LETTERSTREAM_WEBHOOK_KEY is not set (webhook will reject all incoming scans)");
+  if (!chromiumAvailable) issues.push(`Chromium not found at ${chromiumPathChecked} (PDF rendering will fail)`);
+  if (!signaturesDirWritable) issues.push(`Signatures directory not writable: ${sigDir}`);
+
+  res.json({
+    ready,
+    testMode,
+    apiIdConfigured: !!apiId,
+    apiKeyConfigured: !!apiKey,
+    webhookKeyConfigured: !!webhookKey,
+    chromiumAvailable,
+    chromiumPath: chromiumPathChecked,
+    signaturesDirWritable,
+    baseUrl,
+    issues,
+    webhookUrl: "/api/mailers/webhook/letterstream",
+  });
 }
 
 export async function getMailerVolumeByWeek(req, res) {
