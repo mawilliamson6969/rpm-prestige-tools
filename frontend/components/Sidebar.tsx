@@ -268,12 +268,14 @@ export default function Sidebar({ mobileDrawerOpen, onMobileDrawerOpenChange, co
             { href: "/operations/tasks", label: "Tasks" },
             { href: "/operations/projects", label: "Projects" },
             { href: "/operations/processes", label: "Processes" },
+            { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
             { href: "/operations/templates", label: "Templates" },
           ] as const)
         : ([
             { href: "/operations/tasks", label: "Tasks" },
             { href: "/operations/projects", label: "Projects" },
             { href: "/operations/processes", label: "Processes" },
+            { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
           ] as const),
     [isAdmin]
   );
