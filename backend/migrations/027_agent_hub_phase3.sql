@@ -99,8 +99,18 @@ CREATE INDEX IF NOT EXISTS idx_agent_hub_runs_pending_execution
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_runs_event
   ON agent_hub_automation_runs (automation_id, agent_id, triggered_by_event_id)
   WHERE triggered_by_event_id IS NOT NULL AND triggered_by != 'simulator';
+-- The day-bucket expression uses `AT TIME ZONE 'America/Chicago'` (not a
+-- bare `::date` on timestamptz) because the bare cast is STABLE — it
+-- depends on the session's TimeZone GUC — and Postgres rejects STABLE
+-- functions inside index expressions. Pinning the conversion to a fixed
+-- zone makes it IMMUTABLE and also keeps the daily bucket aligned with
+-- the Houston business day (midnight local, not midnight UTC).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_runs_daily
-  ON agent_hub_automation_runs (automation_id, agent_id, (triggered_at::date))
+  ON agent_hub_automation_runs (
+    automation_id,
+    agent_id,
+    ((triggered_at AT TIME ZONE 'America/Chicago')::date)
+  )
   WHERE triggered_by_event_id IS NULL AND triggered_by != 'simulator';
 
 -- ============================================================

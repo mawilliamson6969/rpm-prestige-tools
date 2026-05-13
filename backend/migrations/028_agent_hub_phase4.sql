@@ -43,8 +43,15 @@ CREATE TABLE IF NOT EXISTS agent_hub_agent_engagement_scores (
 );
 
 -- Idempotency: one row per agent per calendar day. UPSERT on conflict.
+-- Bare `calculated_at::date` is STABLE (depends on session TimeZone) and
+-- Postgres rejects STABLE expressions in index definitions, so we pin
+-- the conversion to America/Chicago (which is IMMUTABLE) and also keeps
+-- the "day" bucket aligned with the Houston business calendar.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_hub_engagement_scores_agent_day
-  ON agent_hub_agent_engagement_scores (agent_id, (calculated_at::date));
+  ON agent_hub_agent_engagement_scores (
+    agent_id,
+    ((calculated_at AT TIME ZONE 'America/Chicago')::date)
+  );
 CREATE INDEX IF NOT EXISTS idx_agent_hub_engagement_scores_agent
   ON agent_hub_agent_engagement_scores (agent_id, calculated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_hub_engagement_scores_score
