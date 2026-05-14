@@ -20,6 +20,7 @@ const FOUNDATION_PATH = path.join(__dirname, "..", "migrations", "029_mb_foundat
 const RENEWALS_SEED_PATH = path.join(__dirname, "..", "migrations", "030_mb_renewals_seed.sql");
 const CUSTOMIZATION_PATH = path.join(__dirname, "..", "migrations", "031_mb_customization.sql");
 const UPDATES_PATH = path.join(__dirname, "..", "migrations", "032_mb_updates.sql");
+const SUBITEMS_PATH = path.join(__dirname, "..", "migrations", "033_mb_subitems_and_templates.sql");
 
 const cache = new Map();
 
@@ -66,4 +67,21 @@ export async function ensureMbCustomizationSchema() {
 export async function ensureMbUpdatesSchema() {
   const pool = getPool();
   await pool.query(loadSql(UPDATES_PATH));
+}
+
+/**
+ * Phase 5: Subitems + embedded instructions schema.
+ * - Extends mb_items with parent_item_id, subitem_template_id,
+ *   subitem_position, subitem_detached_at, instructions (JSONB).
+ * - Installs the no-sub-sub-items trigger.
+ * - Adds archived_at + workflow_name on mb_subitem_templates and the
+ *   per-subitem checklist state table.
+ * - Seeds the five-step Lease Renewal workflow on the Renewals board.
+ *
+ * Must run AFTER ensureMbRenewalsSeed so the seed step can find the
+ * Renewals board by slug.
+ */
+export async function ensureMbSubitemsSchema() {
+  const pool = getPool();
+  await pool.query(loadSql(SUBITEMS_PATH));
 }

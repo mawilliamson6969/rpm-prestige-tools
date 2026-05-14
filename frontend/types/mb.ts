@@ -208,6 +208,115 @@ export interface Item {
   updated_at: string;
   completed_at: string | null;
   archived_at: string | null;
+  /** Phase 5: subitem support — present on subitem rows. */
+  parent_item_id?: number | null;
+  subitem_template_id?: number | null;
+  subitem_position?: number | null;
+  subitem_detached_at?: string | null;
+  instructions?: InstructionsBlob | null;
+}
+
+// ============================================================
+// Phase 5: subitems + embedded instructions
+// ============================================================
+
+export type InstructionSection =
+  | "objective"
+  | "steps"
+  | "decision_matrix"
+  | "email_templates"
+  | "sms_templates"
+  | "escalations"
+  | "completion_checklist"
+  | "related_resources";
+
+export interface InstructionStepBlock {
+  id: string;
+  text_html: string;
+  text_plain: string;
+  has_checkbox: boolean;
+  position: number;
+}
+
+export interface InstructionDecisionRow {
+  id: string;
+  condition: string;
+  action: string;
+  position: number;
+}
+
+export interface InstructionEmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body_html: string;
+  body_plain: string;
+}
+
+export interface InstructionSmsTemplate {
+  id: string;
+  name: string;
+  body: string;
+}
+
+export interface InstructionChecklistItem {
+  id: string;
+  label: string;
+  is_required: boolean;
+  position: number;
+}
+
+export interface InstructionResource {
+  id: string;
+  label: string;
+  url: string;
+  position: number;
+}
+
+export interface InstructionsBlob {
+  objective?: { text: string };
+  steps?: { steps: InstructionStepBlock[] };
+  decision_matrix?: { rows: InstructionDecisionRow[] };
+  email_templates?: { templates: InstructionEmailTemplate[] };
+  sms_templates?: { templates: InstructionSmsTemplate[] };
+  escalations?: { text_html: string; text_plain: string };
+  completion_checklist?: { items: InstructionChecklistItem[] };
+  related_resources?: { resources: InstructionResource[] };
+}
+
+export interface ResolvedInstructions {
+  source: "linked" | "detached" | "custom";
+  template_id: number | null;
+  template_name: string | null;
+  detached_at: string | null;
+  instructions: InstructionsBlob;
+}
+
+export interface SubitemTemplate {
+  id: number;
+  board_id: number;
+  name: string;
+  description: string | null;
+  position: number;
+  workflow_name: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  instructions?: InstructionsBlob;
+}
+
+export interface ChecklistStateEntry {
+  checklist_item_id: string;
+  is_checked: boolean;
+  checked_by: number | null;
+  checked_at: string | null;
+}
+
+export interface SubitemVariableMap {
+  subitem: Record<string, string>;
+  item: Record<string, string>;
+  subitem_columns: Array<{ key: string; name: string; type: string }>;
+  item_columns: Array<{ key: string; name: string; type: string }>;
 }
 
 export interface Subitem {
@@ -230,84 +339,17 @@ export interface Subitem {
 // Subitem template + structured instructions
 // ============================================================
 
-export interface InstructionStep {
-  title: string;
-  body: string;
-  checklist?: string[];
-}
+// (Phase 1's placeholder InstructionStep / InstructionDecision /
+// InstructionCallout / InstructionTemplate / InstructionLiveData /
+// InstructionResource / Instructions interfaces were removed in Phase 5.
+// They were sketched for a never-implemented feature and conflicted with
+// the Phase 5 instruction types defined earlier in this file
+// (InstructionStepBlock, InstructionDecisionRow, etc.). No code in the
+// repo referenced the old shapes.)
 
-export interface InstructionDecision {
-  condition: string;
-  conditionBadge?: "green" | "amber" | "red";
-  action: string;
-}
-
-export interface InstructionCallout {
-  type: CalloutType;
-  title: string;
-  body: string;
-}
-
-export interface InstructionTemplate {
-  id: string;
-  name: string;
-  channel: MessageChannel;
-  subject?: string;
-  body: string;
-  variables: string[];
-}
-
-export interface InstructionLiveData {
-  label: string;
-  source: string;
-}
-
-export interface InstructionResource {
-  name: string;
-  description?: string;
-  url: string;
-  icon?: string;
-}
-
-export interface Instructions {
-  objective: string;
-  steps: InstructionStep[];
-  decisionMatrix?: InstructionDecision[];
-  callouts?: InstructionCallout[];
-  templates?: InstructionTemplate[];
-  liveData?: InstructionLiveData[];
-  relatedResources?: InstructionResource[];
-}
-
-export interface EscalationTrigger {
-  condition: string;
-  action: string;
-  notify?: string[];
-  threshold?: number;
-}
-
-export interface CompletionChecklistItem {
-  id: string;
-  label: string;
-  required?: boolean;
-}
-
-export interface SubitemTemplate {
-  id: number;
-  board_id: number;
-  name: string;
-  description: string | null;
-  position: number;
-  default_assignee_role: string | null;
-  default_due_offset_days: number | null;
-  estimated_minutes: number | null;
-  is_automated: boolean;
-  instructions: Instructions | Record<string, never>;
-  escalation_triggers: EscalationTrigger[];
-  completion_checklist: CompletionChecklistItem[];
-  created_at: string;
-  updated_at: string;
-}
+// (Phase 1's EscalationTrigger / CompletionChecklistItem / SubitemTemplate
+// placeholders were removed in Phase 5 — superseded by the Phase 5
+// instruction types earlier in this file. No code referenced them.)
 
 // ============================================================
 // Updates / activity feed

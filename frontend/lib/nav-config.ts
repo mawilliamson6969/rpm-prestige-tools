@@ -121,6 +121,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "ops-renewals",  label: "Renewals (Beta)",   icon: Calendar,      href: "/operations/boards/renewals" },
       { id: "ops-templates", label: "Templates",         icon: FileText,      href: "/operations/templates",      adminOnly: true },
       { id: "ops-boards",    label: "Manage Boards",     icon: ClipboardList, href: "/operations/boards/manage",  adminOnly: true },
+      { id: "ops-sub-templates", label: "Subitem Templates", icon: FileText, href: "/operations/boards/templates/manage", adminOnly: true },
       { id: "walkthru",      label: "Walk-Thru Reports", icon: ClipboardList, href: "/admin/walkthru",            adminOnly: true },
     ],
   },

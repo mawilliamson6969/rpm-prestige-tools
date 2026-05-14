@@ -13,6 +13,57 @@ import {
 } from "../lib/mb/validators.js";
 import { recordValueChangeSystemEvents } from "./mbItemDetail.js";
 
+const TERMINAL_STATUS_VALUES = new Set([
+  "done",
+  "completed",
+  "complete",
+  "renewed",
+]);
+
+/**
+ * Phase 5: load the effective completion_checklist for a subitem
+ * (template-linked → from mb_subitem_templates.instructions;
+ * detached/custom → from mb_items.instructions), join with the per-
+ * subitem checklist state, and return the list of REQUIRED checks that
+ * are not yet ticked. Used to gate status changes to "Done".
+ */
+async function checkRequiredChecklistComplete(pool, subitemId, knownRow) {
+  // Get instructions source.
+  let instructions = null;
+  if (knownRow?.instructions != null && knownRow?.subitem_template_id != null) {
+    // Detached subitem — has both a template id AND a local instructions blob.
+    instructions = knownRow.instructions;
+  } else if (knownRow?.instructions != null) {
+    instructions = knownRow.instructions;
+  } else if (knownRow?.subitem_template_id != null) {
+    const { rows } = await pool.query(
+      `SELECT instructions FROM mb_subitem_templates WHERE id = $1`,
+      [knownRow.subitem_template_id]
+    );
+    instructions = rows[0]?.instructions ?? null;
+  }
+  const checklist = Array.isArray(instructions?.completion_checklist?.items)
+    ? instructions.completion_checklist.items
+    : [];
+  const requiredIds = checklist
+    .filter((it) => it && it.is_required === true)
+    .map((it) => String(it.id));
+  if (requiredIds.length === 0) return { blocking: [] };
+
+  const { rows: state } = await pool.query(
+    `SELECT checklist_item_id, is_checked
+       FROM mb_subitem_checklist_state
+      WHERE subitem_item_id = $1
+        AND checklist_item_id = ANY($2::text[])`,
+    [subitemId, requiredIds]
+  );
+  const checkedSet = new Set(
+    state.filter((r) => r.is_checked === true).map((r) => r.checklist_item_id)
+  );
+  const blocking = requiredIds.filter((rid) => !checkedSet.has(rid));
+  return { blocking };
+}
+
 /**
  * GET /mb/boards/:boardId/items
  *
@@ -189,13 +240,49 @@ export async function updateItem(req, res) {
     // system-event entries for the updates feed. We only do this when
     // the caller is touching `values` — title/position/group_id changes
     // are intentionally not logged (they're noise; can revisit later).
+    // Phase 5: skip system-event logging for subitems — Phase 4's feed
+    // is item-level only, so subitem activity would create dead rows
+    // that nothing reads. We grab parent_item_id in the snapshot query.
     let beforeValues = null;
+    let isSubitem = false;
+    let beforeRow = null;
     if (body.values !== undefined) {
       const { rows: prev } = await pool.query(
-        `SELECT values FROM mb_items WHERE id = $1`,
+        `SELECT values, parent_item_id, subitem_template_id, instructions
+           FROM mb_items WHERE id = $1`,
         [id]
       );
       beforeValues = prev[0]?.values ?? {};
+      beforeRow = prev[0] ?? null;
+      isSubitem = prev[0]?.parent_item_id != null;
+    }
+
+    // Phase 5: status-Done guard. If this is a subitem AND the caller
+    // is trying to set status to a "terminal" option, refuse unless all
+    // required checklist items are checked. Terminal options are those
+    // whose `value` is "done" OR whose label normalises to "done"; we
+    // also accept "completed" / "complete" / "renewed". This list is
+    // intentionally simple — admins who name their final status
+    // differently can document it in their team's playbook.
+    if (
+      body.values !== undefined &&
+      isSubitem &&
+      typeof body.values === "object" &&
+      body.values !== null
+    ) {
+      const newStatus = body.values.status;
+      if (
+        typeof newStatus === "string" &&
+        TERMINAL_STATUS_VALUES.has(newStatus.toLowerCase())
+      ) {
+        const blocked = await checkRequiredChecklistComplete(pool, id, beforeRow);
+        if (blocked.blocking.length > 0) {
+          return res.status(409).json({
+            error: `Cannot mark this subitem complete — ${blocked.blocking.length} required check${blocked.blocking.length === 1 ? "" : "s"} not yet done.`,
+            unchecked_required: blocked.blocking,
+          });
+        }
+      }
     }
 
     const { rows } = await pool.query(
@@ -204,7 +291,7 @@ export async function updateItem(req, res) {
     );
     if (!rows.length) return res.status(404).json({ error: "Item not found." });
 
-    if (beforeValues != null) {
+    if (beforeValues != null && !isSubitem) {
       const afterValues = rows[0].values ?? {};
       const changedKeys = new Set([
         ...Object.keys(beforeValues),
