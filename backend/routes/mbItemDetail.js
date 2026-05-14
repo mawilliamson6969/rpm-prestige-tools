@@ -203,24 +203,26 @@ async function attachUpdateExtras(pool, updates) {
 
 export async function listItemUpdates(req, res) {
   try {
-    const itemId = vIntId(req.params.id, "item id");
+    // Phase 7 rekey: :id is now a process id. Internally we filter by
+    // u.process_id (was u.item_id pre-unification).
+    const processId = vIntId(req.params.id, "process id");
     const pool = getPool();
     const { rows } = await pool.query(
-      `SELECT u.id, u.item_id, u.parent_update_id, u.user_id,
+      `SELECT u.id, u.process_id, u.parent_update_id, u.user_id,
               u.body, u.body_html, u.update_type, u.metadata,
               u.created_at, u.edited_at, u.deleted_at,
               usr.display_name AS user_display_name,
               usr.username     AS user_username
          FROM mb_item_updates u
          LEFT JOIN users usr ON usr.id = u.user_id
-        WHERE u.item_id = $1
+        WHERE u.process_id = $1
         ORDER BY
           COALESCE(u.parent_update_id, u.id) DESC,
           u.parent_update_id NULLS FIRST,
           u.created_at ASC,
           u.id ASC
         LIMIT 1000`,
-      [itemId]
+      [processId]
     );
     const enriched = await attachUpdateExtras(pool, rows);
     res.json({ updates: enriched });
@@ -237,7 +239,8 @@ export async function listItemUpdates(req, res) {
 
 export async function createItemUpdate(req, res) {
   try {
-    const itemId = vIntId(req.params.id, "item id");
+    // Phase 7 rekey: :id is a process id; column is now process_id.
+    const processId = vIntId(req.params.id, "process id");
     const body = req.body ?? {};
     const rawHtml = typeof body.body_html === "string" ? body.body_html : "";
     if (!rawHtml.trim() && !Array.isArray(body.attachment_ids)) {
@@ -254,10 +257,10 @@ export async function createItemUpdate(req, res) {
       await client.query("BEGIN");
       const { rows } = await client.query(
         `INSERT INTO mb_item_updates
-           (item_id, user_id, body, body_html, update_type, metadata)
+           (process_id, user_id, body, body_html, update_type, metadata)
          VALUES ($1, $2, $3, $4, 'comment', '{}'::jsonb)
          RETURNING *`,
-        [itemId, req.user.id, text, html]
+        [processId, req.user.id, text, html]
       );
       const update = rows[0];
 
@@ -313,7 +316,7 @@ export async function createReply(req, res) {
 
     const pool = getPool();
     const { rows: parent } = await pool.query(
-      `SELECT id, item_id, parent_update_id FROM mb_item_updates WHERE id = $1`,
+      `SELECT id, process_id, parent_update_id FROM mb_item_updates WHERE id = $1`,
       [parentId]
     );
     if (!parent.length) return res.status(404).json({ error: "Parent comment not found." });
@@ -328,10 +331,10 @@ export async function createReply(req, res) {
       await client.query("BEGIN");
       const { rows } = await client.query(
         `INSERT INTO mb_item_updates
-           (item_id, parent_update_id, user_id, body, body_html, update_type, metadata)
+           (process_id, parent_update_id, user_id, body, body_html, update_type, metadata)
          VALUES ($1, $2, $3, $4, $5, 'comment', '{}'::jsonb)
          RETURNING *`,
-        [parent[0].item_id, parentId, req.user.id, text, html]
+        [parent[0].process_id, parentId, req.user.id, text, html]
       );
       const reply = rows[0];
 
@@ -700,7 +703,8 @@ export async function downloadAttachment(req, res) {
 
 export async function markMentionsSeen(req, res) {
   try {
-    const itemId = vIntId(req.params.id, "item id");
+    // Phase 7 rekey: :id is a process id; column is process_id.
+    const processId = vIntId(req.params.id, "process id");
     const pool = getPool();
     await pool.query(
       `UPDATE mb_update_mentions
@@ -708,9 +712,9 @@ export async function markMentionsSeen(req, res) {
         WHERE seen_at IS NULL
           AND mentioned_user_id = $1
           AND update_id IN (
-            SELECT id FROM mb_item_updates WHERE item_id = $2
+            SELECT id FROM mb_item_updates WHERE process_id = $2
           )`,
-      [req.user.id, itemId]
+      [req.user.id, processId]
     );
     res.json({ ok: true });
   } catch (e) {
@@ -722,19 +726,23 @@ export async function markMentionsSeen(req, res) {
 export async function listUnseenMentions(req, res) {
   try {
     const pool = getPool();
+    // by_process map (renamed from by_item in Phase 7; the client used
+    // it as a generic "id → count" lookup, so existing callers keep
+    // working if they read by_item — we publish both.)
     const { rows } = await pool.query(
-      `SELECT u.item_id, COUNT(*)::int AS n
+      `SELECT u.process_id, COUNT(*)::int AS n
          FROM mb_update_mentions m
          JOIN mb_item_updates u ON u.id = m.update_id
         WHERE m.mentioned_user_id = $1
           AND m.seen_at IS NULL
           AND u.deleted_at IS NULL
-        GROUP BY u.item_id`,
+          AND u.process_id IS NOT NULL
+        GROUP BY u.process_id`,
       [req.user.id]
     );
-    const byItem = Object.fromEntries(rows.map((r) => [r.item_id, r.n]));
+    const byProcess = Object.fromEntries(rows.map((r) => [r.process_id, r.n]));
     const total = rows.reduce((s, r) => s + r.n, 0);
-    res.json({ total, by_item: byItem });
+    res.json({ total, by_process: byProcess, by_item: byProcess });
   } catch (e) {
     console.error("[mb] list unseen mentions", e);
     res.status(500).json({ error: "Could not load unseen mentions." });

@@ -428,13 +428,16 @@ export interface Subitem {
 
 export interface ItemUpdate {
   id: number;
-  item_id: number;
+  /** Phase 7: rekeyed to process_id. Legacy item_id retained as optional for any pre-migration consumers. */
+  item_id?: number;
+  process_id?: number | null;
   user_id: number | null;
   body: string;
   update_type: UpdateType;
   metadata: Record<string, unknown>;
-  posted_to_appfolio: boolean;
-  appfolio_note_id: string | null;
+  /** Phase 7: AppFolio cross-post fields are legacy; updates are now process-scoped. */
+  posted_to_appfolio?: boolean;
+  appfolio_note_id?: string | null;
   created_at: string;
   /** Phase 4 additions: */
   parent_update_id?: number | null;

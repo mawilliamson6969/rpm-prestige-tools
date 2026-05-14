@@ -98,6 +98,15 @@ function mapStep(r) {
     dueDateType: r.due_date_type ?? null,
     dueDateConfig: r.due_date_config ?? null,
     instructions: r.instructions ?? null,
+    // Phase 7: 8-section embedded SOP, copied from the template step at launch.
+    instructionObjective: r.instruction_objective ?? null,
+    instructionSteps: r.instruction_steps ?? null,
+    instructionDecisionMatrix: r.instruction_decision_matrix ?? null,
+    instructionEmailTemplates: r.instruction_email_templates ?? null,
+    instructionSmsTemplates: r.instruction_sms_templates ?? null,
+    instructionEscalations: r.instruction_escalations ?? null,
+    instructionCompletionChecklist: r.instruction_completion_checklist ?? null,
+    instructionRelatedResources: r.instruction_related_resources ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -355,9 +364,13 @@ export async function postProcess(req, res) {
            (process_id, template_step_id, step_number, name, description, status,
             assigned_user_id, assigned_role, due_date, notes, auto_action, auto_action_config,
             stage_id, due_date_type, due_date_config, instructions, task_type,
-            email_template_id, text_template_id, recipient_type, recipient_value, send_timing)
+            email_template_id, text_template_id, recipient_type, recipient_value, send_timing,
+            instruction_objective, instruction_steps, instruction_decision_matrix,
+            instruction_email_templates, instruction_sms_templates, instruction_escalations,
+            instruction_completion_checklist, instruction_related_resources)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15::jsonb, $16,
-                 $17, $18, $19, $20, $21, $22)
+                 $17, $18, $19, $20, $21, $22,
+                 $23, $24::jsonb, $25::jsonb, $26::jsonb, $27::jsonb, $28, $29::jsonb, $30::jsonb)
          RETURNING id`,
         [
           processRow.id,
@@ -382,6 +395,16 @@ export async function postProcess(req, res) {
           ts.recipient_type || "tenant",
           ts.recipient_value || null,
           ts.send_timing || "immediately",
+          // Phase 7: carry forward the 8 instruction sections from the
+          // template step into the per-process step at launch.
+          ts.instruction_objective ?? null,
+          ts.instruction_steps ? JSON.stringify(ts.instruction_steps) : null,
+          ts.instruction_decision_matrix ? JSON.stringify(ts.instruction_decision_matrix) : null,
+          ts.instruction_email_templates ? JSON.stringify(ts.instruction_email_templates) : null,
+          ts.instruction_sms_templates ? JSON.stringify(ts.instruction_sms_templates) : null,
+          ts.instruction_escalations ?? null,
+          ts.instruction_completion_checklist ? JSON.stringify(ts.instruction_completion_checklist) : null,
+          ts.instruction_related_resources ? JSON.stringify(ts.instruction_related_resources) : null,
         ]
       );
       idByTemplateStepId.set(ts.step_number, stepIns[0].id);

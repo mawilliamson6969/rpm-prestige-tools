@@ -111,25 +111,21 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "forms",     label: "Forms",        icon: Edit3,          href: "/forms", badge: "forms-pending" },
     ],
   },
-  {
-    id: "dashboards",
-    label: "Dashboards",
-    items: [
-      { id: "dash-triage",   label: "Triage",            icon: Flag,          href: "/dashboards/triage" },
-      { id: "dash-calendar", label: "Calendar",          icon: Calendar,      href: "/dashboards/calendar" },
-    ],
-  },
+  // Phase 7 (Unification): Dashboards (Triage/Calendar) are deferred
+  // to Phase 7.2 (rewire over processes). The manage-boards / templates
+  // / subitem-templates entries are deferred to Phase 7.1 (rebuilt as
+  // the template editor over System A).
   {
     id: "operations",
     label: "Operations",
     items: [
       { id: "ops-tasks",     label: "Tasks",             icon: CheckSquare,   href: "/operations/tasks" },
       { id: "ops-projects",  label: "Projects",          icon: Briefcase,     href: "/operations/projects" },
-      { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/processes" },
-      { id: "ops-renewals",  label: "Renewals (Beta)",   icon: Calendar,      href: "/operations/boards/renewals" },
-      { id: "ops-templates", label: "Templates",         icon: FileText,      href: "/operations/templates",      adminOnly: true },
-      { id: "ops-boards",    label: "Manage Boards",     icon: ClipboardList, href: "/operations/boards/manage",  adminOnly: true },
-      { id: "ops-sub-templates", label: "Subitem Templates", icon: FileText, href: "/operations/boards/templates/manage", adminOnly: true },
+      // The legacy /operations/processes page redirects to the
+      // primary board now. The dynamic Boards list (below in the
+      // Sidebar component) lists every active template.
+      { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/boards/renewals" },
+      { id: "ops-templates", label: "Templates (legacy)", icon: FileText,     href: "/operations/templates",       adminOnly: true },
       { id: "walkthru",      label: "Walk-Thru Reports", icon: ClipboardList, href: "/admin/walkthru",            adminOnly: true },
     ],
   },

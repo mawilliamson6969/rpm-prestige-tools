@@ -25,61 +25,13 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
-import {
-  ensureMbSchema,
-  ensureMbRenewalsSeed,
-  ensureMbCustomizationSchema,
-  ensureMbUpdatesSchema,
-  ensureMbSubitemsSchema,
-  ensureMbDashboardsSchema,
-} from "./lib/mbSchema.js";
-import {
-  listBoards as listMbBoards,
-  // createBoard (raw, no defaults) intentionally not routed; Phase 3.5
-  // POST /mb/boards uses createBoardWithDefaults below.
-  getBoard as getMbBoard,
-  updateBoard as updateMbBoard,
-  deleteBoard as deleteMbBoard,
-} from "./routes/mbBoards.js";
-import {
-  listItems as listMbItems,
-  createItem as createMbItem,
-  getItem as getMbItem,
-  updateItem as updateMbItem,
-  deleteItem as deleteMbItem,
-} from "./routes/mbItems.js";
-import {
-  // Phase 5 supersedes Phase 1's listSubitems / createSubitem (those
-  // operated on the unused mb_subitems table). PATCH/DELETE on the
-  // dormant table are kept routed for backwards compat.
-  updateSubitem as updateMbSubitem,
-  deleteSubitem as deleteMbSubitem,
-} from "./routes/mbSubitems.js";
-import {
-  listItemUpdates as listMbItemUpdates,
-  createItemUpdate as createMbItemUpdate,
-  listSubitemUpdates as listMbSubitemUpdates,
-  createSubitemUpdate as createMbSubitemUpdate,
-} from "./routes/mbUpdates.js";
+import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
+// Phase 7 (Unification): the System B route files for boards / items /
+// subitems / customization / dashboards / Phase 1 subitem templates
+// are dormant — the tables they read are gone. The Phase 4 updates
+// feed (mbItemDetail.js) survives and is rekeyed below to operate on
+// processes. AppFolio webhook receiver (mbWebhooks.js) survives.
 import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
-import {
-  listSubitems as listMbSubitemsPhase5,
-  createSubitem as createMbSubitemPhase5,
-  createWorkflowSubitems as createMbWorkflowSubitems,
-  detachSubitem as detachMbSubitem,
-  reorderSubitems as reorderMbSubitems,
-  getSubitemInstructions as getMbSubitemInstructions,
-  setSubitemInstructionSection as setMbSubitemInstructionSection,
-  listBoardTemplates as listMbTemplatesPhase5,
-  getTemplate as getMbTemplate,
-  createTemplate as createMbTemplatePhase5,
-  updateTemplate as updateMbTemplatePhase5,
-  deleteTemplate as deleteMbTemplatePhase5,
-  setTemplateInstructionSection as setMbTemplateInstructionSection,
-  getSubitemVariables as getMbSubitemVariables,
-  getChecklistState as getMbChecklistState,
-  toggleChecklistItem as toggleMbChecklistItem,
-} from "./routes/mbSubitemsPhase5.js";
 import {
   listItemUpdates as listMbDetailUpdates,
   createItemUpdate as createMbDetailUpdate,
@@ -94,31 +46,7 @@ import {
   uploadMbAttachmentMiddleware,
   markMentionsSeen as markMbMentionsSeen,
   listUnseenMentions as listMbUnseenMentions,
-  getItemContext as getMbItemContext,
-  getRelatedItems as getMbRelatedItems,
 } from "./routes/mbItemDetail.js";
-import {
-  getBoardSettings as getMbBoardSettings,
-  updateBoardSettings as updateMbBoardSettings,
-  recomputeBoardAggregation as recomputeMbBoardAggregation,
-  getBoardProgressMap as getMbBoardProgressMap,
-  getTriageList as getMbTriageList,
-  getCalendarItems as getMbCalendarItems,
-} from "./routes/mbDashboards.js";
-import {
-  createBoardWithDefaults as createMbBoardWithDefaults,
-  createColumn as createMbColumn,
-  updateColumn as updateMbColumn,
-  deleteColumn as deleteMbColumn,
-  reorderColumns as reorderMbColumns,
-  createColumnOption as createMbColumnOption,
-  updateColumnOption as updateMbColumnOption,
-  deleteColumnOption as deleteMbColumnOption,
-  createGroup as createMbGroup,
-  updateGroup as updateMbGroup,
-  deleteGroup as deleteMbGroup,
-  reorderGroups as reorderMbGroups,
-} from "./routes/mbCustomization.js";
 import {
   ensureAgentHubPhase2Schema,
   refreshAgentLifetimeValue,
@@ -2345,62 +2273,22 @@ app.get("/esign/requests/:id/download", requireAuth, getEsignRequestDownload);
 app.post("/esign/requests/:id/resend", requireAuth, postEsignRequestResend);
 app.delete("/esign/requests/:id", requireAuth, deleteEsignRequest);
 
-/** Monday-style boards (Phase 1 foundation — additive; existing process boards untouched). */
-app.get("/mb/boards", requireAuth, listMbBoards);
-// Phase 3.5: POST creates with defaults (group "Items" + Name + Status cols).
-// The original raw create is still available via createMbBoard but isn't routed.
-app.post("/mb/boards", requireAuth, requireAdminRole, createMbBoardWithDefaults);
-app.get("/mb/boards/:id", requireAuth, getMbBoard);
-app.patch("/mb/boards/:id", requireAuth, requireAdminRole, updateMbBoard);
-app.delete("/mb/boards/:id", requireAuth, requireAdminRole, deleteMbBoard);
+// Phase 7 (Unification): the System B board/item/subitem/template/
+// dashboard routes are gone — their tables were dropped in migration
+// 035. Boards are now views of processes (see processes.js). The
+// surviving mb_* endpoints are the Phase 4 updates feed (rekeyed to
+// process_id) and the AppFolio webhook receiver.
 
-// Phase 3.5: column management.
-app.post("/mb/boards/:boardId/columns", requireAuth, requireAdminRole, createMbColumn);
-app.post("/mb/boards/:boardId/columns/reorder", requireAuth, requireAdminRole, reorderMbColumns);
-app.patch("/mb/columns/:id", requireAuth, requireAdminRole, updateMbColumn);
-app.delete("/mb/columns/:id", requireAuth, requireAdminRole, deleteMbColumn);
-app.post("/mb/columns/:id/options", requireAuth, requireAdminRole, createMbColumnOption);
-app.patch("/mb/columns/:id/options/:option_id", requireAuth, requireAdminRole, updateMbColumnOption);
-app.delete("/mb/columns/:id/options/:option_id", requireAuth, requireAdminRole, deleteMbColumnOption);
-
-// Phase 3.5: group management.
-app.post("/mb/boards/:boardId/groups", requireAuth, requireAdminRole, createMbGroup);
-app.post("/mb/boards/:boardId/groups/reorder", requireAuth, requireAdminRole, reorderMbGroups);
-app.patch("/mb/groups/:id", requireAuth, requireAdminRole, updateMbGroup);
-app.delete("/mb/groups/:id", requireAuth, requireAdminRole, deleteMbGroup);
-
-app.get("/mb/boards/:boardId/items", requireAuth, listMbItems);
-app.post("/mb/boards/:boardId/items", requireAuth, createMbItem);
-app.get("/mb/items/:id", requireAuth, getMbItem);
-app.patch("/mb/items/:id", requireAuth, updateMbItem);
-app.delete("/mb/items/:id", requireAuth, deleteMbItem);
-
-// Phase 5: subitems live in mb_items with parent_item_id. The Phase 1
-// /mb/subitems/:id PATCH/DELETE wrappers operated on the dormant
-// mb_subitems table; they're superseded — subitems are now updated
-// through the standard /mb/items/:id PATCH endpoint (same machinery,
-// admin guards apply uniformly). Phase 1's createSubitem / list etc.
-// remain importable but are not routed.
-app.patch("/mb/subitems/:id", requireAuth, updateMbSubitem);
-app.delete("/mb/subitems/:id", requireAuth, deleteMbSubitem);
-
-// Phase 4: updates feed (replaces Phase 1's simple list/create with the
-// richer item-detail handlers that hydrate reactions, mentions, and
-// attachments). The /:itemId/updates path is kept as-is for backwards
-// compat with any existing client code.
+// Updates feed — comments/replies/reactions/attachments/mentions.
+// Routes are unchanged at the URL level; the handlers in mbItemDetail.js
+// now accept process_id where they previously took item_id.
 app.get("/mb/items/:id/updates", requireAuth, listMbDetailUpdates);
 app.post("/mb/items/:id/updates", requireAuth, createMbDetailUpdate);
-// Backwards-compat alias (Phase 1 used :itemId).
-app.get("/mb/items/:itemId/updates-legacy", requireAuth, listMbItemUpdates);
-app.post("/mb/items/:itemId/updates-legacy", requireAuth, createMbItemUpdate);
-
 app.post("/mb/updates/:id/replies", requireAuth, createMbReply);
 app.patch("/mb/updates/:id", requireAuth, updateMbOwnComment);
 app.delete("/mb/updates/:id", requireAuth, deleteMbOwnComment);
-
 app.post("/mb/updates/:id/reactions", requireAuth, addMbReaction);
 app.delete("/mb/updates/:id/reactions", requireAuth, removeMbReaction);
-
 app.post(
   "/mb/updates/:id/attachments",
   requireAuth,
@@ -2408,45 +2296,9 @@ app.post(
   createMbAttachment
 );
 app.delete("/mb/attachments/:id", requireAuth, deleteMbAttachment);
-// Token may be in the Authorization header (normal) or in the `?token=`
-// query (so <img src=…> previews work — browsers can't attach headers).
 app.get("/mb/attachments/:id/download", requireAuthOrQueryToken, downloadMbAttachment);
-
 app.post("/mb/items/:id/mark-mentions-seen", requireAuth, markMbMentionsSeen);
 app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
-
-app.get("/mb/items/:id/context", requireAuth, getMbItemContext);
-app.get("/mb/items/:id/related", requireAuth, getMbRelatedItems);
-
-// Phase 6: dashboards + aggregation settings.
-app.get("/mb/boards/:boardId/settings", requireAuth, getMbBoardSettings);
-app.patch("/mb/boards/:boardId/settings", requireAuth, requireAdminRole, updateMbBoardSettings);
-app.post("/mb/boards/:boardId/aggregation/recompute", requireAuth, requireAdminRole, recomputeMbBoardAggregation);
-app.get("/mb/boards/:boardId/progress", requireAuth, getMbBoardProgressMap);
-app.get("/mb/dashboards/triage", requireAuth, getMbTriageList);
-app.get("/mb/dashboards/calendar", requireAuth, getMbCalendarItems);
-
-// Phase 5: subitems + templates + checklist + variables.
-app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitemsPhase5);
-app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitemPhase5);
-app.post("/mb/items/:itemId/subitems/from-workflow", requireAuth, requireAdminRole, createMbWorkflowSubitems);
-app.post("/mb/items/:itemId/subitems/reorder", requireAuth, reorderMbSubitems);
-app.post("/mb/subitems/:id/detach", requireAuth, requireAdminRole, detachMbSubitem);
-app.get("/mb/subitems/:id/instructions", requireAuth, getMbSubitemInstructions);
-app.put("/mb/subitems/:id/instructions/:section", requireAuth, requireAdminRole, setMbSubitemInstructionSection);
-app.get("/mb/subitems/:id/variables", requireAuth, getMbSubitemVariables);
-app.get("/mb/subitems/:id/checklist", requireAuth, getMbChecklistState);
-app.patch("/mb/subitems/:id/checklist/:checklistItemId", requireAuth, toggleMbChecklistItem);
-
-app.get("/mb/boards/:boardId/subitem-templates", requireAuth, listMbTemplatesPhase5);
-app.post("/mb/boards/:boardId/subitem-templates", requireAuth, requireAdminRole, createMbTemplatePhase5);
-app.get("/mb/subitem-templates/:templateId", requireAuth, getMbTemplate);
-app.patch("/mb/subitem-templates/:templateId", requireAuth, requireAdminRole, updateMbTemplatePhase5);
-app.delete("/mb/subitem-templates/:templateId", requireAuth, requireAdminRole, deleteMbTemplatePhase5);
-app.put("/mb/subitem-templates/:templateId/instructions/:section", requireAuth, requireAdminRole, setMbTemplateInstructionSection);
-
-app.get("/mb/subitems/:subitemId/updates", requireAuth, listMbSubitemUpdates);
-app.post("/mb/subitems/:subitemId/updates", requireAuth, createMbSubitemUpdate);
 
 /** AppFolio webhook receiver (public — AppFolio server-to-server). JWS verification is Phase 2. */
 app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
@@ -2493,12 +2345,11 @@ async function start() {
       ["agent_hub_* phase 2", ensureAgentHubPhase2Schema],
       ["agent_hub_* phase 3", ensureAgentHubPhase3Schema],
       ["agent_hub_* phase 4", ensureAgentHubPhase4Schema],
-      ["mb_* monday-style boards", ensureMbSchema],
-      ["mb_* renewals seed", ensureMbRenewalsSeed],
-      ["mb_* customization", ensureMbCustomizationSchema],
-      ["mb_* updates (Phase 4)", ensureMbUpdatesSchema],
-      ["mb_* subitems + templates (Phase 5)", ensureMbSubitemsSchema],
-      ["mb_* dashboards + aggregation (Phase 6)", ensureMbDashboardsSchema],
+      // Phase 7 (Unification): one applier that creates surviving
+      // mb_* tables (updates feed + AppFolio logs) and runs the
+      // 035_unification migration. The older per-phase appliers are
+      // gone — Phase 7's migration drops their tables.
+      ["mb_* unification (Phase 7)", ensureMbUnifiedSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {
