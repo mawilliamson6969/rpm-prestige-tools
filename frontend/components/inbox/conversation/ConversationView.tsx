@@ -249,7 +249,7 @@ export default function ConversationView({
       : null;
 
   return (
-    <>
+    <div className={styles.convoColumn}>
     <section className={styles.convoView}>
       <div className={styles.cvMobileBack}>
         <button
@@ -655,7 +655,7 @@ export default function ConversationView({
         onSelectPastThread={onSelectPastThread}
       />
     ) : null}
-    </>
+    </div>
   );
 }
 
