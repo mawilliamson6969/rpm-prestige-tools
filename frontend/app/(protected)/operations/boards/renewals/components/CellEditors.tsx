@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import styles from "../renewals.module.css";
 import type { BoardColumn } from "@/types/mb";
 import {
@@ -10,6 +11,75 @@ import {
   statusOptionsFor,
   type TeamUser,
 } from "./types";
+
+/**
+ * Phase 6.1 hotfix: render the StatusCell + PersonCell popovers as a
+ * portal on document.body so they escape every `overflow: hidden`
+ * ancestor (the .cell wrapper itself, plus the .tableWrapper which
+ * needs overflow:hidden for its rounded corners). Without this, the
+ * dropdown would open into a clipped region and the user would see
+ * nothing happen.
+ */
+function PopoverPortal({
+  anchorRef,
+  onClickOutside,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement>;
+  onClickOutside: () => void;
+  children: ReactNode;
+}) {
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    function place() {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorRef]);
+
+  useEffect(() => {
+    function onDoc(ev: MouseEvent) {
+      if (popRef.current?.contains(ev.target as Node)) return;
+      if (anchorRef.current?.contains(ev.target as Node)) return;
+      onClickOutside();
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") onClickOutside();
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [anchorRef, onClickOutside]);
+
+  if (typeof document === "undefined" || !pos) return null;
+  return createPortal(
+    <div
+      ref={popRef}
+      className={styles.popover}
+      style={{ position: "absolute", top: pos.top, left: pos.left }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
 
 interface BaseProps<T> {
   column: BoardColumn;
@@ -407,29 +477,10 @@ export function StatusCell({
   const options = statusOptionsFor(column);
   const [open, setOpen] = useState(false);
   const cellRef = useRef<HTMLDivElement | null>(null);
-  const popRef = useRef<HTMLDivElement | null>(null);
 
   const current = options.find((o) => o.value === value);
   const color = current?.color ?? "#6a737b";
   const label = current?.label ?? "Set status";
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(ev: MouseEvent) {
-      if (popRef.current?.contains(ev.target as Node)) return;
-      if (cellRef.current?.contains(ev.target as Node)) return;
-      setOpen(false);
-    }
-    function onKey(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   return (
     <div
@@ -438,7 +489,6 @@ export function StatusCell({
       onClick={() => setOpen((v) => !v)}
       role="button"
       tabIndex={0}
-      style={{ position: "relative" }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -454,12 +504,7 @@ export function StatusCell({
         placeholder()
       )}
       {open ? (
-        <div
-          ref={popRef}
-          className={styles.popover}
-          style={{ top: "100%", left: 0, marginTop: 4 }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <PopoverPortal anchorRef={cellRef} onClickOutside={() => setOpen(false)}>
           {options.map((o) => (
             <button
               type="button"
@@ -494,7 +539,7 @@ export function StatusCell({
               </button>
             </>
           ) : null}
-        </div>
+        </PopoverPortal>
       ) : null}
     </div>
   );
@@ -511,33 +556,13 @@ export function PersonCell({
 }: BaseProps<number | null> & { users: TeamUser[] }) {
   const [open, setOpen] = useState(false);
   const cellRef = useRef<HTMLDivElement | null>(null);
-  const popRef = useRef<HTMLDivElement | null>(null);
 
   const current = users.find((u) => u.id === value);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(ev: MouseEvent) {
-      if (popRef.current?.contains(ev.target as Node)) return;
-      if (cellRef.current?.contains(ev.target as Node)) return;
-      setOpen(false);
-    }
-    function onKey(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   return (
     <div
       ref={cellRef}
       className={`${styles.cell} ${styles.cellEditable}`}
-      style={{ position: "relative" }}
       role="button"
       tabIndex={0}
       onClick={() => setOpen((v) => !v)}
@@ -554,12 +579,7 @@ export function PersonCell({
         placeholder()
       )}
       {open ? (
-        <div
-          ref={popRef}
-          className={styles.popover}
-          style={{ top: "100%", left: 0, marginTop: 4 }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <PopoverPortal anchorRef={cellRef} onClickOutside={() => setOpen(false)}>
           {users.length === 0 ? (
             <div style={{ padding: "0.5rem", color: "#6a737b", fontSize: "0.8rem" }}>
               No team members available
@@ -600,7 +620,7 @@ export function PersonCell({
               </button>
             </>
           ) : null}
-        </div>
+        </PopoverPortal>
       ) : null}
     </div>
   );
