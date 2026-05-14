@@ -30,6 +30,7 @@ import {
   ensureMbRenewalsSeed,
   ensureMbCustomizationSchema,
   ensureMbUpdatesSchema,
+  ensureMbSubitemsSchema,
 } from "./lib/mbSchema.js";
 import {
   listBoards as listMbBoards,
@@ -47,17 +48,12 @@ import {
   deleteItem as deleteMbItem,
 } from "./routes/mbItems.js";
 import {
-  listSubitems as listMbSubitems,
-  createSubitem as createMbSubitem,
+  // Phase 5 supersedes Phase 1's listSubitems / createSubitem (those
+  // operated on the unused mb_subitems table). PATCH/DELETE on the
+  // dormant table are kept routed for backwards compat.
   updateSubitem as updateMbSubitem,
   deleteSubitem as deleteMbSubitem,
 } from "./routes/mbSubitems.js";
-import {
-  listSubitemTemplates as listMbTemplates,
-  createSubitemTemplate as createMbTemplate,
-  updateSubitemTemplate as updateMbTemplate,
-  deleteSubitemTemplate as deleteMbTemplate,
-} from "./routes/mbTemplates.js";
 import {
   listItemUpdates as listMbItemUpdates,
   createItemUpdate as createMbItemUpdate,
@@ -65,6 +61,24 @@ import {
   createSubitemUpdate as createMbSubitemUpdate,
 } from "./routes/mbUpdates.js";
 import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
+import {
+  listSubitems as listMbSubitemsPhase5,
+  createSubitem as createMbSubitemPhase5,
+  createWorkflowSubitems as createMbWorkflowSubitems,
+  detachSubitem as detachMbSubitem,
+  reorderSubitems as reorderMbSubitems,
+  getSubitemInstructions as getMbSubitemInstructions,
+  setSubitemInstructionSection as setMbSubitemInstructionSection,
+  listBoardTemplates as listMbTemplatesPhase5,
+  getTemplate as getMbTemplate,
+  createTemplate as createMbTemplatePhase5,
+  updateTemplate as updateMbTemplatePhase5,
+  deleteTemplate as deleteMbTemplatePhase5,
+  setTemplateInstructionSection as setMbTemplateInstructionSection,
+  getSubitemVariables as getMbSubitemVariables,
+  getChecklistState as getMbChecklistState,
+  toggleChecklistItem as toggleMbChecklistItem,
+} from "./routes/mbSubitemsPhase5.js";
 import {
   listItemUpdates as listMbDetailUpdates,
   createItemUpdate as createMbDetailUpdate,
@@ -2346,20 +2360,14 @@ app.get("/mb/items/:id", requireAuth, getMbItem);
 app.patch("/mb/items/:id", requireAuth, updateMbItem);
 app.delete("/mb/items/:id", requireAuth, deleteMbItem);
 
-app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitems);
-app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitem);
+// Phase 5: subitems live in mb_items with parent_item_id. The Phase 1
+// /mb/subitems/:id PATCH/DELETE wrappers operated on the dormant
+// mb_subitems table; they're superseded — subitems are now updated
+// through the standard /mb/items/:id PATCH endpoint (same machinery,
+// admin guards apply uniformly). Phase 1's createSubitem / list etc.
+// remain importable but are not routed.
 app.patch("/mb/subitems/:id", requireAuth, updateMbSubitem);
 app.delete("/mb/subitems/:id", requireAuth, deleteMbSubitem);
-
-app.get("/mb/boards/:boardId/subitem-templates", requireAuth, listMbTemplates);
-app.post(
-  "/mb/boards/:boardId/subitem-templates",
-  requireAuth,
-  requireAdminRole,
-  createMbTemplate
-);
-app.patch("/mb/subitem-templates/:id", requireAuth, requireAdminRole, updateMbTemplate);
-app.delete("/mb/subitem-templates/:id", requireAuth, requireAdminRole, deleteMbTemplate);
 
 // Phase 4: updates feed (replaces Phase 1's simple list/create with the
 // richer item-detail handlers that hydrate reactions, mentions, and
@@ -2394,6 +2402,25 @@ app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
 
 app.get("/mb/items/:id/context", requireAuth, getMbItemContext);
 app.get("/mb/items/:id/related", requireAuth, getMbRelatedItems);
+
+// Phase 5: subitems + templates + checklist + variables.
+app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitemsPhase5);
+app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitemPhase5);
+app.post("/mb/items/:itemId/subitems/from-workflow", requireAuth, requireAdminRole, createMbWorkflowSubitems);
+app.post("/mb/items/:itemId/subitems/reorder", requireAuth, reorderMbSubitems);
+app.post("/mb/subitems/:id/detach", requireAuth, requireAdminRole, detachMbSubitem);
+app.get("/mb/subitems/:id/instructions", requireAuth, getMbSubitemInstructions);
+app.put("/mb/subitems/:id/instructions/:section", requireAuth, requireAdminRole, setMbSubitemInstructionSection);
+app.get("/mb/subitems/:id/variables", requireAuth, getMbSubitemVariables);
+app.get("/mb/subitems/:id/checklist", requireAuth, getMbChecklistState);
+app.patch("/mb/subitems/:id/checklist/:checklistItemId", requireAuth, toggleMbChecklistItem);
+
+app.get("/mb/boards/:boardId/subitem-templates", requireAuth, listMbTemplatesPhase5);
+app.post("/mb/boards/:boardId/subitem-templates", requireAuth, requireAdminRole, createMbTemplatePhase5);
+app.get("/mb/subitem-templates/:templateId", requireAuth, getMbTemplate);
+app.patch("/mb/subitem-templates/:templateId", requireAuth, requireAdminRole, updateMbTemplatePhase5);
+app.delete("/mb/subitem-templates/:templateId", requireAuth, requireAdminRole, deleteMbTemplatePhase5);
+app.put("/mb/subitem-templates/:templateId/instructions/:section", requireAuth, requireAdminRole, setMbTemplateInstructionSection);
 
 app.get("/mb/subitems/:subitemId/updates", requireAuth, listMbSubitemUpdates);
 app.post("/mb/subitems/:subitemId/updates", requireAuth, createMbSubitemUpdate);
@@ -2447,6 +2474,7 @@ async function start() {
       ["mb_* renewals seed", ensureMbRenewalsSeed],
       ["mb_* customization", ensureMbCustomizationSchema],
       ["mb_* updates (Phase 4)", ensureMbUpdatesSchema],
+      ["mb_* subitems + templates (Phase 5)", ensureMbSubitemsSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

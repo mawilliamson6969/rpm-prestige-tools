@@ -19,6 +19,7 @@ import type { TeamUser } from "../../../renewals/components/types";
 import { TenantContextPanel, PropertyContextPanel } from "./components/ContextPanels";
 import RelatedItemsPanel from "./components/RelatedItemsPanel";
 import UpdateComposer from "./components/UpdateComposer";
+import SubitemsSection from "../../../components/subitems/SubitemsSection";
 import UpdateEntry from "./components/UpdateEntry";
 import type { MentionableUser } from "./components/MentionDropdown";
 import { apiUrl } from "@/lib/api";
@@ -531,6 +532,13 @@ export default function ItemDetailClient({
                 </div>
               </div>
             </div>
+
+            {/* Phase 5: subitems section, between column values and the updates feed. */}
+            <SubitemsSection
+              parentItem={item}
+              columns={schema.columns}
+              users={users}
+            />
 
             <div className={detailStyles.feedCard}>
               <h3 className={detailStyles.feedTitle}>Updates</h3>
