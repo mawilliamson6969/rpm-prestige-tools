@@ -483,6 +483,34 @@
    CONVERSATION VIEW
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* Phase 6 fix: the conversation view + context panel share one grid
+ * cell. The grid cell becomes a flex row so the section grows
+ * horizontally while the 280px panel sits beside it. Without this
+ * wrapper, the context panel spilled into an implicit row-2, which
+ * squashed the message list to a single row.
+ */
+.convoColumn {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  /* The inbox layout's grid has grid-template-rows: minmax(0, 1fr) and
+   * the convo cell is one row tall — explicit height: 100% defends
+   * against any browser that doesn't propagate the row height down
+   * through a flex parent. */
+  height: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .convoColumn {
+    /* On phones / tablets the context panel hides via .ctxPanel media
+     * query; the row reduces to a single flex child. */
+    display: block;
+  }
+}
+
 .convoView {
   flex: 1;
   min-width: 0;
