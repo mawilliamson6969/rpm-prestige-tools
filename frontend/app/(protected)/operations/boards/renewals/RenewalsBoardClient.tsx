@@ -9,6 +9,7 @@ import BoardToolbar from "./components/BoardToolbar";
 import GroupHeader from "./components/GroupHeader";
 import ItemDrawer from "./components/ItemDrawer";
 import EditBoardDrawer from "../components/EditBoardDrawer";
+import BoardTabs from "../components/BoardTabs";
 import {
   COUNTDOWN_BUCKETS,
   bucketForItem,
@@ -69,6 +70,12 @@ export default function RenewalsBoardClient() {
   const [drawerItemId, setDrawerItemId] = useState<number | null>(null);
   const [editBoardOpen, setEditBoardOpen] = useState(false);
   const [unseenMentions, setUnseenMentions] = useState<Record<number, number>>({});
+  // Phase 6: aggregation settings + per-item progress map.
+  const [boardSettings, setBoardSettings] = useState<{
+    auto_aggregate_status: boolean;
+    auto_aggregate_progress: boolean;
+  } | null>(null);
+  const [progressMap, setProgressMap] = useState<Record<number, { pct: number | null; total: number; done: number }>>({});
 
   // ----- load -----
 
@@ -135,6 +142,25 @@ export default function RenewalsBoardClient() {
       const items: Item[] = itemsBody.items || [];
 
       setData({ board, columns, groups, items });
+
+      // Phase 6: fetch aggregation settings + progress map in parallel.
+      // Failures here don't block the board view.
+      Promise.all([
+        fetch(apiUrl(`/mb/boards/${board.id}/settings`), {
+          headers: { ...authHeaders() }, cache: "no-store",
+        }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(apiUrl(`/mb/boards/${board.id}/progress`), {
+          headers: { ...authHeaders() }, cache: "no-store",
+        }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]).then(([s, p]) => {
+        if (s?.settings) {
+          setBoardSettings({
+            auto_aggregate_status: !!s.settings.auto_aggregate_status,
+            auto_aggregate_progress: !!s.settings.auto_aggregate_progress,
+          });
+        }
+        if (p?.progress) setProgressMap(p.progress);
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load renewals board.");
     } finally {
@@ -338,8 +364,9 @@ export default function RenewalsBoardClient() {
               Lease renewal pipeline. Items group automatically by lease-end countdown.
             </p>
           </div>
-          {isAdmin ? (
-            <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <BoardTabs boardSlug="renewals" />
+            {isAdmin ? (
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnGhost}`}
@@ -347,8 +374,8 @@ export default function RenewalsBoardClient() {
               >
                 Edit board
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
         {err ? <div className={styles.errorBanner}>{err}</div> : null}
@@ -399,6 +426,8 @@ export default function RenewalsBoardClient() {
                         onOpenItem={setDrawerItemId}
                         onSaveValue={saveValue}
                         mentionCountByItem={unseenMentions}
+                        showProgressColumn={boardSettings?.auto_aggregate_progress === true}
+                        progressByItem={progressMap}
                       />
                     ) : null}
                   </div>

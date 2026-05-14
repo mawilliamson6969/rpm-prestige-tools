@@ -31,6 +31,7 @@ import {
   ensureMbCustomizationSchema,
   ensureMbUpdatesSchema,
   ensureMbSubitemsSchema,
+  ensureMbDashboardsSchema,
 } from "./lib/mbSchema.js";
 import {
   listBoards as listMbBoards,
@@ -96,6 +97,14 @@ import {
   getItemContext as getMbItemContext,
   getRelatedItems as getMbRelatedItems,
 } from "./routes/mbItemDetail.js";
+import {
+  getBoardSettings as getMbBoardSettings,
+  updateBoardSettings as updateMbBoardSettings,
+  recomputeBoardAggregation as recomputeMbBoardAggregation,
+  getBoardProgressMap as getMbBoardProgressMap,
+  getTriageList as getMbTriageList,
+  getCalendarItems as getMbCalendarItems,
+} from "./routes/mbDashboards.js";
 import {
   createBoardWithDefaults as createMbBoardWithDefaults,
   createColumn as createMbColumn,
@@ -2409,6 +2418,14 @@ app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
 app.get("/mb/items/:id/context", requireAuth, getMbItemContext);
 app.get("/mb/items/:id/related", requireAuth, getMbRelatedItems);
 
+// Phase 6: dashboards + aggregation settings.
+app.get("/mb/boards/:boardId/settings", requireAuth, getMbBoardSettings);
+app.patch("/mb/boards/:boardId/settings", requireAuth, requireAdminRole, updateMbBoardSettings);
+app.post("/mb/boards/:boardId/aggregation/recompute", requireAuth, requireAdminRole, recomputeMbBoardAggregation);
+app.get("/mb/boards/:boardId/progress", requireAuth, getMbBoardProgressMap);
+app.get("/mb/dashboards/triage", requireAuth, getMbTriageList);
+app.get("/mb/dashboards/calendar", requireAuth, getMbCalendarItems);
+
 // Phase 5: subitems + templates + checklist + variables.
 app.get("/mb/items/:itemId/subitems", requireAuth, listMbSubitemsPhase5);
 app.post("/mb/items/:itemId/subitems", requireAuth, createMbSubitemPhase5);
@@ -2481,6 +2498,7 @@ async function start() {
       ["mb_* customization", ensureMbCustomizationSchema],
       ["mb_* updates (Phase 4)", ensureMbUpdatesSchema],
       ["mb_* subitems + templates (Phase 5)", ensureMbSubitemsSchema],
+      ["mb_* dashboards + aggregation (Phase 6)", ensureMbDashboardsSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

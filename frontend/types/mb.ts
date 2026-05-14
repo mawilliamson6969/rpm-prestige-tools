@@ -214,6 +214,10 @@ export interface Item {
   subitem_position?: number | null;
   subitem_detached_at?: string | null;
   instructions?: InstructionsBlob | null;
+  /** Phase 6: when set, the parent's status is being auto-aggregated
+   * from its subitems and the status cell renders read-only. */
+  aggregated_status?: string | null;
+  aggregated_status_at?: string | null;
 }
 
 // ============================================================
@@ -310,6 +314,73 @@ export interface ChecklistStateEntry {
   is_checked: boolean;
   checked_by: number | null;
   checked_at: string | null;
+}
+
+// ============================================================
+// Phase 6: dashboards + aggregation
+// ============================================================
+
+export interface BoardSettings {
+  board_id: number;
+  auto_aggregate_status: boolean;
+  auto_aggregate_progress: boolean;
+  primary_date_column_id: number | null;
+  updated_at: string;
+}
+
+export interface TriageReason {
+  label: string;
+  kind:
+    | "negative_status"
+    | "unassigned"
+    | "mention"
+    | "past_due"
+    | "due_soon"
+    | "low_renewal_score"
+    | "stale";
+  weight: number;
+}
+
+export interface TriageItem {
+  id: number;
+  board_id: number;
+  board_name: string;
+  board_slug: string;
+  title: string;
+  values: Record<string, unknown>;
+  date_key: string | null;
+  date_name: string | null;
+  score: number;
+  capped_score: number;
+  reasons: TriageReason[];
+  unread_mentions: number;
+}
+
+export interface TriageResponse {
+  items: TriageItem[];
+  total_qualified: number;
+  overflow: number;
+}
+
+export interface CalendarItem {
+  id: number;
+  board_id: number;
+  board_name: string;
+  board_slug: string;
+  title: string;
+  date_key: string;
+  date_name: string | null;
+  date_value: string;
+  status_value: string | null;
+  status_label: string | null;
+  status_color: string;
+  owner: number | null;
+}
+
+export interface BoardProgressEntry {
+  pct: number | null;
+  total: number;
+  done: number;
 }
 
 export interface SubitemVariableMap {

@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "../renewals.module.css";
-import type { BoardColumn, Item } from "@/types/mb";
+import type { BoardColumn, BoardProgressEntry, Item } from "@/types/mb";
 import {
   DateCell,
   LongTextCell,
@@ -13,6 +13,8 @@ import {
 } from "./CellEditors";
 import type { SortDir, TeamUser } from "./types";
 import MentionBadge from "../../components/MentionBadge";
+import AggregatedStatusBadge from "../../components/AggregatedStatusBadge";
+import ProgressBar from "../../components/ProgressBar";
 
 interface BoardTableProps {
   columns: BoardColumn[];
@@ -25,6 +27,10 @@ interface BoardTableProps {
   onSaveValue: (itemId: number, columnKey: string, next: unknown) => Promise<void>;
   /** Phase 4: map of item id -> unseen @mention count, rendered as a badge next to the title. */
   mentionCountByItem?: Record<number, number>;
+  /** Phase 6: when true, render an extra "Progress" column after the regular columns. */
+  showProgressColumn?: boolean;
+  /** Phase 6: per-item progress entry map. */
+  progressByItem?: Record<number, BoardProgressEntry>;
 }
 
 export default function BoardTable({
@@ -37,6 +43,8 @@ export default function BoardTable({
   onOpenItem,
   onSaveValue,
   mentionCountByItem,
+  showProgressColumn,
+  progressByItem,
 }: BoardTableProps) {
   if (items.length === 0) return null;
 
@@ -47,6 +55,7 @@ export default function BoardTable({
         {columns.map((c) => (
           <col key={c.id} style={{ width: c.width || 150 }} />
         ))}
+        {showProgressColumn ? <col style={{ width: 140 }} /> : null}
       </colgroup>
       <thead>
         <tr>
@@ -69,6 +78,7 @@ export default function BoardTable({
               </th>
             );
           })}
+          {showProgressColumn ? <th>Progress</th> : null}
         </tr>
       </thead>
       <tbody>
@@ -87,6 +97,11 @@ export default function BoardTable({
                 />
               </td>
             ))}
+            {showProgressColumn ? (
+              <td>
+                <ProgressBar entry={progressByItem?.[item.id]} />
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>
@@ -171,6 +186,16 @@ function CellDispatcher({
         />
       );
     case "status":
+      // Phase 6: if this item has an aggregated_status set, render a
+      // read-only "Auto" badge instead of the editable status cell.
+      if (typeof item.aggregated_status === "string" && item.aggregated_status) {
+        return (
+          <AggregatedStatusBadge
+            column={column}
+            value={typeof raw === "string" ? raw : null}
+          />
+        );
+      }
       return (
         <StatusCell
           column={column}

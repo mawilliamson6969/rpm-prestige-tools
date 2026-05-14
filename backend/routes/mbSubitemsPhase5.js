@@ -25,6 +25,7 @@ import {
   vBool,
   vJson,
 } from "../lib/mb/validators.js";
+import { recomputeParentAggregation } from "./mbDashboards.js";
 
 const SECTION_KEYS = new Set([
   "objective",
@@ -179,6 +180,10 @@ export async function createSubitem(req, res) {
     );
 
     await client.query("COMMIT");
+    // Phase 6: subitem count changed — recompute parent aggregation.
+    recomputeParentAggregation(itemId, getPool()).catch((e) =>
+      console.error("[mb] aggregation recompute (subitem create) failed:", e.message)
+    );
     res.status(201).json({ subitem: rows[0] });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
@@ -261,6 +266,9 @@ export async function createWorkflowSubitems(req, res) {
       nextPos += 1024;
     }
     await client.query("COMMIT");
+    recomputeParentAggregation(itemId, getPool()).catch((e) =>
+      console.error("[mb] aggregation recompute (workflow create) failed:", e.message)
+    );
     res.status(201).json({ subitems: created });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});

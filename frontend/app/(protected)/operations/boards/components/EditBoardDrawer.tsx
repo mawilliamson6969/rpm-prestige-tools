@@ -6,6 +6,7 @@ import ColorPalette, { PALETTE, isPaletteColor } from "./ColorPalette";
 import ColumnTypePicker from "./ColumnTypePicker";
 import ConfirmDialog from "./ConfirmDialog";
 import StatusOptionsEditor from "./StatusOptionsEditor";
+import AggregationTab from "./AggregationTab";
 import { useReorder } from "./useReorder";
 import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -17,7 +18,7 @@ import type {
   UserCreatableColumnType,
 } from "@/types/mb";
 
-type Tab = "columns" | "groups" | "settings";
+type Tab = "columns" | "groups" | "settings" | "aggregation";
 
 type BoardSchema = {
   board: Board;
@@ -178,6 +179,14 @@ export default function EditBoardDrawer({
           >
             Settings
           </button>
+          <button
+            role="tab"
+            aria-selected={tab === "aggregation"}
+            className={`${styles.tab} ${tab === "aggregation" ? styles.tabActive : ""}`}
+            onClick={() => setTab("aggregation")}
+          >
+            Aggregation
+          </button>
         </div>
 
         <div className={styles.drawerBody}>
@@ -212,6 +221,13 @@ export default function EditBoardDrawer({
                   api={api}
                   refresh={refresh}
                   onClose={onClose}
+                />
+              ) : null}
+              {tab === "aggregation" ? (
+                <AggregationTab
+                  boardId={schema.board.id}
+                  columns={schema.columns}
+                  onError={setErr}
                 />
               ) : null}
             </>
