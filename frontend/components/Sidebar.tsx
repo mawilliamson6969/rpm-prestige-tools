@@ -14,6 +14,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePasswordModal";
@@ -109,6 +110,10 @@ export default function Sidebar({
   const [queued, setQueued] = useState<number | null>(null);
   const [formsBadge, setFormsBadge] = useState<number | null>(null);
 
+  // Phase 6.1: dynamic Boards section (lists all non-archived mb_boards).
+  const [boardsList, setBoardsList] = useState<Array<{ id: number; name: string; slug: string }>>([]);
+  const [boardsOpen, setBoardsOpen] = useState(true);
+
   const userWrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -165,6 +170,42 @@ export default function Sidebar({
     const t = setInterval(loadBadges, 60_000);
     return () => clearInterval(t);
   }, [loadBadges]);
+
+  // Phase 6.1: fetch boards list. Refreshes on mount, on window focus
+  // (covers "I just created a board on /manage and came back"), and
+  // on a 60s poll (covers other users creating/archiving). Failures
+  // leave the list as-is so the sidebar doesn't blink empty.
+  const loadBoardsList = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl("/mb/boards"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      const list: Array<{ id: number; name: string; slug: string; archived_at?: string | null }> =
+        body.boards || [];
+      const active = list
+        .filter((b) => b.archived_at == null)
+        .map((b) => ({ id: b.id, name: b.name, slug: b.slug }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setBoardsList(active);
+    } catch {
+      /* keep existing state */
+    }
+  }, [authHeaders, token]);
+
+  useEffect(() => {
+    loadBoardsList();
+    const t = setInterval(loadBoardsList, 60_000);
+    const onFocus = () => loadBoardsList();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadBoardsList]);
 
   /* ---------- ⌘K shortcut ---------- */
 
@@ -400,6 +441,84 @@ export default function Sidebar({
     );
   };
 
+  /* ---------- Phase 6.1: dynamic Boards section ----------
+     A flat list of non-archived mb_boards rendered with the same
+     visual style as a normal NavGroup. Items aren't part of the
+     pinned/hidden prefs system — they're a live mirror of the API. */
+
+  const renderBoardsGroup = () => {
+    if (boardsList.length === 0) return null;
+    if (isFiltering) {
+      const q = query.trim().toLowerCase();
+      const matches = boardsList.filter((b) =>
+        b.name.toLowerCase().includes(q)
+      );
+      if (matches.length === 0) return null;
+      return (
+        <div key="boards" className={styles.group}>
+          {showLabels ? (
+            <button type="button" className={styles.groupHeader} aria-expanded>
+              <span className={styles.groupLabel}>Boards</span>
+              <span className={styles.groupChevron} aria-hidden>
+                <ChevronDown size={12} strokeWidth={2.2} />
+              </span>
+            </button>
+          ) : null}
+          <div className={styles.items}>{matches.map(renderBoardRow)}</div>
+        </div>
+      );
+    }
+    return (
+      <div
+        key="boards"
+        className={`${styles.group} ${boardsOpen ? "" : styles.groupClosed}`}
+      >
+        {showLabels ? (
+          <button
+            type="button"
+            className={styles.groupHeader}
+            onClick={() => setBoardsOpen((v) => !v)}
+            aria-expanded={boardsOpen}
+          >
+            <span className={styles.groupLabel}>Boards</span>
+            <span className={styles.groupChevron} aria-hidden>
+              <ChevronDown size={12} strokeWidth={2.2} />
+            </span>
+          </button>
+        ) : null}
+        <div className={styles.items}>{boardsList.map(renderBoardRow)}</div>
+      </div>
+    );
+  };
+
+  const renderBoardRow = (b: { id: number; name: string; slug: string }) => {
+    // Active when the current path is the board's table view OR any of
+    // its sub-views (triage, calendar, items/...).
+    const boardBase = `/operations/boards/${b.slug}`;
+    const isActive =
+      pathname === boardBase ||
+      pathname.startsWith(`${boardBase}/`);
+    const cn = `${styles.item} ${isActive ? styles.itemActive : ""}`;
+    const tooltip = narrowColumn ? (
+      <span className={styles.tooltip}>{b.name}</span>
+    ) : null;
+    return (
+      <Link
+        key={`board-${b.id}`}
+        href={boardBase}
+        className={cn}
+        onClick={closeMobileIfNav}
+        title={narrowColumn ? b.name : undefined}
+      >
+        <span className={styles.iconWrap}>
+          <ClipboardList size={16} strokeWidth={2} />
+        </span>
+        {showLabels ? <span className={styles.label}>{b.name}</span> : null}
+        {tooltip}
+      </Link>
+    );
+  };
+
   /* ---------- Edit-mode row (pin / hide) ---------- */
 
   const renderEditableItem = (item: NavItem) => {
@@ -546,6 +665,7 @@ export default function Sidebar({
                 <div className={styles.items}>{pinnedRendered.map(renderItem)}</div>
               </div>
             ) : null}
+            {renderBoardsGroup()}
             {NAV_GROUPS.map(renderGroup)}
           </>
         )}
