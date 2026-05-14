@@ -1248,9 +1248,13 @@ export async function getProcessesDashboard(_req, res) {
   try {
     const pool = getPool();
     const { rows: byTemplate } = await pool.query(
-      `SELECT t.id, t.name, t.icon, t.color, t.category,
+      `SELECT t.id, t.name, t.slug, t.icon, t.color, t.category, t.is_active,
          COUNT(p.id) FILTER (WHERE p.status = 'active')::int AS active_count,
          COUNT(p.id) FILTER (WHERE p.status = 'completed')::int AS completed_count,
+         COUNT(p.id) FILTER (
+           WHERE p.status = 'completed'
+             AND p.completed_at >= NOW() - INTERVAL '30 days'
+         )::int AS completed_30d,
          COUNT(p.id) FILTER (WHERE p.status = 'active' AND p.target_completion < CURRENT_DATE)::int AS overdue_count,
          AVG(
            EXTRACT(EPOCH FROM (p.completed_at - p.started_at)) / 86400
@@ -1258,22 +1262,31 @@ export async function getProcessesDashboard(_req, res) {
        FROM process_templates t
        LEFT JOIN processes p ON p.template_id = t.id
        WHERE t.is_active = true
-       GROUP BY t.id, t.name, t.icon, t.color, t.category
+       GROUP BY t.id, t.name, t.slug, t.icon, t.color, t.category, t.is_active
        ORDER BY active_count DESC, t.name ASC`
     );
-    res.json({
-      byTemplate: byTemplate.map((r) => ({
-        templateId: r.id,
-        name: r.name,
-        icon: r.icon,
-        color: r.color,
-        category: r.category,
-        activeCount: Number(r.active_count) || 0,
-        completedCount: Number(r.completed_count) || 0,
-        overdueCount: Number(r.overdue_count) || 0,
-        avgDays: r.avg_days !== null ? Math.round(Number(r.avg_days)) : null,
-      })),
-    });
+    const templates = byTemplate.map((r) => ({
+      templateId: r.id,
+      name: r.name,
+      slug: r.slug ?? null,
+      icon: r.icon,
+      color: r.color,
+      category: r.category,
+      isActive: r.is_active ?? true,
+      activeCount: Number(r.active_count) || 0,
+      completedCount: Number(r.completed_count) || 0,
+      completed30d: Number(r.completed_30d) || 0,
+      overdueCount: Number(r.overdue_count) || 0,
+      avgDays: r.avg_days !== null ? Math.round(Number(r.avg_days)) : null,
+    }));
+    const summary = {
+      liveTemplates: templates.filter((t) => t.isActive).length,
+      inflight: templates.reduce((a, t) => a + t.activeCount, 0),
+      overdue: templates.reduce((a, t) => a + t.overdueCount, 0),
+      completed30d: templates.reduce((a, t) => a + t.completed30d, 0),
+      automationHitRate: null,
+    };
+    res.json({ byTemplate: templates, summary });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not load dashboard." });

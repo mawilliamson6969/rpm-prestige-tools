@@ -1,0 +1,121 @@
+/* Per-process tab strip — Phase 7.0.1. Pixel-target: app.jsx ProcessShell. */
+.strip {
+  background: #fff;
+  border-bottom: 1px solid var(--pms-line);
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 18;
+}
+
+.scroll {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.scroll::-webkit-scrollbar { height: 6px; }
+.scroll::-webkit-scrollbar-thumb { background: #c3c8d6; border-radius: 6px; }
+
+.tab {
+  background: transparent;
+  border: none;
+  padding: 12px 14px 14px;
+  position: relative;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pms-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.12s;
+}
+
+.tab:hover { color: var(--pms-ink-2); }
+
+.tabActive {
+  font-weight: 700;
+  color: var(--pms-navy);
+}
+
+.underline {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2.5px;
+  background: var(--pms-red);
+  border-radius: 2px;
+}
+
+/* Stub-tab content card */
+.stubWrap {
+  background: var(--pms-bg);
+  padding: 40px 24px;
+  min-height: calc(100vh - 54px - 50px);
+}
+
+.stubCard {
+  max-width: 540px;
+  margin: 60px auto;
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  box-shadow: var(--pms-shadow-1);
+}
+
+.stubIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(27, 40, 86, 0.08);
+  color: var(--pms-navy);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+
+.stubTitle {
+  margin: 0 0 8px;
+  font-weight: 700;
+  font-size: 22px;
+  font-family: var(--pms-font-display);
+  letter-spacing: 0.01em;
+}
+
+.stubBody {
+  color: var(--pms-ink-3);
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.stubPhase {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--pms-info-bg);
+  color: var(--pms-info);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.stubBackLink {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--pms-navy);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+}
+.stubBackLink:hover { text-decoration: underline; }

@@ -121,10 +121,11 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "ops-tasks",     label: "Tasks",             icon: CheckSquare,   href: "/operations/tasks" },
       { id: "ops-projects",  label: "Projects",          icon: Briefcase,     href: "/operations/projects" },
-      // The legacy /operations/processes page redirects to the
-      // primary board now. The dynamic Boards list (below in the
-      // Sidebar component) lists every active template.
-      { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/boards/renewals" },
+      // /operations/processes is the Process Library (Phase 7.0.1) —
+      // hero stats + grid of process-template cards. The dynamic
+      // Boards list (below in the Sidebar component) lists every
+      // active template as a child link.
+      { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/processes" },
       { id: "ops-templates", label: "Templates (legacy)", icon: FileText,     href: "/operations/templates",       adminOnly: true },
       { id: "walkthru",      label: "Walk-Thru Reports", icon: ClipboardList, href: "/admin/walkthru",            adminOnly: true },
     ],

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow_Condensed } from "next/font/google";
+import { Barlow, Barlow_Condensed, JetBrains_Mono } from "next/font/google";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
@@ -12,6 +12,24 @@ const barlowCondensed = Barlow_Condensed({
   weight: ["400", "500", "600", "700"],
   display: "swap",
   variable: "--font-display",
+});
+
+// PMS body font (Barlow, --font-pms-body) — opt-in via data-pms on the
+// Process Management screens. Other screens keep using Geist Sans.
+const barlowBody = Barlow({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-pms-body",
+});
+
+// PMS mono font (JetBrains Mono, --font-pms-mono) — used inside PMS
+// screens for codes, IDs, template variables.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+  variable: "--font-pms-mono",
 });
 
 export const viewport: Viewport = {
@@ -46,7 +64,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${barlowCondensed.variable} ${GeistSans.variable} ${GeistMono.variable}`}
+      className={`${barlowCondensed.variable} ${barlowBody.variable} ${jetbrainsMono.variable} ${GeistSans.variable} ${GeistMono.variable}`}
     >
       <body style={{ margin: 0, backgroundColor: "var(--bg-app)" }}>
         <AuthProvider>{children}</AuthProvider>
