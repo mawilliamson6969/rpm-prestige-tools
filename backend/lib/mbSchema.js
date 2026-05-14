@@ -21,6 +21,7 @@ const RENEWALS_SEED_PATH = path.join(__dirname, "..", "migrations", "030_mb_rene
 const CUSTOMIZATION_PATH = path.join(__dirname, "..", "migrations", "031_mb_customization.sql");
 const UPDATES_PATH = path.join(__dirname, "..", "migrations", "032_mb_updates.sql");
 const SUBITEMS_PATH = path.join(__dirname, "..", "migrations", "033_mb_subitems_and_templates.sql");
+const DASHBOARDS_PATH = path.join(__dirname, "..", "migrations", "034_mb_dashboards_aggregation.sql");
 
 const cache = new Map();
 
@@ -84,4 +85,14 @@ export async function ensureMbUpdatesSchema() {
 export async function ensureMbSubitemsSchema() {
   const pool = getPool();
   await pool.query(loadSql(SUBITEMS_PATH));
+}
+
+/**
+ * Phase 6: per-board aggregation settings (mb_board_settings),
+ * mb_items.aggregated_status cache, triage/calendar indexes, and a
+ * default settings row for every existing board.
+ */
+export async function ensureMbDashboardsSchema() {
+  const pool = getPool();
+  await pool.query(loadSql(DASHBOARDS_PATH));
 }

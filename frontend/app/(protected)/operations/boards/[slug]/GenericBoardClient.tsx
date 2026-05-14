@@ -6,6 +6,7 @@ import renewalsStyles from "../renewals/renewals.module.css";
 import OperationsTopBar from "../../OperationsTopBar";
 import BoardTable from "../renewals/components/BoardTable";
 import EditBoardDrawer from "../components/EditBoardDrawer";
+import BoardTabs from "../components/BoardTabs";
 import { compareValues, type SortDir, type TeamUser } from "../renewals/components/types";
 import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -186,8 +187,9 @@ export default function GenericBoardClient({ slug }: { slug: string }) {
               <p className={renewalsStyles.boardDescription}>{board.description}</p>
             ) : null}
           </div>
-          {isAdmin && board ? (
-            <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <BoardTabs boardSlug={slug} />
+            {isAdmin && board ? (
               <button
                 type="button"
                 className={`${renewalsStyles.btn} ${renewalsStyles.btnGhost}`}
@@ -195,8 +197,8 @@ export default function GenericBoardClient({ slug }: { slug: string }) {
               >
                 Edit board
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
         {err ? <div className={renewalsStyles.errorBanner}>{err}</div> : null}

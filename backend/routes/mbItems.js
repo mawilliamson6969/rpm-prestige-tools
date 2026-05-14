@@ -12,6 +12,7 @@ import {
   vStringOpt,
 } from "../lib/mb/validators.js";
 import { recordValueChangeSystemEvents } from "./mbItemDetail.js";
+import { recomputeParentAggregation } from "./mbDashboards.js";
 
 const TERMINAL_STATUS_VALUES = new Set([
   "done",
@@ -339,6 +340,23 @@ export async function updateItem(req, res) {
       }
     }
 
+    // Phase 6: if this is a subitem and its status changed, re-run
+    // the parent's aggregation. Fire-and-forget so the response stays
+    // fast; the aggregator itself respects the per-board toggle and
+    // exits cheaply when the toggle is off.
+    if (
+      isSubitem &&
+      body.values !== undefined &&
+      beforeValues != null &&
+      JSON.stringify(beforeValues.status ?? null) !==
+        JSON.stringify((rows[0].values ?? {}).status ?? null) &&
+      rows[0].parent_item_id != null
+    ) {
+      recomputeParentAggregation(rows[0].parent_item_id, pool).catch((e) =>
+        console.error("[mb] aggregation recompute (subitem update) failed:", e.message)
+      );
+    }
+
     res.json({ item: rows[0] });
   } catch (e) {
     if (e.http) return res.status(e.http).json({ error: e.message });
@@ -351,6 +369,15 @@ export async function deleteItem(req, res) {
   try {
     const id = vIntId(req.params.id, "item id");
     const pool = getPool();
+    // Phase 6: capture parent_item_id BEFORE archive so we can
+    // recompute the parent's aggregation after this subitem disappears
+    // from the count.
+    const { rows: prev } = await pool.query(
+      `SELECT parent_item_id FROM mb_items WHERE id = $1`,
+      [id]
+    );
+    const parentItemId = prev[0]?.parent_item_id ?? null;
+
     const { rowCount } = await pool.query(
       `UPDATE mb_items SET archived_at = NOW(), updated_at = NOW()
          WHERE id = $1 AND archived_at IS NULL`,
@@ -360,6 +387,11 @@ export async function deleteItem(req, res) {
       return res
         .status(404)
         .json({ error: "Item not found or already archived." });
+    }
+    if (parentItemId != null) {
+      recomputeParentAggregation(parentItemId, pool).catch((e) =>
+        console.error("[mb] aggregation recompute (subitem archive) failed:", e.message)
+      );
     }
     res.json({ ok: true });
   } catch (e) {

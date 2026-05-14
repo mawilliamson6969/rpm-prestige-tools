@@ -112,6 +112,14 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: "dashboards",
+    label: "Dashboards",
+    items: [
+      { id: "dash-triage",   label: "Triage",            icon: Flag,          href: "/dashboards/triage" },
+      { id: "dash-calendar", label: "Calendar",          icon: Calendar,      href: "/dashboards/calendar" },
+    ],
+  },
+  {
     id: "operations",
     label: "Operations",
     items: [
