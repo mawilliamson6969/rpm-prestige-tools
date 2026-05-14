@@ -1045,6 +1045,7 @@ import { ensureMailersSchema } from "./lib/mailers-schema.js";
 import {
   BACKEND_VERSION as ROUTES_MAILERS_VERSION,
   deleteMailer,
+  deleteMailerPdfUpload,
   getMailerAccountBalance,
   getMailerById,
   getMailerHealth,
@@ -1054,11 +1055,13 @@ import {
   getMailerTracking,
   getMailerVolumeByWeek,
   getMailers,
+  mailerPdfUploadMiddleware,
   postLetterStreamWebhook,
   postMailer,
   postMailerCancel,
   postMailerConfirmSend,
   postMailerNote,
+  postMailerPdfUpload,
   postMailerQuote,
   postMailerResend,
   postMailerSend,
@@ -1795,6 +1798,9 @@ app.post("/mailers/:id/resend", requireAuth, postMailerResend);
 app.post("/mailers/:id/note", requireAuth, postMailerNote);
 app.get("/mailers/:id/tracking", requireAuth, getMailerTracking);
 app.get("/mailers/:id/signature", requireAuth, getMailerSignature);
+// PDF upload (multipart) — attaches a ready-made PDF that bypasses Puppeteer.
+app.post("/mailers/:id/upload-pdf", requireAuth, mailerPdfUploadMiddleware, postMailerPdfUpload);
+app.delete("/mailers/:id/upload-pdf", requireAuth, deleteMailerPdfUpload);
 
 /** Documents — standalone rich-text docs (notes, SOPs, owner letters, wikis) */
 app.post("/documents/ai-assist", requireAuth, postDocumentAiAssist);
