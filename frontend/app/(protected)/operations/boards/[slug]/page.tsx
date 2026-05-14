@@ -1,7 +1,7 @@
-import GenericBoardClient from "./GenericBoardClient";
+import BoardClient from "./BoardClient";
 
 export const dynamic = "force-dynamic";
 
-export default function GenericBoardPage({ params }: { params: { slug: string } }) {
-  return <GenericBoardClient slug={params.slug} />;
+export default function BoardPage({ params }: { params: { slug: string } }) {
+  return <BoardClient slug={params.slug} />;
 }

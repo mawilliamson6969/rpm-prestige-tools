@@ -4,6 +4,8 @@ function mapTemplate(r) {
   return {
     id: r.id,
     name: r.name,
+    // Phase 7 (Unification): URL slug — a template is a board.
+    slug: r.slug ?? null,
     description: r.description,
     category: r.category,
     icon: r.icon,
@@ -50,6 +52,16 @@ function mapTemplateStep(r) {
     delayAmount: r.delay_amount ?? 0,
     delayUnit: r.delay_unit ?? "days",
     createdAt: r.created_at,
+    // Phase 7 (Unification): the 8 instruction sections that used to
+    // live on mb_subitem_templates now live per template step.
+    instructionObjective: r.instruction_objective ?? null,
+    instructionSteps: r.instruction_steps ?? null,
+    instructionDecisionMatrix: r.instruction_decision_matrix ?? null,
+    instructionEmailTemplates: r.instruction_email_templates ?? null,
+    instructionSmsTemplates: r.instruction_sms_templates ?? null,
+    instructionEscalations: r.instruction_escalations ?? null,
+    instructionCompletionChecklist: r.instruction_completion_checklist ?? null,
+    instructionRelatedResources: r.instruction_related_resources ?? null,
   };
 }
 

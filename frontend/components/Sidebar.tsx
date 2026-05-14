@@ -171,24 +171,28 @@ export default function Sidebar({
     return () => clearInterval(t);
   }, [loadBadges]);
 
-  // Phase 6.1: fetch boards list. Refreshes on mount, on window focus
-  // (covers "I just created a board on /manage and came back"), and
-  // on a 60s poll (covers other users creating/archiving). Failures
-  // leave the list as-is so the sidebar doesn't blink empty.
+  // Phase 7 (Unification): the "Boards" section now lists process
+  // templates from System A — each template is a board. The Phase 6.1
+  // fetch against /mb/boards is replaced because that endpoint and its
+  // backing table were dropped.
   const loadBoardsList = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(apiUrl("/mb/boards"), {
+      const res = await fetch(apiUrl("/processes/templates"), {
         headers: { ...authHeaders() },
         cache: "no-store",
       });
       if (!res.ok) return;
       const body = await res.json();
-      const list: Array<{ id: number; name: string; slug: string; archived_at?: string | null }> =
-        body.boards || [];
+      const list: Array<{
+        id: number;
+        name: string;
+        slug?: string | null;
+        isActive?: boolean;
+      }> = body.templates || [];
       const active = list
-        .filter((b) => b.archived_at == null)
-        .map((b) => ({ id: b.id, name: b.name, slug: b.slug }))
+        .filter((t) => (t.isActive ?? true) && typeof t.slug === "string" && t.slug)
+        .map((t) => ({ id: t.id, name: t.name, slug: t.slug as string }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setBoardsList(active);
     } catch {
