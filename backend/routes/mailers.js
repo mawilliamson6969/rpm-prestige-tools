@@ -1,10 +1,44 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+import multer from "multer";
 import { getPool } from "../lib/db.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MAILER_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "mailer-pdfs");
+
+// Multer middleware: accept one PDF up to 10 MB, saved with the mailer id in
+// the filename so /uploads/mailer-pdfs/<mailerId>-<timestamp>.pdf is unique.
+const mailerPdfStorage = multer.diskStorage({
+  destination: async (_req, _file, cb) => {
+    try {
+      await fs.promises.mkdir(MAILER_UPLOAD_DIR, { recursive: true });
+      cb(null, MAILER_UPLOAD_DIR);
+    } catch (e) {
+      cb(e, MAILER_UPLOAD_DIR);
+    }
+  },
+  filename: (req, file, cb) => {
+    const safeOrig = String(file.originalname || "upload.pdf").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+    cb(null, `mailer-${req.params.id}-${Date.now()}-${safeOrig}`);
+  },
+});
+
+export const mailerPdfUploadMiddleware = multer({
+  storage: mailerPdfStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "application/pdf" || /\.pdf$/i.test(file.originalname || "")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF uploads are allowed."));
+    }
+  },
+}).single("pdf");
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v12-message-wrapper";
+export const BACKEND_VERSION = "v13-compose-rewrite";
 import {
   submitMailer,
   confirmPreauth,
@@ -58,6 +92,13 @@ function rowToMailer(row) {
     testMode: !!row.test_mode,
     includeReturnEnvelope: !!row.include_return_envelope,
     signatureFilePath: row.signature_file_path,
+    uploadedPdfPath: row.uploaded_pdf_path,
+    uploadedPdfFilename: row.uploaded_pdf_filename,
+    letterheadLogoUrl: row.letterhead_logo_url,
+    letterheadPrimaryColor: row.letterhead_primary_color,
+    letterheadShowLetterhead: row.letterhead_show_letterhead !== false,
+    letterheadShowFooter: row.letterhead_show_footer !== false,
+    letterheadFooterText: row.letterhead_footer_text,
     triggeredBy: row.triggered_by,
     triggeredFrom: row.triggered_from,
     sentBy: row.sent_by,
@@ -249,6 +290,10 @@ export async function putMailer(req, res) {
       ["notes", "text"], ["sender_name", "text"], ["sender_address", "text"],
       ["sender_city", "text"], ["sender_state", "text"], ["sender_zip", "text"],
       ["include_return_envelope", "bool"],
+      // Letterhead customization
+      ["letterhead_logo_url", "text"], ["letterhead_primary_color", "text"],
+      ["letterhead_show_letterhead", "bool"], ["letterhead_show_footer", "bool"],
+      ["letterhead_footer_text", "text"],
     ];
 
     for (const [col, cast] of fields) {
@@ -289,6 +334,79 @@ export async function deleteMailer(req, res) {
   }
 }
 
+/* ============================ uploaded PDF =========================== */
+
+/**
+ * POST /api/mailers/:id/upload-pdf  (multipart, field name 'pdf')
+ * Attaches an already-formatted PDF to the mailer. When set, /quote skips
+ * the Puppeteer HTML render and submits this file directly to LetterStream.
+ */
+export async function postMailerPdfUpload(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id." });
+  if (!req.file) return res.status(400).json({ error: "No PDF received. Field name must be 'pdf'." });
+
+  try {
+    const pool = getPool();
+    const { rows: existing } = await pool.query(`SELECT status, uploaded_pdf_path FROM mailers WHERE id = $1`, [id]);
+    if (!existing.length) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(404).json({ error: "Not found." });
+    }
+    if (existing[0].status !== "draft") {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(409).json({ error: "Only draft mailers accept PDF uploads." });
+    }
+
+    // Replace any previous upload
+    if (existing[0].uploaded_pdf_path && fs.existsSync(existing[0].uploaded_pdf_path)) {
+      await fs.promises.unlink(existing[0].uploaded_pdf_path).catch(() => {});
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE mailers SET uploaded_pdf_path = $1, uploaded_pdf_filename = $2 WHERE id = $3 RETURNING *`,
+      [req.file.path, req.file.originalname || "upload.pdf", id]
+    );
+    await pool.query(
+      `INSERT INTO mailer_events (mailer_id, event_type, event_detail, created_by)
+       VALUES ($1, 'pdf_uploaded', $2, $3)`,
+      [id, `Uploaded ${req.file.originalname || "upload.pdf"} (${Math.round(req.file.size / 1024)} KB)`, asUser(req)]
+    );
+    res.json({ mailer: rowToMailer(rows[0]) });
+  } catch (e) {
+    console.error("[mailers] upload-pdf", e);
+    try { if (req.file?.path) await fs.promises.unlink(req.file.path); } catch (_) {}
+    res.status(500).json({ error: "Could not save PDF upload." });
+  }
+}
+
+/**
+ * DELETE /api/mailers/:id/upload-pdf
+ * Removes the attached upload, returning the mailer to "render from HTML" mode.
+ */
+export async function deleteMailerPdfUpload(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id." });
+  try {
+    const pool = getPool();
+    const { rows: existing } = await pool.query(`SELECT status, uploaded_pdf_path FROM mailers WHERE id = $1`, [id]);
+    if (!existing.length) return res.status(404).json({ error: "Not found." });
+    if (existing[0].status !== "draft") return res.status(409).json({ error: "Only draft mailers can be edited." });
+
+    if (existing[0].uploaded_pdf_path && fs.existsSync(existing[0].uploaded_pdf_path)) {
+      await fs.promises.unlink(existing[0].uploaded_pdf_path).catch(() => {});
+    }
+    const { rows } = await pool.query(
+      `UPDATE mailers SET uploaded_pdf_path = NULL, uploaded_pdf_filename = NULL WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    res.json({ mailer: rowToMailer(rows[0]) });
+  } catch (e) {
+    console.error("[mailers] delete upload", e);
+    res.status(500).json({ error: "Could not remove PDF upload." });
+  }
+}
+
 /* ====================== quote → confirm send flow ====================== */
 
 /**
@@ -323,7 +441,14 @@ export async function postMailerQuote(req, res) {
   }
 
   try {
-    const pdfBuffer = await renderLetterPdf(mailer.letter_html, mailer);
+    // If the user uploaded a ready-made PDF, mail it directly. Otherwise render
+    // the letter HTML through Puppeteer with the configured letterhead.
+    let pdfBuffer;
+    if (mailer.uploaded_pdf_path && fs.existsSync(mailer.uploaded_pdf_path)) {
+      pdfBuffer = await fs.promises.readFile(mailer.uploaded_pdf_path);
+    } else {
+      pdfBuffer = await renderLetterPdf(mailer.letter_html, mailer);
+    }
     const pageCount = await countPdfPages(pdfBuffer);
 
     // Direct send — no preauth. LetterStream returns -100 (live) or -105 (test mode).

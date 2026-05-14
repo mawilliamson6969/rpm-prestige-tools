@@ -79,6 +79,15 @@ export async function ensureMailersSchema() {
     ALTER TABLE mailers ADD COLUMN IF NOT EXISTS test_mode BOOLEAN DEFAULT false;
     ALTER TABLE mailers ADD COLUMN IF NOT EXISTS include_return_envelope BOOLEAN DEFAULT false;
     ALTER TABLE mailers ADD COLUMN IF NOT EXISTS signature_file_path TEXT;
+    -- v13: optional uploaded PDF (skips Puppeteer HTML render and mails the upload directly).
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS uploaded_pdf_path TEXT;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS uploaded_pdf_filename TEXT;
+    -- v13: per-mailer letterhead customization (overrides defaults from sender_* cols).
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS letterhead_logo_url TEXT;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS letterhead_primary_color VARCHAR(16) DEFAULT '#1B2856';
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS letterhead_show_letterhead BOOLEAN DEFAULT true;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS letterhead_show_footer BOOLEAN DEFAULT true;
+    ALTER TABLE mailers ADD COLUMN IF NOT EXISTS letterhead_footer_text TEXT;
 
     CREATE TABLE IF NOT EXISTS mailer_events (
       id SERIAL PRIMARY KEY,
