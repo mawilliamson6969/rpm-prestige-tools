@@ -98,6 +98,11 @@ function mapStep(r) {
     dueDateType: r.due_date_type ?? null,
     dueDateConfig: r.due_date_config ?? null,
     instructions: r.instructions ?? null,
+    // Phase 7.1: workflow-step fields, carried onto the instance step.
+    kind: r.kind ?? "todo",
+    actor: r.actor ?? "manual",
+    whenText: r.when_text ?? null,
+    dayOffset: r.day_offset ?? null,
     // Phase 7: 8-section embedded SOP, copied from the template step at launch.
     instructionObjective: r.instruction_objective ?? null,
     instructionSteps: r.instruction_steps ?? null,
