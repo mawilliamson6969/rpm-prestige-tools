@@ -1,6 +1,8 @@
 import BoardClient from "./BoardClient";
 import ProcessTabStrip, { type ProcessTab } from "./ProcessTabStrip";
 import TabStubContent from "./TabStubContent";
+import StagesWorkflowsClient from "./StagesWorkflowsClient";
+import MessageTemplatesClient from "./MessageTemplatesClient";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +42,11 @@ export default function BoardPage({
   return (
     <>
       <ProcessTabStrip slug={params.slug} active={tab} />
-      {tab === "board" ? (
-        <BoardClient slug={params.slug} />
-      ) : (
+      {tab === "board" && <BoardClient slug={params.slug} />}
+      {tab === "stages" && <StagesWorkflowsClient slug={params.slug} />}
+      {tab === "email" && <MessageTemplatesClient slug={params.slug} mode="email" />}
+      {tab === "text" && <MessageTemplatesClient slug={params.slug} mode="text" />}
+      {(tab === "autopilot" || tab === "fields" || tab === "settings") && (
         <TabStubContent slug={params.slug} tab={tab} />
       )}
     </>

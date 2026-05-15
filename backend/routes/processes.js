@@ -367,10 +367,12 @@ export async function postProcess(req, res) {
             email_template_id, text_template_id, recipient_type, recipient_value, send_timing,
             instruction_objective, instruction_steps, instruction_decision_matrix,
             instruction_email_templates, instruction_sms_templates, instruction_escalations,
-            instruction_completion_checklist, instruction_related_resources)
+            instruction_completion_checklist, instruction_related_resources,
+            kind, actor, when_text, day_offset, branch_config)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15::jsonb, $16,
                  $17, $18, $19, $20, $21, $22,
-                 $23, $24::jsonb, $25::jsonb, $26::jsonb, $27::jsonb, $28, $29::jsonb, $30::jsonb)
+                 $23, $24::jsonb, $25::jsonb, $26::jsonb, $27::jsonb, $28, $29::jsonb, $30::jsonb,
+                 $31, $32, $33, $34, $35::jsonb)
          RETURNING id`,
         [
           processRow.id,
@@ -405,6 +407,12 @@ export async function postProcess(req, res) {
           ts.instruction_escalations ?? null,
           ts.instruction_completion_checklist ? JSON.stringify(ts.instruction_completion_checklist) : null,
           ts.instruction_related_resources ? JSON.stringify(ts.instruction_related_resources) : null,
+          // Phase 7.1: carry the workflow-step fields onto the instance.
+          ts.kind || "todo",
+          ts.actor || "manual",
+          ts.when_text ?? null,
+          ts.day_offset ?? null,
+          ts.branch_config ? JSON.stringify(ts.branch_config) : null,
         ]
       );
       idByTemplateStepId.set(ts.step_number, stepIns[0].id);

@@ -44,6 +44,12 @@ function mapTemplateStep(r) {
     dueDateConfig: r.due_date_config ?? {},
     instructions: r.instructions ?? null,
     taskType: r.task_type ?? "todo",
+    // Phase 7.1 (PMS Template Editor) — workflow-step fields.
+    kind: r.kind ?? "todo",
+    actor: r.actor ?? "manual",
+    whenText: r.when_text ?? null,
+    dayOffset: r.day_offset ?? null,
+    branchConfig: r.branch_config ?? null,
     emailTemplateId: r.email_template_id ?? null,
     textTemplateId: r.text_template_id ?? null,
     recipientType: r.recipient_type ?? "tenant",
@@ -63,6 +69,56 @@ function mapTemplateStep(r) {
     instructionCompletionChecklist: r.instruction_completion_checklist ?? null,
     instructionRelatedResources: r.instruction_related_resources ?? null,
   };
+}
+
+const VALID_STEP_KINDS = new Set([
+  "todo",
+  "email",
+  "text",
+  "call",
+  "meet",
+  "stagechange",
+  "branch",
+  "exit",
+]);
+const VALID_STEP_ACTORS = new Set(["auto", "manual"]);
+
+/**
+ * Pull the Phase 7.1 workflow-step fields off a request body and
+ * coerce them to safe DB values. Returns nulls for anything absent so
+ * the column DEFAULTs apply on insert. Used by both create + update.
+ */
+function normalizeWorkflowFields(body) {
+  const kind =
+    typeof body?.kind === "string" && VALID_STEP_KINDS.has(body.kind)
+      ? body.kind
+      : "todo";
+  const actor =
+    typeof body?.actor === "string" && VALID_STEP_ACTORS.has(body.actor)
+      ? body.actor
+      : "manual";
+  const whenText =
+    typeof body?.whenText === "string" && body.whenText.trim()
+      ? body.whenText.trim().slice(0, 120)
+      : null;
+  const dayOffset = Number.isFinite(Number.parseInt(body?.dayOffset, 10))
+    ? Number.parseInt(body.dayOffset, 10)
+    : null;
+  const emailTemplateId = Number.isFinite(Number.parseInt(body?.emailTemplateId, 10))
+    ? Number.parseInt(body.emailTemplateId, 10)
+    : null;
+  const textTemplateId = Number.isFinite(Number.parseInt(body?.textTemplateId, 10))
+    ? Number.parseInt(body.textTemplateId, 10)
+    : null;
+  let branchConfig = null;
+  if (body?.branchConfig && typeof body.branchConfig === "object") {
+    try {
+      branchConfig = JSON.stringify(body.branchConfig);
+    } catch {
+      branchConfig = null;
+    }
+  }
+  return { kind, actor, whenText, dayOffset, emailTemplateId, textTemplateId, branchConfig };
 }
 
 export async function getTemplates(req, res) {
@@ -367,11 +423,14 @@ export async function postTemplateStep(req, res) {
     const stageId = Number.isFinite(Number.parseInt(req.body?.stageId, 10))
       ? Number.parseInt(req.body.stageId, 10)
       : null;
+    const wf = normalizeWorkflowFields(req.body);
     const { rows } = await pool.query(
       `INSERT INTO process_template_steps
          (template_id, step_number, name, description, assigned_role, assigned_user_id,
-          due_days_offset, depends_on_step, is_required, stage_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+          due_days_offset, depends_on_step, is_required, stage_id,
+          kind, actor, when_text, day_offset, email_template_id, text_template_id, branch_config)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16, $17::jsonb) RETURNING *`,
       [
         templateId,
         stepNumber,
@@ -383,6 +442,13 @@ export async function postTemplateStep(req, res) {
         dependsOnStep,
         isRequired,
         stageId,
+        wf.kind,
+        wf.actor,
+        wf.whenText,
+        wf.dayOffset,
+        wf.emailTemplateId,
+        wf.textTemplateId,
+        wf.branchConfig,
       ]
     );
     res.status(201).json({ step: mapTemplateStep(rows[0]) });
@@ -560,6 +626,42 @@ export async function putTemplateStep(req, res) {
         typeof v === "string" && ["minutes", "hours", "days"].includes(v.trim())
           ? v.trim()
           : undefined,
+    ],
+    // Phase 7.1 (PMS Template Editor) — workflow-step fields.
+    [
+      "kind",
+      "kind",
+      (v) => (typeof v === "string" && VALID_STEP_KINDS.has(v) ? v : undefined),
+    ],
+    [
+      "actor",
+      "actor",
+      (v) => (typeof v === "string" && VALID_STEP_ACTORS.has(v) ? v : undefined),
+    ],
+    [
+      "whenText",
+      "when_text",
+      (v) =>
+        v === null
+          ? null
+          : typeof v === "string"
+          ? v.trim().slice(0, 120) || null
+          : undefined,
+    ],
+    [
+      "dayOffset",
+      "day_offset",
+      (v) =>
+        v === null
+          ? null
+          : Number.isFinite(Number.parseInt(v, 10))
+          ? Number.parseInt(v, 10)
+          : undefined,
+    ],
+    [
+      "branchConfig",
+      "branch_config",
+      (v) => (v === null ? null : typeof v === "object" ? v : undefined),
     ],
   ];
   for (const [key, col, parse] of fields) {

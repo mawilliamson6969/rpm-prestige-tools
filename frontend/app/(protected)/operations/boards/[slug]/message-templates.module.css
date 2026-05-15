@@ -1,0 +1,347 @@
+/* Email + Text Templates tabs — Phase 7.1.
+   Pixel-target: screens.jsx EmailTemplates / TextTemplates */
+
+.root {
+  padding: 0 24px 60px;
+  min-height: calc(100vh - 54px - 50px);
+  background: var(--pms-bg);
+  color: var(--pms-ink);
+}
+
+.loading {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--pms-ink-3);
+  background: var(--pms-bg);
+}
+
+.header {
+  padding: 18px 0 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  color: var(--pms-ink-4);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--pms-ink-3);
+  font-size: 13px;
+  max-width: 780px;
+  flex: 1;
+}
+
+.header > div:first-child {
+  flex: 1;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btnPrimary { background: var(--pms-navy); color: #fff; border-color: var(--pms-navy); }
+.btnLight { background: #fff; color: var(--pms-ink-2); border-color: var(--pms-line-2); }
+
+.err {
+  background: var(--pms-danger-bg);
+  border: 1px solid #f1b4ab;
+  color: var(--pms-danger);
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+/* Email split */
+.emailSplit {
+  display: grid;
+  grid-template-columns: 1fr 480px;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.emailList {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  box-shadow: var(--pms-shadow-1);
+  overflow: hidden;
+}
+
+.emailTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.emailTable th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 10.5px;
+  color: var(--pms-ink-3);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--pms-line);
+  background: var(--pms-bg-2);
+}
+
+.emailTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pms-line);
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.emailTable tbody tr {
+  cursor: pointer;
+}
+.emailTable tbody tr:hover { background: #f8fafd; }
+
+.rowActive {
+  background: rgba(0, 152, 208, 0.06) !important;
+  box-shadow: inset 3px 0 0 var(--pms-navy);
+}
+
+.center { text-align: center; }
+
+.tplName {
+  font-weight: 600;
+  color: var(--pms-ink);
+  font-size: 13px;
+}
+
+.tplPreview {
+  font-size: 11.5px;
+  color: var(--pms-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.emptyCell {
+  text-align: center;
+  color: var(--pms-ink-4);
+  padding: 32px;
+  font-size: 13px;
+}
+
+/* Preview pane */
+.preview {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  box-shadow: var(--pms-shadow-1);
+  overflow: hidden;
+  position: sticky;
+  top: 64px;
+}
+
+.previewEmpty {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--pms-ink-4);
+  font-size: 13px;
+}
+
+.previewHead {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--pms-line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.previewTitle {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pms-ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.smallBtn,
+.smallBtnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--pms-line-2);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--pms-ink-2);
+}
+.smallBtnDanger { color: var(--pms-danger); }
+.smallBtn:disabled,
+.smallBtnDanger:disabled { opacity: 0.5; cursor: default; }
+
+.previewBody {
+  padding: 16px 18px;
+}
+
+.fieldLabel {
+  font-size: 10.5px;
+  color: var(--pms-ink-4);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.subjectLine {
+  font-size: 14px;
+  color: var(--pms-ink);
+  font-weight: 600;
+  margin: 2px 0 14px;
+}
+
+.emailBox {
+  background: var(--pms-bg);
+  border: 1px solid var(--pms-line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--pms-ink-2);
+  white-space: pre-wrap;
+}
+
+.varChip {
+  background: #fff6e6;
+  color: #9a6500;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--pms-ink-4);
+}
+
+/* Edit form */
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.editForm label {
+  font-size: 10.5px;
+  color: var(--pms-ink-4);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 6px;
+}
+.editForm input,
+.editForm textarea {
+  border: 1px solid var(--pms-line-2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--pms-ink);
+  outline: none;
+  resize: vertical;
+}
+.editForm input:focus,
+.editForm textarea:focus {
+  border-color: var(--pms-sky);
+}
+.editActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Text grid */
+.textGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+.textCard {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  box-shadow: var(--pms-shadow-1);
+}
+
+.textCardHead {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--pms-line);
+}
+
+.textIcon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(126, 79, 191, 0.14);
+  color: #7e4fbf;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.textCardMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.textCardBody {
+  padding: 14px 16px;
+}
+
+.bubble {
+  background: #f3eefb;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #3d2a6e;
+  max-width: 90%;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.emptyCard {
+  grid-column: 1 / -1;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--pms-ink-3);
+  background: #fff;
+  border: 1px dashed var(--pms-line-2);
+  border-radius: 12px;
+  font-size: 14px;
+}
