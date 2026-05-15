@@ -462,6 +462,56 @@ export async function ensureOperationsSchema() {
   );
 
   // ============================================================
+  // Phase 7 slug safety net.
+  //
+  // process_templates.slug is added by Phase 7's 035_unification
+  // migration, which runs inside ensureMbUnifiedSchema(). The boot
+  // schema chain catches per-applier errors and continues, so if that
+  // (large, destructive) applier throws, the server still starts but
+  // `slug` is never added. Anything that SELECTs t.slug by name then
+  // 500s (the Process Library dashboard), and boards can't resolve.
+  //
+  // ensureOperationsSchema owns process_templates, runs every boot,
+  // and is far less likely to fail — so guarantee slug + a derived
+  // value here too. Idempotent; safe alongside 035.
+  // ============================================================
+  // Column first (idempotent). The unique index is intentionally NOT
+  // (re)created here — 035 owns it; creating it before the backfill
+  // could throw on transient duplicates and abort the whole applier.
+  await pool.query(
+    `ALTER TABLE process_templates ADD COLUMN IF NOT EXISTS slug VARCHAR(64)`
+  );
+  // Derive a slug from the name for any template missing one, then
+  // disambiguate collisions by appending -<id>. Done in a single
+  // statement so it can't leave duplicate slugs behind (which would
+  // later break 035's unique-index creation).
+  await pool.query(
+    `UPDATE process_templates t
+        SET slug = base.slug
+             || CASE WHEN base.dup_count > 1 THEN '-' || t.id ELSE '' END
+       FROM (
+         SELECT id,
+                LOWER(
+                  REGEXP_REPLACE(
+                    REGEXP_REPLACE(name, '[^a-zA-Z0-9]+', '-', 'g'),
+                    '^-+|-+$', '', 'g'
+                  )
+                ) AS slug,
+                COUNT(*) OVER (
+                  PARTITION BY LOWER(
+                    REGEXP_REPLACE(
+                      REGEXP_REPLACE(name, '[^a-zA-Z0-9]+', '-', 'g'),
+                      '^-+|-+$', '', 'g'
+                    )
+                  )
+                ) AS dup_count
+           FROM process_templates
+          WHERE slug IS NULL OR slug = ''
+       ) base
+      WHERE t.id = base.id`
+  );
+
+  // ============================================================
   // Phase 7.1 (PMS Template Editor) — migration 036.
   // Mirrors backend/migrations/036_pms_template_editor.sql. Applied
   // inline here (idempotent) so it runs at boot like the rest of the
