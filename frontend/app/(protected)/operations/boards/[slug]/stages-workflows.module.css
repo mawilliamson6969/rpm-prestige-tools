@@ -1,0 +1,402 @@
+/* Stages & Workflows builder — Phase 7.1.
+   Pixel-target: process-management-system/project/builder.jsx */
+
+.root {
+  padding: 0 24px 60px;
+  min-height: calc(100vh - 54px - 50px);
+  background: var(--pms-bg);
+  color: var(--pms-ink);
+}
+
+.loading {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--pms-ink-3);
+  background: var(--pms-bg);
+}
+
+.header {
+  padding: 18px 0 6px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  color: var(--pms-ink-4);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--pms-ink-3);
+  font-size: 13px;
+  max-width: 780px;
+  line-height: 1.45;
+}
+
+.err {
+  background: var(--pms-danger-bg);
+  border: 1px solid #f1b4ab;
+  color: var(--pms-danger);
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  gap: 18px;
+  align-items: flex-start;
+  margin-top: 14px;
+}
+
+/* Left rail */
+.stageList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 64px;
+}
+
+.stageGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.stageGroupTitle {
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.addStageBtn {
+  color: #fff;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.addStageBtn:disabled { opacity: 0.5; cursor: default; }
+
+.stageGroupHelp {
+  font-size: 11.5px;
+  color: var(--pms-ink-3);
+  margin-bottom: 8px;
+}
+
+.stageEmpty {
+  font-size: 12px;
+  color: var(--pms-ink-4);
+  background: #fff;
+  border: 1px dashed var(--pms-line-2);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.stageItems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stageChip {
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: box-shadow 0.12s;
+}
+
+.stageChipName {
+  font-weight: 800;
+  font-size: 14.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  flex: 1;
+  line-height: 1.15;
+}
+
+.stageStat {
+  text-align: center;
+  line-height: 1;
+  min-width: 32px;
+}
+
+.stageStatN {
+  font-size: 18px;
+  font-weight: 800;
+  display: block;
+}
+
+.stageStatU {
+  font-size: 9.5px;
+  opacity: 0.85;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Right pane */
+.workflowPanel {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  box-shadow: var(--pms-shadow-1);
+  min-height: 300px;
+}
+
+.workflowEmpty,
+.noSteps {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--pms-ink-4);
+  font-size: 13px;
+}
+
+.workflowHead {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--pms-line);
+}
+
+.workflowHeadBar {
+  width: 8px;
+  height: 24px;
+  border-radius: 3px;
+}
+
+.workflowTitle {
+  margin: 0;
+  font-weight: 800;
+  font-size: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.workflowCount {
+  font-size: 12px;
+  color: var(--pms-ink-3);
+  font-weight: 600;
+}
+
+.timeline {
+  padding: 22px 22px 30px;
+}
+
+.enterBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  font-size: 13.5px;
+  color: var(--pms-ink);
+}
+
+.enterIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Timeline rows */
+.tlRow {
+  display: grid;
+  grid-template-columns: 100px 40px 1fr;
+  align-items: stretch;
+}
+
+.tlWhen {
+  padding: 14px 8px;
+  text-align: right;
+  color: var(--pms-ink-4);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.tlDay {
+  font-size: 11px;
+  color: var(--pms-ink-4);
+  margin-top: 2px;
+}
+
+.tlRail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tlRailLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--pms-line-2);
+}
+
+.stepCard {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 10px;
+  box-shadow: var(--pms-shadow-1);
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.stepBubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  margin: 12px 6px 12px 12px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.stepBody {
+  flex: 1;
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.stepMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.kindChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.pillInfo {
+  background: var(--pms-info-bg);
+  color: var(--pms-info);
+  border-color: #a8d2ea;
+}
+
+.pillNeutral {
+  background: var(--pms-muted-bg);
+  color: var(--pms-ink-2);
+  border-color: var(--pms-line-2);
+}
+
+.tplRef {
+  font-size: 11px;
+  color: var(--pms-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepName {
+  font-size: 13.5px;
+  color: var(--pms-ink);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.stepDelete {
+  background: transparent;
+  border: none;
+  color: var(--pms-ink-4);
+  padding: 0 12px;
+  cursor: pointer;
+  align-self: center;
+}
+.stepDelete:hover { color: var(--pms-danger); }
+
+.addStepRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 14px 0 4px;
+  margin-left: 140px;
+}
+
+.addStepLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pms-ink-3);
+  margin-right: 4px;
+}
+
+.addStepBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  color: var(--pms-ink-2);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.addStepBtn:hover { background: var(--pms-bg-2); }
+.addStepBtn:disabled { opacity: 0.5; cursor: default; }

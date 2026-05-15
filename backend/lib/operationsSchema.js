@@ -461,6 +461,40 @@ export async function ensureOperationsSchema() {
     `CREATE INDEX IF NOT EXISTS idx_processes_current_stage ON processes(current_stage_id)`
   );
 
+  // ============================================================
+  // Phase 7.1 (PMS Template Editor) — migration 036.
+  // Mirrors backend/migrations/036_pms_template_editor.sql. Applied
+  // inline here (idempotent) so it runs at boot like the rest of the
+  // operations schema. Adds:
+  //   - workflow-step fields on process_template_steps + process_steps
+  //     (kind, actor, when_text, day_offset, email/text template refs,
+  //      branch_config)
+  //   - process_email_templates + process_text_templates tables
+  //
+  // Stage grouping (Backlog / Active / Completed / Canceled) reuses
+  // the pre-existing process_template_stages.category column — no new
+  // stage column is added.
+  // ============================================================
+  for (const table of ["process_template_steps", "process_steps"]) {
+    await pool.query(
+      `ALTER TABLE ${table}
+         ADD COLUMN IF NOT EXISTS kind          VARCHAR(20) DEFAULT 'todo',
+         ADD COLUMN IF NOT EXISTS actor         VARCHAR(10) DEFAULT 'manual',
+         ADD COLUMN IF NOT EXISTS when_text     VARCHAR(120),
+         ADD COLUMN IF NOT EXISTS day_offset    INTEGER,
+         ADD COLUMN IF NOT EXISTS email_template_id INTEGER,
+         ADD COLUMN IF NOT EXISTS text_template_id  INTEGER,
+         ADD COLUMN IF NOT EXISTS branch_config JSONB`
+    );
+  }
+  // The process_email_templates / process_text_templates tables and
+  // their CRUD already exist (created later in this file + served by
+  // routes/processSettings.js). Phase 7.1 reuses that system as-is
+  // rather than creating a parallel one — so this migration only adds
+  // the workflow-step columns above. email_template_id /
+  // text_template_id stay soft references (no hard FK) since those
+  // columns predate this migration on some rows.
+
   // --- Spec Part 1: advanced board system tables ---
   await pool.query(`
     CREATE TABLE IF NOT EXISTS process_cross_board_rules (
