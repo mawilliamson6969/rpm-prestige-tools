@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import operationsStyles from "../../../../operations.module.css";
-import detailStyles from "./components/detail.module.css";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import OperationsTopBar from "../../../../OperationsTopBar";
 import UpdateComposer from "./components/UpdateComposer";
 import UpdateEntry from "./components/UpdateEntry";
@@ -11,21 +9,25 @@ import type { MentionableUser } from "./components/MentionDropdown";
 import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import type { UpdateType } from "@/types/mb";
+import styles from "./instance.module.css";
 
 /**
- * Phase 7 (Unification): the canonical process detail page.
+ * Phase 7.2 (PMS): the redesigned process-instance detail page.
  *
- * Replaces the Phase 4 mb-item detail. Layout follows the Phase 4
- * pattern (header / left main column / right side panel / Updates
- * feed below), but the "column values" section becomes a Stages &
- * Steps section driven by System A's process_stages + process_steps.
+ * Pixel-target: process-management-system/project/instance.jsx.
+ * Layout = header + horizontal stage stepper + (current-stage card
+ * with Tasks/Activity/Files/Notes tabs + What's-next) | right rail
+ * (Property / People / Custom Fields / Process Info).
  *
- * The Updates feed components (UpdateComposer, UpdateEntry, ReactionBar,
- * AttachmentChip, MentionDropdown) are reused verbatim from Phase 4 —
- * their backend handlers have been rekeyed to process_id.
+ * The Phase 4 updates feed (UpdateComposer/UpdateEntry, process-keyed
+ * since Phase 7) becomes the "Notes" tab. Activity / Files / Custom
+ * Fields are read-only views over the existing processSettings.js
+ * endpoints.
  */
 
 const POLL_INTERVAL_MS = 30_000;
+
+type TabId = "tasks" | "activity" | "files" | "notes";
 
 interface Process {
   id: number;
@@ -78,6 +80,10 @@ interface Step {
   stageId: number | null;
   instructions: string | null;
   taskType: string | null;
+  kind: string | null;
+  actor: string | null;
+  whenText: string | null;
+  dayOffset: number | null;
   instructionObjective: string | null;
   instructionSteps: InstructionStep[] | null;
   instructionDecisionMatrix: DecisionRow[] | null;
@@ -120,6 +126,76 @@ interface TeamUser {
   displayName: string;
 }
 
+interface ActivityRow {
+  id: number;
+  actionType: string;
+  description: string;
+  actorName: string | null;
+  actorType: string | null;
+  createdAt: string;
+}
+
+interface AttachmentRow {
+  id: number;
+  filename: string;
+  fileSize: number | null;
+  mimeType: string | null;
+  uploadedByName: string | null;
+  createdAt: string;
+}
+
+interface CustomFieldRow {
+  label: string;
+  fieldType: string;
+  value: unknown;
+  scope: string;
+  stepName: string | null;
+}
+
+const STAGE_FALLBACK_COLORS = [
+  "var(--pms-stg-1)",
+  "var(--pms-stg-2)",
+  "var(--pms-stg-3)",
+  "var(--pms-stg-4)",
+  "var(--pms-stg-5)",
+  "var(--pms-stg-6)",
+];
+
+function stageColor(s: { color: string | null }, idx: number): string {
+  if (s.color && s.color.startsWith("#")) return s.color;
+  return STAGE_FALLBACK_COLORS[idx % STAGE_FALLBACK_COLORS.length];
+}
+
+const KIND_META: Record<string, { color: string; label: string }> = {
+  todo: { color: "#0C5A8A", label: "TODO" },
+  email: { color: "#0098D0", label: "EMAIL" },
+  text: { color: "#7E4FBF", label: "TEXT" },
+  call: { color: "#1E7B45", label: "CALL" },
+  meet: { color: "#D89A2F", label: "MEETING" },
+  stagechange: { color: "#B32317", label: "STAGE" },
+  branch: { color: "#6A737B", label: "BRANCH" },
+  exit: { color: "#8A91A6", label: "EXIT" },
+};
+
+function fmtDate(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+}
+
+function relTime(s: string): string {
+  const d = new Date(s);
+  const diff = Date.now() - d.getTime();
+  const m = Math.round(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.round(h / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
 export default function ProcessDetailClient({
   boardSlug,
   processId,
@@ -133,6 +209,10 @@ export default function ProcessDetailClient({
   const [steps, setSteps] = useState<Step[]>([]);
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
   const [users, setUsers] = useState<TeamUser[]>([]);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
+  const [activeTab, setActiveTab] = useState<TabId>("tasks");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -197,6 +277,77 @@ export default function ProcessDetailClient({
     }
   }, [authHeaders, token]);
 
+  const loadActivity = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/processes/${processId}/activity`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setActivity(
+        (body.activity || []).map((a: Record<string, unknown>) => ({
+          id: Number(a.id),
+          actionType: String(a.actionType ?? ""),
+          description: String(a.description ?? ""),
+          actorName: (a.actorName as string | null) ?? null,
+          actorType: (a.actorType as string | null) ?? null,
+          createdAt: String(a.createdAt ?? ""),
+        })),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, processId, token]);
+
+  const loadAttachments = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/processes/${processId}/attachments`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setAttachments(
+        (body.attachments || []).map((a: Record<string, unknown>) => ({
+          id: Number(a.id),
+          filename: String(a.filename ?? ""),
+          fileSize: a.fileSize != null ? Number(a.fileSize) : null,
+          mimeType: (a.mimeType as string | null) ?? null,
+          uploadedByName: (a.uploadedByName as string | null) ?? null,
+          createdAt: String(a.createdAt ?? ""),
+        })),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, processId, token]);
+
+  const loadCustomFields = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(apiUrl(`/processes/${processId}/custom-field-summary`), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setCustomFields(
+        (body.fields || []).map((f: Record<string, unknown>) => ({
+          label: String(f.label ?? ""),
+          fieldType: String(f.fieldType ?? ""),
+          value: f.value ?? null,
+          scope: String(f.scope ?? ""),
+          stepName: (f.stepName as string | null) ?? null,
+        })),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [authHeaders, processId, token]);
+
   const markMentionsSeen = useCallback(async () => {
     if (!token) return;
     try {
@@ -215,7 +366,15 @@ export default function ProcessDetailClient({
       setLoading(true);
       setErr(null);
       try {
-        await Promise.all([loadProcess(), loadUpdates(), loadUsers(), markMentionsSeen()]);
+        await Promise.all([
+          loadProcess(),
+          loadUpdates(),
+          loadUsers(),
+          loadActivity(),
+          loadAttachments(),
+          loadCustomFields(),
+          markMentionsSeen(),
+        ]);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Could not load.");
       } finally {
@@ -225,9 +384,16 @@ export default function ProcessDetailClient({
     return () => {
       cancelled = true;
     };
-  }, [loadProcess, loadUpdates, loadUsers, markMentionsSeen]);
+  }, [
+    loadProcess,
+    loadUpdates,
+    loadUsers,
+    loadActivity,
+    loadAttachments,
+    loadCustomFields,
+    markMentionsSeen,
+  ]);
 
-  // Poll updates feed + window-focus refresh — same pattern as Phase 4.
   useEffect(() => {
     if (!token) return;
     const interval = setInterval(loadUpdates, POLL_INTERVAL_MS);
@@ -242,8 +408,6 @@ export default function ProcessDetailClient({
     };
   }, [loadUpdates, markMentionsSeen, token]);
 
-  // ----- Step completion / skip -----
-
   const completeStep = useCallback(
     async (stepId: number) => {
       try {
@@ -256,15 +420,13 @@ export default function ProcessDetailClient({
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || "Could not complete step.");
         }
-        await loadProcess();
+        await Promise.all([loadProcess(), loadActivity()]);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Could not complete step.");
       }
     },
-    [authHeaders, loadProcess],
+    [authHeaders, loadProcess, loadActivity],
   );
-
-  // ----- Updates feed actions (reuse Phase 4 patterns) -----
 
   async function uploadAttachmentsFor(updateId: number, files: File[]) {
     for (const f of files) {
@@ -428,7 +590,18 @@ export default function ProcessDetailClient({
     [authHeaders, loadUpdates, user],
   );
 
-  // ----- Render helpers -----
+  const orderedStages = useMemo(
+    () => [...stages].sort((a, b) => a.stageOrder - b.stageOrder),
+    [stages],
+  );
+
+  const currentStageIdx = useMemo(() => {
+    if (!process?.currentStageId) return 0;
+    const i = orderedStages.findIndex((s) => s.id === process.currentStageId);
+    return i >= 0 ? i : 0;
+  }, [orderedStages, process?.currentStageId]);
+
+  const currentStage = orderedStages[currentStageIdx] ?? null;
 
   const stepsByStage = useMemo(() => {
     const m = new Map<number | null, Step[]>();
@@ -443,6 +616,13 @@ export default function ProcessDetailClient({
     }
     return m;
   }, [steps]);
+
+  const currentStageSteps = currentStage
+    ? stepsByStage.get(currentStage.id) ?? []
+    : [];
+  const doneCount = currentStageSteps.filter(
+    (s) => s.status === "completed" || s.status === "skipped",
+  ).length;
 
   const { topLevel, repliesByParent } = useMemo(() => {
     const top: UpdateRow[] = [];
@@ -467,199 +647,325 @@ export default function ProcessDetailClient({
     [users],
   );
 
+  const upcoming = orderedStages.slice(currentStageIdx + 1, currentStageIdx + 3);
+
   return (
-    <div className={`${operationsStyles.page} ${detailStyles.page}`}>
+    <div data-pms className={styles.root}>
       <OperationsTopBar />
-      <div className={detailStyles.main}>
-        <div className={detailStyles.headerBar}>
-          <Link
-            href={`/operations/boards/${boardSlug}`}
-            className={detailStyles.backLink}
-          >
-            ← Back to board
-          </Link>
-          {process?.templateName ? (
-            <>
-              <span className={detailStyles.crumb}>/</span>
-              <span className={detailStyles.crumb}>{process.templateName}</span>
-            </>
-          ) : null}
-        </div>
 
-        {err ? <div className={detailStyles.errBanner}>{err}</div> : null}
+      {err ? <div className={styles.errBanner}>{err}</div> : null}
 
-        {loading || !process ? (
-          <div className={detailStyles.loadingState}>Loading process…</div>
-        ) : (
-          <>
-            <h1 className={detailStyles.title}>{process.name}</h1>
-            <p className={detailStyles.subtitle}>
-              {process.currentStageName ? (
-                <span
+      {loading || !process ? (
+        <div className={styles.loadingState}>Loading process…</div>
+      ) : (
+        <div className={styles.page}>
+          {/* Header */}
+          <div className={styles.header}>
+            <Link href={`/operations/boards/${boardSlug}`} className={styles.backBtn} aria-label="Back to board">
+              ←
+            </Link>
+            <div className={styles.headerText}>
+              <div className={`${styles.eyebrow} pms-cond`}>
+                {process.templateName || "PROCESS"} · Started {fmtDate(process.startedAt) ?? "—"}
+              </div>
+              <h1 className={`${styles.title} pms-cond`}>{process.name}</h1>
+              <div className={styles.headerMeta}>
+                {process.propertyName && <span>{process.propertyName}</span>}
+                {process.contactName && (
+                  <>
+                    <span className={styles.dot}>·</span>
+                    <span>
+                      Contact: <b>{process.contactName}</b>
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className={styles.headerActions}>
+              <span className={`${styles.statusPill} ${statusToneClass(process.status, styles)}`}>
+                {process.status}
+              </span>
+            </div>
+          </div>
+
+          {/* Stepper */}
+          {orderedStages.length > 0 && (
+            <div className={styles.stepper}>
+              {orderedStages.map((s, i) => {
+                const done = i < currentStageIdx || s.status === "completed";
+                const current = i === currentStageIdx;
+                const c = stageColor(s, i);
+                return (
+                  <div key={s.id} className={styles.stepperItem}>
+                    <div className={styles.stepperNode}>
+                      <div
+                        className={styles.stepperCircle}
+                        style={{
+                          background: done || current ? c : "#fff",
+                          color: done || current ? "#fff" : "var(--pms-ink-4)",
+                          border: done || current ? "none" : "2px dashed var(--pms-line-2)",
+                          boxShadow: current ? `0 0 0 4px ${c}33` : "none",
+                        }}
+                      >
+                        {done ? "✓" : i + 1}
+                      </div>
+                      <div
+                        className={`${styles.stepperLabel} pms-cond`}
+                        style={{ color: current ? c : "var(--pms-ink-3)", fontWeight: current ? 800 : 600 }}
+                      >
+                        {s.name}
+                      </div>
+                    </div>
+                    {i < orderedStages.length - 1 && (
+                      <div
+                        className={styles.stepperBar}
+                        style={{ background: i < currentStageIdx ? c : "var(--pms-line)" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className={styles.grid}>
+            {/* Left: current stage card + what's next */}
+            <div className={styles.leftCol}>
+              <div className={styles.card}>
+                <div
+                  className={styles.stageCardHead}
                   style={{
-                    display: "inline-block",
-                    padding: "0.15rem 0.55rem",
-                    borderRadius: 999,
-                    background: process.currentStageColor || "#0086c0",
-                    color: "white",
-                    fontWeight: 700,
-                    fontSize: "0.78rem",
-                    marginRight: "0.5rem",
+                    borderLeft: `4px solid ${currentStage ? stageColor(currentStage, currentStageIdx) : "var(--pms-ink-4)"}`,
                   }}
                 >
-                  {process.currentStageName}
-                </span>
-              ) : null}
-              {process.propertyName ?? ""}
-            </p>
+                  <span className={`${styles.stageEyebrow} pms-cond`}>CURRENT STAGE</span>
+                  <h2
+                    className={`${styles.stageName} pms-cond`}
+                    style={{ color: currentStage ? stageColor(currentStage, currentStageIdx) : "var(--pms-ink)" }}
+                  >
+                    {currentStage?.name ?? "—"}
+                  </h2>
+                  <span className={styles.stageProgress}>
+                    {doneCount} / {currentStageSteps.length} tasks
+                  </span>
+                </div>
 
-            <div className={detailStyles.grid}>
-              <div>
-                {/* Stages & Steps (replaces Phase 4's column-values area) */}
-                <div className={detailStyles.card}>
-                  <h3 className={detailStyles.cardTitle}>Stages & Steps</h3>
-                  {stages.length === 0 ? (
-                    <div className={detailStyles.notLinked}>
-                      No stages configured on this template.
-                    </div>
-                  ) : (
-                    stages.map((stage) => (
-                      <StageCard
-                        key={stage.id}
-                        stage={stage}
-                        steps={stepsByStage.get(stage.id) ?? []}
-                        expandedStepId={expandedStepId}
-                        onToggleStep={(id) =>
-                          setExpandedStepId((cur) => (cur === id ? null : id))
-                        }
-                        onCompleteStep={completeStep}
+                <div className={styles.tabBar}>
+                  {(
+                    [
+                      { id: "tasks", label: "Tasks", count: currentStageSteps.length - doneCount },
+                      { id: "activity", label: "Activity", count: activity.length },
+                      { id: "files", label: "Files", count: attachments.length },
+                      { id: "notes", label: "Notes", count: topLevel.length },
+                    ] as Array<{ id: TabId; label: string; count: number }>
+                  ).map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`${styles.tab} ${activeTab === t.id ? styles.tabActive : ""}`}
+                      onClick={() => setActiveTab(t.id)}
+                    >
+                      {t.label}
+                      <span className={styles.tabCount}>{t.count}</span>
+                      {activeTab === t.id && <span className={styles.tabUnderline} />}
+                    </button>
+                  ))}
+                </div>
+
+                <div className={styles.tabBody}>
+                  {activeTab === "tasks" &&
+                    (currentStageSteps.length === 0 ? (
+                      <div className={styles.empty}>No tasks in this stage.</div>
+                    ) : (
+                      currentStageSteps.map((step) => (
+                        <TaskRow
+                          key={step.id}
+                          step={step}
+                          expanded={expandedStepId === step.id}
+                          onToggle={() =>
+                            setExpandedStepId((cur) => (cur === step.id ? null : step.id))
+                          }
+                          onComplete={() => completeStep(step.id)}
+                        />
+                      ))
+                    ))}
+
+                  {activeTab === "activity" &&
+                    (activity.length === 0 ? (
+                      <div className={styles.empty}>No activity recorded yet.</div>
+                    ) : (
+                      <div className={styles.activityList}>
+                        {activity.map((a) => (
+                          <div key={a.id} className={styles.activityRow}>
+                            <div className={styles.activityDot} />
+                            <div>
+                              <div className={styles.activityText}>{a.description}</div>
+                              <div className={styles.activityMeta}>
+                                {a.actorName || a.actorType || "system"} · {relTime(a.createdAt)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                  {activeTab === "files" &&
+                    (attachments.length === 0 ? (
+                      <div className={styles.empty}>No files attached.</div>
+                    ) : (
+                      <div className={styles.fileGrid}>
+                        {attachments.map((f) => (
+                          <div key={f.id} className={styles.fileCard}>
+                            <div className={styles.fileIcon}>📄</div>
+                            <div className={styles.fileMeta}>
+                              <div className={styles.fileName}>{f.filename}</div>
+                              <div className={styles.fileSub}>
+                                {f.fileSize != null ? `${Math.round(f.fileSize / 1024)} KB · ` : ""}
+                                {fmtDate(f.createdAt)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                  {activeTab === "notes" && (
+                    <div className={styles.notesWrap}>
+                      <UpdateComposer
+                        users={mentionUsers}
+                        submitting={submitting}
+                        errorText={composerErr}
+                        onSubmit={postComment}
                       />
-                    ))
+                      {topLevel.length === 0 ? (
+                        <div className={styles.empty}>
+                          No notes yet. Be the first to post.
+                        </div>
+                      ) : (
+                        topLevel.map((u) => (
+                          <UpdateEntry
+                            key={u.id}
+                            update={u}
+                            replies={repliesByParent.get(u.id) ?? []}
+                            currentUserId={user?.id ?? null}
+                            isAdmin={isAdmin}
+                            users={mentionUsers}
+                            onReply={postReply}
+                            onEdit={editComment}
+                            onDelete={deleteComment}
+                            onReact={toggleReaction}
+                          />
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
 
-              <div>
-                <ProcessMetaPanel process={process} />
-              </div>
-            </div>
-
-            <div className={detailStyles.feedCard}>
-              <h3 className={detailStyles.feedTitle}>Updates</h3>
-              <UpdateComposer
-                users={mentionUsers}
-                submitting={submitting}
-                errorText={composerErr}
-                onSubmit={postComment}
-              />
-              {topLevel.length === 0 ? (
-                <div className={detailStyles.emptyState}>
-                  No updates yet. Be the first to post a comment.
+              {activeTab === "tasks" && upcoming.length > 0 && (
+                <div className={styles.card}>
+                  <div className={styles.cardHead}>What&rsquo;s next</div>
+                  <div className={styles.nextList}>
+                    {upcoming.map((s, i) => {
+                      const idx = currentStageIdx + 1 + i;
+                      const c = stageColor(s, idx);
+                      const cnt = (stepsByStage.get(s.id) ?? []).length;
+                      return (
+                        <div
+                          key={s.id}
+                          className={styles.nextRow}
+                          style={{ borderLeft: `4px solid ${c}` }}
+                        >
+                          <div className={`${styles.nextName} pms-cond`} style={{ color: c }}>
+                            {s.name}
+                          </div>
+                          <div className={styles.nextSub}>{cnt} steps</div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ) : (
-                topLevel.map((u) => (
-                  <UpdateEntry
-                    key={u.id}
-                    update={u}
-                    replies={repliesByParent.get(u.id) ?? []}
-                    currentUserId={user?.id ?? null}
-                    isAdmin={isAdmin}
-                    users={mentionUsers}
-                    onReply={postReply}
-                    onEdit={editComment}
-                    onDelete={deleteComment}
-                    onReact={toggleReaction}
-                  />
-                ))
               )}
             </div>
-          </>
-        )}
-      </div>
+
+            {/* Right rail */}
+            <div className={styles.rightCol}>
+              <RailCard title="Property">
+                <Field label="Address" value={process.propertyName} />
+                <Field
+                  label="Active processes"
+                  value={process.templateName ? `1 (${process.templateName})` : "—"}
+                />
+              </RailCard>
+
+              <RailCard title="People">
+                {process.contactName && (
+                  <div className={styles.person}>
+                    <div className={styles.personRole}>CONTACT</div>
+                    <div className={styles.personName}>{process.contactName}</div>
+                    {(process.contactEmail || process.contactPhone) && (
+                      <div className={styles.personSub}>
+                        {process.contactEmail}
+                        {process.contactEmail && process.contactPhone ? " · " : ""}
+                        {process.contactPhone}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!process.contactName && <div className={styles.empty}>No contact on file.</div>}
+              </RailCard>
+
+              <RailCard title="Custom Fields">
+                {customFields.length === 0 ? (
+                  <div className={styles.empty}>No custom field values.</div>
+                ) : (
+                  customFields.map((f, i) => (
+                    <FieldRow
+                      key={`${f.label}-${i}`}
+                      label={f.stepName ? `${f.label} (${f.stepName})` : f.label}
+                      value={renderCfValue(f.value)}
+                    />
+                  ))
+                )}
+              </RailCard>
+
+              <RailCard title="Process Info">
+                <FieldRow label="Template" value={process.templateName ?? "—"} />
+                <FieldRow label="Status" value={process.status} />
+                <FieldRow label="Started" value={fmtDate(process.startedAt) ?? "—"} />
+                <FieldRow label="Target" value={fmtDate(process.targetCompletion) ?? "—"} />
+                <FieldRow
+                  label="Completed"
+                  value={process.completedAt ? fmtDate(process.completedAt) ?? "—" : "—"}
+                />
+                {process.notes && (
+                  <div className={styles.notesBlock}>{process.notes}</div>
+                )}
+              </RailCard>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ============================================================
-// Stage / Step / Instruction views
-// ============================================================
-
-function StageCard({
-  stage,
-  steps,
-  expandedStepId,
-  onToggleStep,
-  onCompleteStep,
-}: {
-  stage: Stage;
-  steps: Step[];
-  expandedStepId: number | null;
-  onToggleStep: (id: number) => void;
-  onCompleteStep: (id: number) => Promise<void>;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const doneCount = steps.filter((s) => s.status === "completed" || s.status === "done").length;
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(27,40,86,0.12)",
-        borderRadius: 10,
-        marginBottom: "0.6rem",
-        overflow: "hidden",
-        background: "#fff",
-      }}
-    >
-      <div
-        onClick={() => setCollapsed((c) => !c)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setCollapsed((c) => !c);
-          }
-        }}
-        style={{
-          padding: "0.55rem 0.75rem",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          cursor: "pointer",
-          background: "rgba(27,40,86,0.02)",
-        }}
-      >
-        <span
-          style={{
-            width: 10, height: 10, borderRadius: 999,
-            background: stage.color || "#6a737b",
-          }}
-        />
-        <span style={{ fontWeight: 700, color: "#1b2856" }}>{stage.name}</span>
-        <span style={{ fontSize: "0.78rem", color: "#6a737b", marginLeft: "auto" }}>
-          {doneCount} / {steps.length} done
-        </span>
-        <span style={{ fontSize: "0.78rem", color: "#6a737b" }}>
-          {collapsed ? "▶" : "▼"}
-        </span>
-      </div>
-      {!collapsed
-        ? steps.length === 0
-          ? <div style={{ padding: "0.6rem 0.75rem", color: "#6a737b", fontStyle: "italic", fontSize: "0.85rem" }}>No steps.</div>
-          : steps.map((step) => (
-              <StepRow
-                key={step.id}
-                step={step}
-                expanded={expandedStepId === step.id}
-                onToggle={() => onToggleStep(step.id)}
-                onComplete={onCompleteStep}
-              />
-            ))
-        : null}
-    </div>
-  );
+function statusToneClass(status: string, s: Record<string, string>): string {
+  const v = status.toLowerCase();
+  if (v === "completed") return s.statusOk;
+  if (v === "cancelled" || v === "canceled") return s.statusNeutral;
+  if (v === "paused") return s.statusWarn;
+  return s.statusActive;
 }
 
-function StepRow({
+function renderCfValue(v: unknown): string {
+  if (v == null) return "—";
+  if (Array.isArray(v)) return v.join(", ") || "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+function TaskRow({
   step,
   expanded,
   onToggle,
@@ -668,75 +974,87 @@ function StepRow({
   step: Step;
   expanded: boolean;
   onToggle: () => void;
-  onComplete: (id: number) => Promise<void>;
+  onComplete: () => void;
 }) {
-  const done = step.status === "completed" || step.status === "done";
-  const taskType = (step.taskType || "todo").toLowerCase();
-  const typeIcon = taskType === "email" ? "✉️" : taskType === "text" || taskType === "sms" ? "💬" : taskType === "call" ? "📞" : "✓";
+  const done = step.status === "completed" || step.status === "skipped";
+  const kindKey = (step.kind || step.taskType || "todo").toLowerCase();
+  const m = KIND_META[kindKey] ?? KIND_META.todo;
+  const isAuto = (step.actor || "manual") === "auto";
   return (
-    <div style={{ borderTop: "1px solid rgba(27,40,86,0.08)" }}>
-      <div
-        onClick={onToggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggle();
-          }
-        }}
-        style={{
-          padding: "0.55rem 0.75rem",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.55rem",
-          cursor: "pointer",
-        }}
-      >
-        <span style={{ fontSize: "0.95rem" }}>{typeIcon}</span>
+    <div className={styles.task}>
+      <div className={styles.taskMain}>
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!done) onComplete(step.id);
-          }}
-          aria-label={done ? "Step completed" : "Mark step complete"}
+          className={styles.taskCheck}
           style={{
-            width: 18, height: 18, borderRadius: 4,
-            border: `1.5px solid ${done ? "#00c875" : "#6a737b"}`,
-            background: done ? "#00c875" : "transparent",
-            color: "white",
-            cursor: done ? "default" : "pointer",
-            fontWeight: 800,
-            fontSize: "0.8rem",
-            padding: 0,
+            background: done ? "var(--pms-ok)" : "#fff",
+            borderColor: done ? "var(--pms-ok)" : "var(--pms-line-2)",
           }}
+          onClick={onComplete}
+          disabled={done}
+          aria-label={done ? "Completed" : "Mark complete"}
         >
           {done ? "✓" : ""}
         </button>
-        <span
-          style={{
-            fontWeight: 600,
-            color: "#1b2856",
-            textDecoration: done ? "line-through" : "none",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {step.name}
-        </span>
-        <span style={{ fontSize: "0.78rem", color: "#6a737b" }}>
-          {step.assignedUserName ?? step.assignedRole ?? "—"}
-        </span>
-        <span style={{ fontSize: "0.78rem", color: "#6a737b" }}>
-          {step.dueDate ?? "—"}
-        </span>
-        <span style={{ fontSize: "0.78rem", color: "#6a737b" }}>{expanded ? "▼" : "▶"}</span>
+        <div className={styles.taskBody} onClick={onToggle} role="button" tabIndex={0}>
+          <div className={styles.taskMeta}>
+            <span
+              className={`${styles.kindChip} pms-cond`}
+              style={{ background: `${m.color}14`, color: m.color }}
+            >
+              {m.label}
+            </span>
+            {isAuto ? (
+              <span className={`${styles.miniPill} ${styles.pillInfo}`}>AUTO</span>
+            ) : (
+              <span className={`${styles.miniPill} ${styles.pillNeutral}`}>
+                {step.assignedRole || "MANUAL"}
+              </span>
+            )}
+            {step.whenText && <span className={styles.whenText}>· {step.whenText}</span>}
+          </div>
+          <div
+            className={styles.taskName}
+            style={{
+              textDecoration: done ? "line-through" : "none",
+              color: done ? "var(--pms-ink-3)" : "var(--pms-ink)",
+            }}
+          >
+            {step.name}
+          </div>
+        </div>
+        <button type="button" className={styles.taskExpand} onClick={onToggle}>
+          {expanded ? "▾" : "▸"}
+        </button>
       </div>
-      {expanded ? <StepInstructions step={step} /> : null}
+      {expanded && <StepInstructions step={step} />}
+    </div>
+  );
+}
+
+function RailCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className={styles.card}>
+      <div className={`${styles.railHead} pms-cond`}>{title}</div>
+      <div className={styles.railBody}>{children}</div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className={styles.field}>
+      <span className={styles.fieldLabel}>{label}</span>
+      <span className={styles.fieldValue}>{value || "—"}</span>
+    </div>
+  );
+}
+
+function FieldRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className={styles.fieldRow}>
+      <span className={styles.fieldRowLabel}>{label}</span>
+      <span className={styles.fieldRowValue}>{value || "—"}</span>
     </div>
   );
 }
@@ -943,38 +1261,6 @@ function StepInstructions({ step }: { step: Step }) {
   );
 }
 
-function ProcessMetaPanel({ process }: { process: Process }) {
-  return (
-    <div className={detailStyles.card}>
-      <h3 className={detailStyles.cardTitle}>Process details</h3>
-      <Row label="Template" value={process.templateName} />
-      <Row label="Status" value={process.status} />
-      <Row label="Property" value={process.propertyName} />
-      <Row label="Contact" value={process.contactName} />
-      <Row label="Email" value={process.contactEmail} />
-      <Row label="Phone" value={process.contactPhone} />
-      <Row label="Started" value={process.startedAt ? new Date(process.startedAt).toLocaleDateString() : null} />
-      <Row label="Target" value={process.targetCompletion} />
-      <Row label="Completed" value={process.completedAt ? new Date(process.completedAt).toLocaleString() : null} />
-      {process.notes ? (
-        <div style={{ marginTop: "0.5rem", padding: "0.5rem 0.6rem", background: "rgba(27,40,86,0.04)", borderRadius: 6, fontSize: "0.86rem", color: "#1b2856" }}>
-          {process.notes}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string | null | undefined }) {
-  if (value == null || value === "") return null;
-  return (
-    <div className={detailStyles.field}>
-      <span className={detailStyles.fieldLabel}>{label}</span>
-      <span className={detailStyles.fieldValue}>{value}</span>
-    </div>
-  );
-}
-
 // ===== shape coercion =====
 
 function coerceProcess(p: Record<string, unknown>): Process {
@@ -1033,6 +1319,10 @@ function coerceStep(s: Record<string, unknown>): Step {
     stageId: typeof s.stageId === "number" ? s.stageId : null,
     instructions: (s.instructions as string | null) ?? null,
     taskType: (s.taskType as string | null) ?? null,
+    kind: (s.kind as string | null) ?? null,
+    actor: (s.actor as string | null) ?? null,
+    whenText: (s.whenText as string | null) ?? null,
+    dayOffset: typeof s.dayOffset === "number" ? s.dayOffset : null,
     instructionObjective: (s.instructionObjective as string | null) ?? null,
     instructionSteps: extractList(s.instructionSteps, "steps"),
     instructionDecisionMatrix: extractList(s.instructionDecisionMatrix, "rows"),
@@ -1047,12 +1337,6 @@ function coerceStep(s: Record<string, unknown>): Step {
   };
 }
 
-/**
- * The Phase 5 instruction blobs were stored as `{steps:[...]}`,
- * `{rows:[...]}`, etc. — wrapper objects. Phase 7 keeps that nesting on
- * the database side (the JSONB columns get the same payload), so the
- * coercer extracts the inner array.
- */
 function extractList<T>(v: unknown, key: string): T[] | null {
   if (!v) return null;
   if (Array.isArray(v)) return v as T[];
