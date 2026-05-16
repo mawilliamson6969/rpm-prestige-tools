@@ -16,6 +16,11 @@ import {
   User,
   FileText,
   Check,
+  ChevronUp,
+  ChevronDown,
+  Pencil,
+  X,
+  Save,
   type LucideIcon,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
@@ -53,6 +58,11 @@ interface Step {
   textTemplateId: number | null;
 }
 
+interface NamedTpl {
+  id: number;
+  name: string;
+}
+
 const KIND_META: Record<StepKind, { icon: LucideIcon; color: string; label: string }> = {
   todo: { icon: Hand, color: "#0C5A8A", label: "TODO" },
   email: { icon: Mail, color: "#0098D0", label: "EMAIL" },
@@ -64,7 +74,7 @@ const KIND_META: Record<StepKind, { icon: LucideIcon; color: string; label: stri
   exit: { icon: ArrowRight, color: "#8A91A6", label: "EXIT" },
 };
 
-const ADD_KINDS: StepKind[] = ["todo", "email", "text", "call", "meet", "branch", "stagechange"];
+const ALL_KINDS: StepKind[] = ["todo", "email", "text", "call", "meet", "branch", "stagechange"];
 
 const STAGE_GROUPS: Array<{ category: string; title: string; color: string; help: string }> = [
   {
@@ -93,6 +103,8 @@ const STAGE_GROUPS: Array<{ category: string; title: string; color: string; help
   },
 ];
 
+const CATEGORY_ORDER = STAGE_GROUPS.map((g) => g.category);
+
 const STAGE_FALLBACK_COLORS = [
   "var(--pms-stg-1)",
   "var(--pms-stg-2)",
@@ -100,6 +112,20 @@ const STAGE_FALLBACK_COLORS = [
   "var(--pms-stg-4)",
   "var(--pms-stg-5)",
   "var(--pms-stg-6)",
+];
+
+// Concrete hexes for the stage color picker (the CSS-var palette
+// resolved — the API only accepts #rrggbb).
+const COLOR_SWATCHES = [
+  "#E26B2B",
+  "#D89A2F",
+  "#B7A12E",
+  "#7E9E32",
+  "#3D8C49",
+  "#2D7A6C",
+  "#1E7B45",
+  "#C04132",
+  "#5468A0",
 ];
 
 function stageColor(s: Stage, idx: number): string {
@@ -112,10 +138,19 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
   const [template, setTemplate] = useState<Template | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [emailTpls, setEmailTpls] = useState<NamedTpl[]>([]);
+  const [textTpls, setTextTpls] = useState<NamedTpl[]>([]);
   const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Inline-edit UI state
+  const [editingStepId, setEditingStepId] = useState<number | null>(null);
+  const [editingStageId, setEditingStageId] = useState<number | null>(null);
+  const [addStageCat, setAddStageCat] = useState<string | null>(null);
+  const [newStageName, setNewStageName] = useState("");
+  const [addStepOpen, setAddStepOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -140,7 +175,7 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
       };
       setTemplate(tpl);
 
-      const [stRes, spRes] = await Promise.all([
+      const [stRes, spRes, emRes, txRes] = await Promise.all([
         fetch(apiUrl(`/processes/templates/${tpl.id}/stages`), {
           headers: { ...authHeaders() },
           cache: "no-store",
@@ -149,20 +184,31 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
           headers: { ...authHeaders() },
           cache: "no-store",
         }),
+        fetch(apiUrl(`/processes/templates/${tpl.id}/email-templates`), {
+          headers: { ...authHeaders() },
+          cache: "no-store",
+        }).catch(() => null),
+        fetch(apiUrl(`/processes/templates/${tpl.id}/text-templates`), {
+          headers: { ...authHeaders() },
+          cache: "no-store",
+        }).catch(() => null),
       ]);
       const stBody = stRes.ok ? await stRes.json() : { stages: [] };
       const spBody = spRes.ok ? await spRes.json() : { steps: [] };
-      const loadedStages: Stage[] = (stBody.stages || []).map(
-        (s: Record<string, unknown>) => ({
+      const emBody = emRes && emRes.ok ? await emRes.json() : { templates: [] };
+      const txBody = txRes && txRes.ok ? await txRes.json() : { templates: [] };
+
+      setStages(
+        (stBody.stages || []).map((s: Record<string, unknown>) => ({
           id: Number(s.id),
           name: String(s.name ?? ""),
           color: (s.color as string | null) ?? null,
           category: String(s.category ?? "active"),
           stageOrder: Number(s.stageOrder ?? 0),
-        })
+        }))
       );
-      const loadedSteps: Step[] = (spBody.steps || []).map(
-        (s: Record<string, unknown>) => ({
+      setSteps(
+        (spBody.steps || []).map((s: Record<string, unknown>) => ({
           id: Number(s.id),
           stepNumber: Number(s.stepNumber ?? 0),
           name: String(s.name ?? ""),
@@ -174,15 +220,19 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
           assignedRole: (s.assignedRole as string | null) ?? null,
           emailTemplateId: s.emailTemplateId != null ? Number(s.emailTemplateId) : null,
           textTemplateId: s.textTemplateId != null ? Number(s.textTemplateId) : null,
-        })
+        }))
       );
-      setStages(loadedStages);
-      setSteps(loadedSteps);
-      setSelectedStageId((cur) =>
-        cur && loadedStages.some((s) => s.id === cur)
-          ? cur
-          : loadedStages[0]?.id ?? null
-      );
+      const mapNamed = (b: { templates?: Record<string, unknown>[] }): NamedTpl[] =>
+        (b.templates || []).map((t) => ({ id: Number(t.id), name: String(t.name ?? "") }));
+      setEmailTpls(mapNamed(emBody));
+      setTextTpls(mapNamed(txBody));
+
+      setStages((cur) => {
+        setSelectedStageId((sel) =>
+          sel && cur.some((s) => s.id === sel) ? sel : cur[0]?.id ?? null
+        );
+        return cur;
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load stages.");
     } finally {
@@ -210,25 +260,41 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
     [steps, selectedStageId]
   );
 
-  async function addStage(category: string) {
-    if (!template || busy) return;
-    const name = window.prompt(`New ${category} stage name:`);
-    if (!name || !name.trim()) return;
+  // Global stage order: category group order, then stageOrder within.
+  const orderedStages = useMemo(() => {
+    return [...stages].sort((a, b) => {
+      const ca = CATEGORY_ORDER.indexOf(a.category);
+      const cb = CATEGORY_ORDER.indexOf(b.category);
+      if (ca !== cb) return ca - cb;
+      return a.stageOrder - b.stageOrder;
+    });
+  }, [stages]);
+
+  async function api(path: string, method: string, body?: unknown): Promise<unknown> {
+    const res = await fetch(apiUrl(path), {
+      method,
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      throw new Error((b as { error?: string }).error || `Request failed (${res.status}).`);
+    }
+    return res.json().catch(() => ({}));
+  }
+
+  async function addStageInline(category: string) {
+    if (!template || busy || !newStageName.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch(apiUrl(`/processes/templates/${template.id}/stages`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ name: name.trim(), category }),
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error(b.error || "Could not create stage.");
-      }
-      const b = await res.json();
-      const newId = b.stage?.id;
+      const b = (await api(`/processes/templates/${template.id}/stages`, "POST", {
+        name: newStageName.trim(),
+        category,
+      })) as { stage?: { id?: number } };
+      setAddStageCat(null);
+      setNewStageName("");
       await load();
-      if (newId) setSelectedStageId(Number(newId));
+      if (b.stage?.id) setSelectedStageId(Number(b.stage.id));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not create stage.");
     } finally {
@@ -236,29 +302,100 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
     }
   }
 
-  async function addStep(kind: StepKind) {
-    if (!template || !selectedStage || busy) return;
-    const name = window.prompt(`New ${KIND_META[kind].label} step description:`);
-    if (!name || !name.trim()) return;
+  async function saveStage(stageId: number, patch: Record<string, unknown>) {
+    if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(apiUrl(`/processes/templates/${template.id}/steps`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          name: name.trim(),
-          stageId: selectedStage.id,
-          kind,
-          actor: kind === "email" || kind === "text" || kind === "stagechange" ? "auto" : "manual",
-        }),
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error(b.error || "Could not create step.");
+      await api(`/processes/template-stages/${stageId}`, "PUT", patch);
+      setEditingStageId(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update stage.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteStage(stageId: number) {
+    if (busy || !window.confirm("Delete this stage? Its steps lose their stage link.")) return;
+    setBusy(true);
+    try {
+      await api(`/processes/template-stages/${stageId}`, "DELETE");
+      setEditingStageId(null);
+      if (selectedStageId === stageId) setSelectedStageId(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not delete stage.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reorderStage(stageId: number, dir: -1 | 1) {
+    if (!template || busy) return;
+    const stage = stages.find((s) => s.id === stageId);
+    if (!stage) return;
+    const siblings = orderedStages.filter((s) => s.category === stage.category);
+    const idx = siblings.findIndex((s) => s.id === stageId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+    const reordered = [...siblings];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    // Rebuild the full global stage id list with this category reordered.
+    const fullOrder: number[] = [];
+    for (const cat of CATEGORY_ORDER) {
+      if (cat === stage.category) {
+        fullOrder.push(...reordered.map((s) => s.id));
+      } else {
+        fullOrder.push(
+          ...orderedStages.filter((s) => s.category === cat).map((s) => s.id)
+        );
       }
+    }
+    setBusy(true);
+    try {
+      await api(`/processes/templates/${template.id}/stages/reorder`, "PUT", {
+        stageIds: fullOrder,
+      });
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reorder stage.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addStepInline(kind: StepKind, name: string) {
+    if (!template || !selectedStage || busy || !name.trim()) return;
+    setBusy(true);
+    try {
+      await api(`/processes/templates/${template.id}/steps`, "POST", {
+        name: name.trim(),
+        stageId: selectedStage.id,
+        kind,
+        actor:
+          kind === "email" || kind === "text" || kind === "stagechange"
+            ? "auto"
+            : "manual",
+      });
+      setAddStepOpen(false);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not create step.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveStep(stepId: number, patch: Record<string, unknown>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api(`/processes/template-steps/${stepId}`, "PUT", patch);
+      setEditingStepId(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update step.");
     } finally {
       setBusy(false);
     }
@@ -268,17 +405,51 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
     if (busy || !window.confirm("Delete this workflow step?")) return;
     setBusy(true);
     try {
-      const res = await fetch(apiUrl(`/processes/template-steps/${stepId}`), {
-        method: "DELETE",
-        headers: { ...authHeaders() },
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error(b.error || "Could not delete step.");
-      }
+      await api(`/processes/template-steps/${stepId}`, "DELETE");
       setSteps((cur) => cur.filter((s) => s.id !== stepId));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not delete step.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reorderStep(stepId: number, dir: -1 | 1) {
+    if (!template || busy) return;
+    const idx = stageSteps.findIndex((s) => s.id === stepId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= stageSteps.length) return;
+    const reordered = [...stageSteps];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    // Build the full global step id list so other stages keep their order.
+    const fullOrder: number[] = [];
+    for (const st of orderedStages) {
+      if (st.id === selectedStageId) {
+        fullOrder.push(...reordered.map((s) => s.id));
+      } else {
+        fullOrder.push(
+          ...steps
+            .filter((s) => s.stageId === st.id)
+            .sort((a, b) => a.stepNumber - b.stepNumber)
+            .map((s) => s.id)
+        );
+      }
+    }
+    // Unstaged steps last (preserve their order).
+    fullOrder.push(
+      ...steps
+        .filter((s) => s.stageId == null)
+        .sort((a, b) => a.stepNumber - b.stepNumber)
+        .map((s) => s.id)
+    );
+    setBusy(true);
+    try {
+      await api(`/processes/templates/${template.id}/steps/reorder`, "PUT", {
+        stepIds: fullOrder,
+      });
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reorder step.");
     } finally {
       setBusy(false);
     }
@@ -309,9 +480,9 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
         {/* Left rail — stage groups */}
         <div className={styles.stageList}>
           {STAGE_GROUPS.map((g) => {
-            const items = stages
-              .filter((s) => (s.category || "active") === g.category)
-              .sort((a, b) => a.stageOrder - b.stageOrder);
+            const items = orderedStages.filter(
+              (s) => (s.category || "active") === g.category
+            );
             return (
               <div key={g.category} className={styles.stageGroup}>
                 <div className={styles.stageGroupHead}>
@@ -323,7 +494,10 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                       type="button"
                       className={styles.addStageBtn}
                       style={{ background: g.color }}
-                      onClick={() => addStage(g.category)}
+                      onClick={() => {
+                        setAddStageCat((c) => (c === g.category ? null : g.category));
+                        setNewStageName("");
+                      }}
                       disabled={busy}
                       title={`Add ${g.title.toLowerCase()}`}
                     >
@@ -332,6 +506,38 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                   )}
                 </div>
                 <div className={styles.stageGroupHelp}>{g.help}</div>
+
+                {isAdmin && addStageCat === g.category && (
+                  <div className={styles.inlineAdd}>
+                    <input
+                      autoFocus
+                      className={styles.inlineInput}
+                      placeholder="Stage name…"
+                      value={newStageName}
+                      onChange={(e) => setNewStageName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addStageInline(g.category);
+                        if (e.key === "Escape") setAddStageCat(null);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.miniPrimary}
+                      onClick={() => addStageInline(g.category)}
+                      disabled={busy || !newStageName.trim()}
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.miniGhost}
+                      onClick={() => setAddStageCat(null)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
+
                 {items.length === 0 ? (
                   <div className={styles.stageEmpty}>No stages yet.</div>
                 ) : (
@@ -340,25 +546,76 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                       const c = stageColor(s, i);
                       const count = steps.filter((st) => st.stageId === s.id).length;
                       const active = s.id === selectedStageId;
+                      const isEditing = editingStageId === s.id;
                       return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className={styles.stageChip}
-                          style={{
-                            background: c,
-                            boxShadow: active
-                              ? `0 0 0 3px ${c}55, 0 4px 10px rgba(0,0,0,.10)`
-                              : "0 1px 2px rgba(0,0,0,.06)",
-                          }}
-                          onClick={() => setSelectedStageId(s.id)}
-                        >
-                          <span className={`${styles.stageChipName} pms-cond`}>{s.name}</span>
-                          <span className={styles.stageStat}>
-                            <span className={`${styles.stageStatN} pms-cond`}>{count}</span>
-                            <span className={styles.stageStatU}>steps</span>
-                          </span>
-                        </button>
+                        <div key={s.id}>
+                          <div
+                            className={styles.stageChip}
+                            style={{
+                              background: c,
+                              boxShadow: active
+                                ? `0 0 0 3px ${c}55, 0 4px 10px rgba(0,0,0,.10)`
+                                : "0 1px 2px rgba(0,0,0,.06)",
+                            }}
+                            onClick={() => setSelectedStageId(s.id)}
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <span className={`${styles.stageChipName} pms-cond`}>{s.name}</span>
+                            {isAdmin && (
+                              <span className={styles.stageChipCtl}>
+                                <button
+                                  type="button"
+                                  className={styles.chipBtn}
+                                  disabled={busy || i === 0}
+                                  title="Move up"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reorderStage(s.id, -1);
+                                  }}
+                                >
+                                  <ChevronUp size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.chipBtn}
+                                  disabled={busy || i === items.length - 1}
+                                  title="Move down"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reorderStage(s.id, 1);
+                                  }}
+                                >
+                                  <ChevronDown size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.chipBtn}
+                                  title="Edit stage"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingStageId((cur) => (cur === s.id ? null : s.id));
+                                  }}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                              </span>
+                            )}
+                            <span className={styles.stageStat}>
+                              <span className={`${styles.stageStatN} pms-cond`}>{count}</span>
+                              <span className={styles.stageStatU}>steps</span>
+                            </span>
+                          </div>
+                          {isAdmin && isEditing && (
+                            <StageEditor
+                              stage={s}
+                              busy={busy}
+                              onSave={(patch) => saveStage(s.id, patch)}
+                              onDelete={() => deleteStage(s.id)}
+                              onCancel={() => setEditingStageId(null)}
+                            />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -412,12 +669,23 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                   </span>
                 </div>
 
-                {stageSteps.map((step) => (
+                {stageSteps.map((step, i) => (
                   <WorkflowStepRow
                     key={step.id}
                     step={step}
                     canEdit={isAdmin}
+                    isFirst={i === 0}
+                    isLast={i === stageSteps.length - 1}
+                    editing={editingStepId === step.id}
+                    busy={busy}
+                    emailTpls={emailTpls}
+                    textTpls={textTpls}
+                    onToggleEdit={() =>
+                      setEditingStepId((cur) => (cur === step.id ? null : step.id))
+                    }
+                    onSave={(patch) => saveStep(step.id, patch)}
                     onDelete={() => deleteStep(step.id)}
+                    onMove={(dir) => reorderStep(step.id, dir)}
                   />
                 ))}
 
@@ -425,27 +693,25 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                   <div className={styles.noSteps}>No steps in this stage yet.</div>
                 )}
 
-                {isAdmin && (
-                  <div className={styles.addStepRow}>
-                    <span className={styles.addStepLabel}>Add step:</span>
-                    {ADD_KINDS.map((k) => {
-                      const m = KIND_META[k];
-                      const Icon = m.icon;
-                      return (
-                        <button
-                          key={k}
-                          type="button"
-                          className={styles.addStepBtn}
-                          onClick={() => addStep(k)}
-                          disabled={busy}
-                        >
-                          <Icon size={13} color={m.color} />
-                          {m.label.charAt(0) + m.label.slice(1).toLowerCase()}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                {isAdmin &&
+                  (addStepOpen ? (
+                    <AddStepForm
+                      busy={busy}
+                      onAdd={addStepInline}
+                      onCancel={() => setAddStepOpen(false)}
+                    />
+                  ) : (
+                    <div className={styles.addStepRow}>
+                      <button
+                        type="button"
+                        className={styles.addStepBtn}
+                        onClick={() => setAddStepOpen(true)}
+                        disabled={busy}
+                      >
+                        <Plus size={13} /> Add step
+                      </button>
+                    </div>
+                  ))}
               </div>
             </>
           )}
@@ -455,18 +721,181 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
   );
 }
 
+function StageEditor({
+  stage,
+  busy,
+  onSave,
+  onDelete,
+  onCancel,
+}: {
+  stage: Stage;
+  busy: boolean;
+  onSave: (patch: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(stage.name);
+  const [color, setColor] = useState(
+    stage.color && stage.color.startsWith("#") ? stage.color : COLOR_SWATCHES[0]
+  );
+  const [category, setCategory] = useState(stage.category);
+  return (
+    <div className={styles.editor}>
+      <label className={styles.editorLabel}>Name</label>
+      <input
+        className={styles.inlineInput}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <label className={styles.editorLabel}>Color</label>
+      <div className={styles.swatchRow}>
+        {COLOR_SWATCHES.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className={styles.swatch}
+            style={{
+              background: c,
+              outline: c === color ? "2px solid var(--pms-ink)" : "none",
+            }}
+            onClick={() => setColor(c)}
+            aria-label={c}
+          />
+        ))}
+      </div>
+      <label className={styles.editorLabel}>Group</label>
+      <select
+        className={styles.inlineSelect}
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+      >
+        {STAGE_GROUPS.map((g) => (
+          <option key={g.category} value={g.category}>
+            {g.title}
+          </option>
+        ))}
+      </select>
+      <div className={styles.editorActions}>
+        <button
+          type="button"
+          className={styles.miniPrimary}
+          disabled={busy || !name.trim()}
+          onClick={() => onSave({ name: name.trim(), color, category })}
+        >
+          <Save size={12} /> Save
+        </button>
+        <button type="button" className={styles.miniGhost} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={styles.miniDanger}
+          disabled={busy}
+          onClick={onDelete}
+        >
+          <Trash2 size={12} /> Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AddStepForm({
+  busy,
+  onAdd,
+  onCancel,
+}: {
+  busy: boolean;
+  onAdd: (kind: StepKind, name: string) => void;
+  onCancel: () => void;
+}) {
+  const [kind, setKind] = useState<StepKind>("todo");
+  const [name, setName] = useState("");
+  return (
+    <div className={styles.editor}>
+      <label className={styles.editorLabel}>Step type</label>
+      <select
+        className={styles.inlineSelect}
+        value={kind}
+        onChange={(e) => setKind(e.target.value as StepKind)}
+      >
+        {ALL_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {KIND_META[k].label}
+          </option>
+        ))}
+      </select>
+      <label className={styles.editorLabel}>Description</label>
+      <input
+        autoFocus
+        className={styles.inlineInput}
+        placeholder="What should happen…"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onAdd(kind, name);
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className={styles.editorActions}>
+        <button
+          type="button"
+          className={styles.miniPrimary}
+          disabled={busy || !name.trim()}
+          onClick={() => onAdd(kind, name)}
+        >
+          <Plus size={12} /> Add step
+        </button>
+        <button type="button" className={styles.miniGhost} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowStepRow({
   step,
   canEdit,
+  isFirst,
+  isLast,
+  editing,
+  busy,
+  emailTpls,
+  textTpls,
+  onToggleEdit,
+  onSave,
   onDelete,
+  onMove,
 }: {
   step: Step;
   canEdit: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  editing: boolean;
+  busy: boolean;
+  emailTpls: NamedTpl[];
+  textTpls: NamedTpl[];
+  onToggleEdit: () => void;
+  onSave: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
+  onMove: (dir: -1 | 1) => void;
 }) {
   const m = KIND_META[step.kind] ?? KIND_META.todo;
   const Icon = m.icon;
   const isAuto = step.actor === "auto";
+
+  const [name, setName] = useState(step.name);
+  const [kind, setKind] = useState<StepKind>(step.kind);
+  const [actor, setActor] = useState<"auto" | "manual">(step.actor);
+  const [whenText, setWhenText] = useState(step.whenText ?? "");
+  const [dayOffset, setDayOffset] = useState(
+    step.dayOffset != null ? String(step.dayOffset) : ""
+  );
+  const [role, setRole] = useState(step.assignedRole ?? "");
+  const [emailTemplateId, setEmailTemplateId] = useState(step.emailTemplateId ?? 0);
+  const [textTemplateId, setTextTemplateId] = useState(step.textTemplateId ?? 0);
+
   return (
     <div className={styles.tlRow}>
       <div className={styles.tlWhen}>
@@ -478,44 +907,199 @@ function WorkflowStepRow({
       <div className={styles.tlRail}>
         <span className={styles.tlRailLine} />
       </div>
-      <div className={styles.stepCard}>
-        <div className={styles.stepBubble} style={{ background: `${m.color}22`, color: m.color }}>
-          <Check size={14} />
-        </div>
-        <div className={styles.stepBody}>
-          <div className={styles.stepMeta}>
-            <span
-              className={`${styles.kindChip} pms-cond`}
-              style={{ background: `${m.color}14`, color: m.color }}
-            >
-              <Icon size={11} /> {m.label}
-            </span>
-            {isAuto ? (
-              <span className={`${styles.pill} ${styles.pillInfo}`}>
-                <Bot size={11} /> AUTO
-              </span>
-            ) : (
-              <span className={`${styles.pill} ${styles.pillNeutral}`}>
-                <User size={11} /> MANUAL{step.assignedRole ? ` · ${step.assignedRole}` : ""}
-              </span>
-            )}
-            {(step.emailTemplateId != null || step.textTemplateId != null) && (
-              <span className={styles.tplRef}>
-                <FileText size={11} /> template linked
-              </span>
-            )}
+      <div className={styles.stepCardWrap}>
+        <div className={styles.stepCard}>
+          <div className={styles.stepBubble} style={{ background: `${m.color}22`, color: m.color }}>
+            <Check size={14} />
           </div>
-          <div className={styles.stepName}>{step.name}</div>
+          <div className={styles.stepBody}>
+            <div className={styles.stepMeta}>
+              <span
+                className={`${styles.kindChip} pms-cond`}
+                style={{ background: `${m.color}14`, color: m.color }}
+              >
+                <Icon size={11} /> {m.label}
+              </span>
+              {isAuto ? (
+                <span className={`${styles.pill} ${styles.pillInfo}`}>
+                  <Bot size={11} /> AUTO
+                </span>
+              ) : (
+                <span className={`${styles.pill} ${styles.pillNeutral}`}>
+                  <User size={11} /> MANUAL{step.assignedRole ? ` · ${step.assignedRole}` : ""}
+                </span>
+              )}
+              {(step.emailTemplateId != null || step.textTemplateId != null) && (
+                <span className={styles.tplRef}>
+                  <FileText size={11} /> template linked
+                </span>
+              )}
+            </div>
+            <div className={styles.stepName}>{step.name}</div>
+          </div>
+          {canEdit && (
+            <div className={styles.stepCtl}>
+              <button
+                type="button"
+                className={styles.chipBtnDark}
+                disabled={busy || isFirst}
+                title="Move up"
+                onClick={() => onMove(-1)}
+              >
+                <ChevronUp size={13} />
+              </button>
+              <button
+                type="button"
+                className={styles.chipBtnDark}
+                disabled={busy || isLast}
+                title="Move down"
+                onClick={() => onMove(1)}
+              >
+                <ChevronDown size={13} />
+              </button>
+              <button
+                type="button"
+                className={styles.chipBtnDark}
+                title="Edit step"
+                onClick={onToggleEdit}
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                className={styles.stepDelete}
+                onClick={onDelete}
+                title="Delete step"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )}
         </div>
-        {canEdit && (
-          <button
-            type="button"
-            className={styles.stepDelete}
-            onClick={onDelete}
-            title="Delete step"
-          >
-            <Trash2 size={13} />
-          </button>
+
+        {canEdit && editing && (
+          <div className={styles.editor}>
+            <label className={styles.editorLabel}>Description</label>
+            <input
+              className={styles.inlineInput}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <div className={styles.editorGrid}>
+              <div>
+                <label className={styles.editorLabel}>Type</label>
+                <select
+                  className={styles.inlineSelect}
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value as StepKind)}
+                >
+                  {ALL_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {KIND_META[k].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={styles.editorLabel}>Actor</label>
+                <select
+                  className={styles.inlineSelect}
+                  value={actor}
+                  onChange={(e) => setActor(e.target.value as "auto" | "manual")}
+                >
+                  <option value="manual">Manual</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </div>
+              <div>
+                <label className={styles.editorLabel}>When</label>
+                <input
+                  className={styles.inlineInput}
+                  placeholder="e.g. immediately"
+                  value={whenText}
+                  onChange={(e) => setWhenText(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={styles.editorLabel}>Day</label>
+                <input
+                  className={styles.inlineInput}
+                  type="number"
+                  value={dayOffset}
+                  onChange={(e) => setDayOffset(e.target.value)}
+                />
+              </div>
+            </div>
+            {actor === "manual" && (
+              <>
+                <label className={styles.editorLabel}>Assigned role</label>
+                <input
+                  className={styles.inlineInput}
+                  placeholder="e.g. PM"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                />
+              </>
+            )}
+            {kind === "email" && (
+              <>
+                <label className={styles.editorLabel}>Email template</label>
+                <select
+                  className={styles.inlineSelect}
+                  value={emailTemplateId}
+                  onChange={(e) => setEmailTemplateId(Number(e.target.value))}
+                >
+                  <option value={0}>— none —</option>
+                  {emailTpls.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {kind === "text" && (
+              <>
+                <label className={styles.editorLabel}>Text template</label>
+                <select
+                  className={styles.inlineSelect}
+                  value={textTemplateId}
+                  onChange={(e) => setTextTemplateId(Number(e.target.value))}
+                >
+                  <option value={0}>— none —</option>
+                  {textTpls.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <div className={styles.editorActions}>
+              <button
+                type="button"
+                className={styles.miniPrimary}
+                disabled={busy || !name.trim()}
+                onClick={() =>
+                  onSave({
+                    name: name.trim(),
+                    kind,
+                    actor,
+                    whenText: whenText.trim() || null,
+                    dayOffset: dayOffset === "" ? null : Number(dayOffset),
+                    assignedRole: actor === "manual" ? role.trim() || null : null,
+                    emailTemplateId: kind === "email" ? emailTemplateId || null : null,
+                    textTemplateId: kind === "text" ? textTemplateId || null : null,
+                  })
+                }
+              >
+                <Save size={12} /> Save
+              </button>
+              <button type="button" className={styles.miniGhost} onClick={onToggleEdit}>
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

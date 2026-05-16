@@ -400,3 +400,158 @@
 }
 .addStepBtn:hover { background: var(--pms-bg-2); }
 .addStepBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* ===== Phase 7.1.1 — editor depth controls ===== */
+.inlineAdd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.inlineInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--pms-line-2);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--pms-ink);
+  outline: none;
+  width: 100%;
+}
+.inlineInput:focus { border-color: var(--pms-sky); }
+.inlineSelect {
+  border: 1px solid var(--pms-line-2);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  cursor: pointer;
+  width: 100%;
+}
+.miniPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--pms-navy);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.miniPrimary:disabled { opacity: 0.5; cursor: default; }
+.miniGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #fff;
+  color: var(--pms-ink-2);
+  border: 1px solid var(--pms-line-2);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.miniDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--pms-danger-bg);
+  color: var(--pms-danger);
+  border: 1px solid #f1b4ab;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  margin-left: auto;
+}
+.miniDanger:disabled { opacity: 0.5; cursor: default; }
+
+.stageChipCtl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chipBtn {
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  color: #fff;
+  border-radius: 5px;
+  padding: 3px;
+  cursor: pointer;
+  display: inline-flex;
+}
+.chipBtn:disabled { opacity: 0.35; cursor: default; }
+.chipBtnDark {
+  background: transparent;
+  border: 1px solid var(--pms-line);
+  color: var(--pms-ink-3);
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  display: inline-flex;
+}
+.chipBtnDark:disabled { opacity: 0.4; cursor: default; }
+.chipBtnDark:hover:not(:disabled) { background: var(--pms-bg-2); }
+
+.stepCardWrap { flex: 1; min-width: 0; }
+.stepCtl {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 10px;
+}
+
+.editor {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: -1px;
+}
+.editorLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--pms-ink-4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+}
+.editorGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.editorActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.swatchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  outline-offset: 2px;
+}
