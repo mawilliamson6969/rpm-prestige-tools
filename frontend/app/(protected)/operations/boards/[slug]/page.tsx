@@ -4,6 +4,7 @@ import TabStubContent from "./TabStubContent";
 import StagesWorkflowsClient from "./StagesWorkflowsClient";
 import MessageTemplatesClient from "./MessageTemplatesClient";
 import CustomFieldsClient from "./CustomFieldsClient";
+import AutopilotClient from "./AutopilotClient";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,8 @@ export default function BoardPage({
       {tab === "email" && <MessageTemplatesClient slug={params.slug} mode="email" />}
       {tab === "text" && <MessageTemplatesClient slug={params.slug} mode="text" />}
       {tab === "fields" && <CustomFieldsClient slug={params.slug} />}
-      {(tab === "autopilot" || tab === "settings") && (
-        <TabStubContent slug={params.slug} tab={tab} />
-      )}
+      {tab === "autopilot" && <AutopilotClient slug={params.slug} />}
+      {tab === "settings" && <TabStubContent slug={params.slug} tab={tab} />}
     </>
   );
 }
