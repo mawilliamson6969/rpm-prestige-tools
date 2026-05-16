@@ -46,9 +46,39 @@ System design handoff, on top of the 7.0.1 visual pass.
 - `page.tsx` tab router now renders the real Stages / Email / Text
   tabs; only Autopilot / Custom Fields / Settings remain stubs.
 
-## Deferred to 7.1.1 (editor depth)
+## 7.1.1 — editor depth (SHIPPED)
 
-The builder is **create / visualize / delete**, not yet full inline
+The items below were the 7.1.1 backlog. Status after the
+`feat/pms-7-1-1-editor-depth` PR:
+
+- ✅ **Reorder** stages (within category) and steps (within stage) —
+  shipped as up/down controls (not HTML5 drag; deliberate — robust,
+  no DnD lib). Sends the full global id list to the existing reorder
+  endpoints so other stages/steps keep their order.
+- ✅ **Per-step inline editor** — name, kind, actor, whenText,
+  dayOffset, assignedRole, and email/text template link, all editable
+  after creation via the existing PUT. Delete+recreate no longer
+  required.
+- ✅ **Stage edit/delete from the rail** — rename, recolor (swatch
+  picker), change category/group, delete.
+- ✅ **Inline add forms** replace every `window.prompt`/`confirm` for
+  add-stage and add-step (delete still uses a confirm()).
+
+Still deferred (smaller follow-ups):
+
+- **Branch / stagechange target editor** — `branch_config` is
+  persisted + copied to instances but still has no UI for picking the
+  target stage / condition.
+- **Exit-rule editor** — the "process enters stage" / exit affordance
+  remains display-only.
+- **Email preview fidelity** — To/From/variable-resolved preview and
+  "used by stage X" backref still simplified; no send-test.
+- **HTML5 drag-and-drop** — up/down is the shipped interaction; true
+  drag is a nicety, not built.
+
+### Original 7.1.1 backlog (for history)
+
+The builder was **create / visualize / delete**, not yet full inline
 editing. Specifically deferred:
 
 - **Drag-to-reorder** stages and steps. A reorder API already exists
