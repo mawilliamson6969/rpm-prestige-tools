@@ -1,10 +1,10 @@
 import BoardClient from "./BoardClient";
 import ProcessTabStrip, { type ProcessTab } from "./ProcessTabStrip";
-import TabStubContent from "./TabStubContent";
 import StagesWorkflowsClient from "./StagesWorkflowsClient";
 import MessageTemplatesClient from "./MessageTemplatesClient";
 import CustomFieldsClient from "./CustomFieldsClient";
 import AutopilotClient from "./AutopilotClient";
+import SettingsClient from "./SettingsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,7 @@ export default function BoardPage({
       {tab === "text" && <MessageTemplatesClient slug={params.slug} mode="text" />}
       {tab === "fields" && <CustomFieldsClient slug={params.slug} />}
       {tab === "autopilot" && <AutopilotClient slug={params.slug} />}
-      {tab === "settings" && <TabStubContent slug={params.slug} tab={tab} />}
+      {tab === "settings" && <SettingsClient slug={params.slug} />}
     </>
   );
 }
