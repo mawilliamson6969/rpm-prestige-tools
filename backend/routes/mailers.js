@@ -38,7 +38,7 @@ export const mailerPdfUploadMiddleware = multer({
 
 // Version tag included in every quote/confirm-send response so we can verify
 // in the browser DevTools that the deployed backend is running the latest code.
-export const BACKEND_VERSION = "v13-compose-rewrite";
+export const BACKEND_VERSION = "v14-webhook-bulletproof";
 import {
   submitMailer,
   confirmPreauth,
@@ -858,54 +858,74 @@ export async function getMailerAccountBalance(req, res) {
 /* ============================ webhook ============================ */
 
 /**
+ * GET /api/mailers/webhook/letterstream
+ * LetterStream's "test" / health ping hits the URL with a GET first. Respond
+ * 200 so their settings page validates the endpoint instead of seeing a 404.
+ */
+export function getLetterStreamWebhook(_req, res) {
+  res.status(200).json({ success: true, reason: "LetterStream webhook endpoint is live" });
+}
+
+/**
  * POST /api/mailers/webhook/letterstream
  * LetterStream pushes tracking scans every ~4 hours.
  * Form body: { key, api_version, timestamp, json } where `json` is a JSON-encoded array.
  *
- * Public route — no auth middleware. Verifies the shared `key` matches LETTERSTREAM_WEBHOOK_KEY.
- * Always responds 200 (LetterStream resends on 5xx, which can cascade).
+ * Public route — no auth middleware. CRITICAL: LetterStream treats ANY non-2xx
+ * (including 401, 301, 5xx) as "endpoint not accepting connections" and emails
+ * the account owner. So we:
+ *   - ALWAYS return HTTP 200, immediately, before any slow DB work
+ *   - never 401 on a bad/missing key — just log it and skip processing
+ *   - process the scans after the response is sent (fire-and-forget)
  */
-export async function postLetterStreamWebhook(req, res) {
-  try {
-    const expected = process.env.LETTERSTREAM_WEBHOOK_KEY || "";
-    const provided = String(req.body?.key || req.query?.key || "");
-    if (!expected) {
-      console.warn("[letterstream webhook] LETTERSTREAM_WEBHOOK_KEY not set; rejecting all webhooks");
-      return res.status(200).json({ success: false, reason: "Server-side webhook key not configured" });
-    }
-    if (provided !== expected) {
-      return res.status(401).json({ success: false, reason: "Invalid webhook key" });
-    }
+export function postLetterStreamWebhook(req, res) {
+  // Respond 200 right away so LetterStream is satisfied even if the DB is slow
+  // or the key is wrong. Their docs only require a 2xx with this JSON body.
+  res.status(200).json({ success: "true", reason: "Received data" });
 
-    let payload = req.body?.json;
-    if (typeof payload === "string") {
-      try { payload = JSON.parse(payload); } catch (e) {
-        console.warn("[letterstream webhook] could not parse json:", e.message);
-        return res.status(200).json({ success: false, reason: "Invalid json payload" });
-      }
-    }
-    const items = Array.isArray(payload) ? payload : Array.isArray(payload?.scans) ? payload.scans : [];
-    if (!items.length) {
-      return res.status(200).json({ success: true, reason: "No scans in payload" });
-    }
+  // Everything below runs after the response is flushed.
+  setImmediate(async () => {
+    try {
+      const expected = (process.env.LETTERSTREAM_WEBHOOK_KEY || "").trim();
+      const provided = String(req.body?.key || req.query?.key || "").trim();
 
-    const pool = getPool();
-    let processed = 0;
-    for (const item of items) {
-      try {
-        await processWebhookScan(pool, item);
-        processed++;
-      } catch (e) {
-        console.error("[letterstream webhook] item error:", e.message, item);
+      if (!expected) {
+        console.warn("[letterstream webhook] LETTERSTREAM_WEBHOOK_KEY not set — acknowledged but NOT processing scans");
+        return;
       }
+      if (provided !== expected) {
+        console.warn(`[letterstream webhook] key mismatch (got ${provided ? "a value" : "empty"}) — acknowledged but NOT processing`);
+        return;
+      }
+
+      let payload = req.body?.json;
+      if (typeof payload === "string") {
+        try { payload = JSON.parse(payload); } catch (e) {
+          console.warn("[letterstream webhook] could not parse json:", e.message);
+          return;
+        }
+      }
+      const items = Array.isArray(payload) ? payload : Array.isArray(payload?.scans) ? payload.scans : [];
+      if (!items.length) {
+        console.log("[letterstream webhook] no scans in payload (ack'd)");
+        return;
+      }
+
+      const pool = getPool();
+      let processed = 0;
+      for (const item of items) {
+        try {
+          await processWebhookScan(pool, item);
+          processed++;
+        } catch (e) {
+          console.error("[letterstream webhook] item error:", e.message, item);
+        }
+      }
+      console.log(`[letterstream webhook] processed ${processed}/${items.length} scans`);
+    } catch (e) {
+      console.error("[letterstream webhook] post-response processing error:", e);
     }
-    console.log(`[letterstream webhook] processed ${processed}/${items.length} scans`);
-    res.status(200).json({ success: true, reason: "Received data", processed });
-  } catch (e) {
-    // Log but always 200 so LetterStream doesn't put us in infinite retry
-    console.error("[letterstream webhook] fatal:", e);
-    res.status(200).json({ success: false, reason: "Internal error (logged)" });
-  }
+  });
 }
 
 async function processWebhookScan(pool, item) {

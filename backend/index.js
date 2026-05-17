@@ -1055,6 +1055,7 @@ import {
   getMailerTracking,
   getMailerVolumeByWeek,
   getMailers,
+  getLetterStreamWebhook,
   mailerPdfUploadMiddleware,
   postLetterStreamWebhook,
   postMailer,
@@ -1760,9 +1761,12 @@ app.delete("/playbooks/attachments/:id", requireAuth, deletePlaybookAttachment);
 
 /** Mailers — physical mail via LetterStream */
 // Webhook is PUBLIC (LetterStream calls it server-to-server, key in body) and uses form parsing.
+// GET handles LetterStream's test/health ping; POST handles the actual scan pushes.
+app.get("/mailers/webhook/letterstream", getLetterStreamWebhook);
 app.post(
   "/mailers/webhook/letterstream",
   express.urlencoded({ extended: true, limit: "4mb" }),
+  express.json({ limit: "4mb" }),
   postLetterStreamWebhook
 );
 
