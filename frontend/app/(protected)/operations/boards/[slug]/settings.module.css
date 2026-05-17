@@ -1,0 +1,198 @@
+/* Settings tab — Phase 7.5. Pixel-target: app.jsx SettingsStub (fleshed out). */
+
+.root {
+  padding: 0 24px 60px;
+  min-height: calc(100vh - 54px - 50px);
+  background: var(--pms-bg);
+  color: var(--pms-ink);
+}
+.loading {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--pms-ink-3);
+  background: var(--pms-bg);
+}
+.header {
+  padding: 18px 0 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.header > div:first-child { flex: 1; }
+.eyebrow {
+  font-size: 11px;
+  color: var(--pms-ink-4);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.title { margin: 2px 0 0; font-size: 24px; font-weight: 700; }
+.sub { margin: 6px 0 0; color: var(--pms-ink-3); font-size: 13px; max-width: 720px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btnPrimary { background: var(--pms-navy); color: #fff; border-color: var(--pms-navy); }
+.btnLight { background: #fff; color: var(--pms-ink-2); border-color: var(--pms-line-2); }
+
+.err {
+  background: var(--pms-danger-bg);
+  border: 1px solid #f1b4ab;
+  color: var(--pms-danger);
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--pms-line);
+  border-radius: 12px;
+  box-shadow: var(--pms-shadow-1);
+  overflow: hidden;
+}
+.cardHead {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--pms-line);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--pms-ink-2);
+  background: var(--pms-bg-2);
+}
+.cardBody { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pms-ink-4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.row2 { display: grid; grid-template-columns: 1fr 100px; gap: 10px; }
+
+.input,
+.textarea {
+  border: 1px solid var(--pms-line-2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--pms-ink);
+  outline: none;
+  background: #fff;
+  width: 100%;
+}
+.input:focus,
+.textarea:focus { border-color: var(--pms-sky); }
+.input:disabled,
+.textarea:disabled { background: var(--pms-bg-2); cursor: default; }
+.textarea { resize: vertical; }
+
+.swatchRow { display: flex; flex-wrap: wrap; gap: 7px; }
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+.swatch:disabled { cursor: default; }
+
+.statusToggle {
+  align-self: flex-start;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.statusToggle:disabled { cursor: default; }
+.statusLive { background: var(--pms-ok-bg); color: var(--pms-ok); border-color: #b5e0c3; }
+.statusDraft { background: var(--pms-muted-bg); color: var(--pms-ink-3); border-color: var(--pms-line-2); }
+
+.hint { font-size: 11.5px; color: var(--pms-ink-4); margin: 2px 0 0; line-height: 1.45; }
+
+.deferred {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--pms-ink-4);
+  background: var(--pms-bg-2);
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--pms-ink-4);
+  padding: 8px 0;
+}
+.roleList { display: flex; flex-direction: column; gap: 6px; }
+.roleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--pms-bg-2);
+  border-radius: 7px;
+}
+.roleName { font-size: 13px; font-weight: 600; color: var(--pms-ink); flex: 1; }
+.reqTag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pms-danger);
+  background: var(--pms-danger-bg);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.roleDel {
+  background: transparent;
+  border: none;
+  color: var(--pms-ink-4);
+  cursor: pointer;
+  display: inline-flex;
+}
+.roleDel:hover { color: var(--pms-danger); }
+.roleDel:disabled { opacity: 0.5; cursor: default; }
+
+.addRole {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.addRole .input { flex: 1; min-width: 160px; width: auto; }
+.reqToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pms-ink-2);
+}
