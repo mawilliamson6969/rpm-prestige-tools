@@ -112,15 +112,26 @@ real usage. Suggested priority:
 1. **Smoke-test in prod** (do this first). Exercise Library → Board →
    Stages editor → launch a process → Instance detail → complete a step.
    For Autopilot, **Test before enabling any rule**.
-2. **7.4.1 — Autopilot execution engine.** The Autopilot *tab* exists
-   (rules CRUD) but there is **no runtime** that evaluates rules on a
-   schedule and auto-starts processes / fires auto-steps. This is the
-   single biggest remaining capability. Needs a `node-cron` evaluator +
-   an auto-step dispatcher (email/text send, stage-change). ~4–5 days.
-   Confirm scope with the user before building — it's the heaviest item.
-3. **7.2.1 — Instance write-paths.** Activity note-add + file upload
-   from the instance page (currently read-only); Advance Stage / Pin /
-   Clone / Share header actions (display-only today).
+2. **7.4.1 — Autopilot execution engine. ALREADY BUILT (Phase 4, PR #6).**
+   An earlier handoff revision wrongly claimed there was "no runtime" —
+   do **not** rebuild it. The runtime exists end-to-end and the Phase 7
+   Autopilot tab is correctly wired to it:
+   - `backend/lib/autopilot-engine.js` — `runAutopilotCheck()` (cron
+     `* * * * *` in `index.js` ~2498), `executeRule()`, `dryRunRule()`,
+     `calculateNextRun()`, duplicate prevention, activity logging.
+   - `backend/lib/scheduled-step-executor.js` — `executeScheduledSteps()`
+     (cron `*/5 * * * *`) fires delayed email/SMS steps.
+   - `backend/lib/process-automation.js` — `processDelayedAutoCompletes()`
+     + `executeStepAutomation()` for step `auto_action`s.
+   Genuine remaining gap here is narrow: no dispatcher for **stage-change
+   auto_action** steps (only email/sms/auto-complete are handled). Scope
+   that specifically, not a from-scratch engine.
+3. **7.2.1 — Instance write-paths. PARTIALLY DONE.** File upload + delete
+   and Advance-Stage header action are now wired on the instance page
+   (`ProcessDetailClient.tsx`; backends `POST/DELETE
+   /processes/.../attachments`, `PUT /processes/:id/stage` already
+   existed). Still display-only / absent: Activity manual note-add (Notes
+   tab already covers manual notes), Pin / Clone / Share header actions.
 4. **7.1.2 — Stages editor depth round 2.** Branch/stage-change *target*
    editor, exit-rule editor, true HTML5 drag (up/down arrows work now).
 5. **7.3.1 — Custom Fields depth.** select/multiselect option editor +
