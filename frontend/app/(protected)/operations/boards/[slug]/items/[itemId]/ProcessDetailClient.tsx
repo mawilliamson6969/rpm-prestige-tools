@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OperationsTopBar from "../../../../OperationsTopBar";
 import UpdateComposer from "./components/UpdateComposer";
 import UpdateEntry from "./components/UpdateEntry";
@@ -218,6 +218,10 @@ export default function ProcessDetailClient({
   const [submitting, setSubmitting] = useState(false);
   const [composerErr, setComposerErr] = useState<string | null>(null);
   const [expandedStepId, setExpandedStepId] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [fileErr, setFileErr] = useState<string | null>(null);
+  const [stageBusy, setStageBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadProcess = useCallback(async () => {
     if (!token) return;
@@ -428,6 +432,79 @@ export default function ProcessDetailClient({
     [authHeaders, loadProcess, loadActivity],
   );
 
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      setUploading(true);
+      setFileErr(null);
+      try {
+        for (const f of files) {
+          const fd = new FormData();
+          fd.append("file", f);
+          const res = await fetch(apiUrl(`/processes/${processId}/attachments`), {
+            method: "POST",
+            headers: { ...authHeaders() },
+            body: fd,
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || `Upload failed for ${f.name}.`);
+          }
+        }
+        await Promise.all([loadAttachments(), loadActivity()]);
+      } catch (e) {
+        setFileErr(e instanceof Error ? e.message : "Upload failed.");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [authHeaders, processId, loadAttachments, loadActivity],
+  );
+
+  const deleteAttachment = useCallback(
+    async (attachmentId: number) => {
+      setFileErr(null);
+      try {
+        const res = await fetch(
+          apiUrl(`/processes/process-attachments/${attachmentId}`),
+          { method: "DELETE", headers: { ...authHeaders() } },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Could not delete file.");
+        }
+        await loadAttachments();
+      } catch (e) {
+        setFileErr(e instanceof Error ? e.message : "Could not delete file.");
+      }
+    },
+    [authHeaders, loadAttachments],
+  );
+
+  const changeStage = useCallback(
+    async (stageId: number) => {
+      setStageBusy(true);
+      setErr(null);
+      try {
+        const res = await fetch(apiUrl(`/processes/${processId}/stage`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ stageId }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Could not change stage.");
+        }
+        await Promise.all([loadProcess(), loadActivity()]);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Could not change stage.");
+      } finally {
+        setStageBusy(false);
+      }
+    },
+    [authHeaders, processId, loadProcess, loadActivity],
+  );
+
   async function uploadAttachmentsFor(updateId: number, files: File[]) {
     for (const f of files) {
       const fd = new FormData();
@@ -602,6 +679,7 @@ export default function ProcessDetailClient({
   }, [orderedStages, process?.currentStageId]);
 
   const currentStage = orderedStages[currentStageIdx] ?? null;
+  const nextStage = orderedStages[currentStageIdx + 1] ?? null;
 
   const stepsByStage = useMemo(() => {
     const m = new Map<number | null, Step[]>();
@@ -682,6 +760,17 @@ export default function ProcessDetailClient({
               </div>
             </div>
             <div className={styles.headerActions}>
+              {process.status === "active" && nextStage && (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  disabled={stageBusy}
+                  onClick={() => changeStage(nextStage.id)}
+                  title={`Advance to ${nextStage.name}`}
+                >
+                  {stageBusy ? "Advancing…" : `Advance → ${nextStage.name}`}
+                </button>
+              )}
               <span className={`${styles.statusPill} ${statusToneClass(process.status, styles)}`}>
                 {process.status}
               </span>
@@ -809,25 +898,64 @@ export default function ProcessDetailClient({
                       </div>
                     ))}
 
-                  {activeTab === "files" &&
-                    (attachments.length === 0 ? (
-                      <div className={styles.empty}>No files attached.</div>
-                    ) : (
-                      <div className={styles.fileGrid}>
-                        {attachments.map((f) => (
-                          <div key={f.id} className={styles.fileCard}>
-                            <div className={styles.fileIcon}>📄</div>
-                            <div className={styles.fileMeta}>
-                              <div className={styles.fileName}>{f.filename}</div>
-                              <div className={styles.fileSub}>
-                                {f.fileSize != null ? `${Math.round(f.fileSize / 1024)} KB · ` : ""}
-                                {fmtDate(f.createdAt)}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                  {activeTab === "files" && (
+                    <>
+                      <div className={styles.fileToolbar}>
+                        <span className={styles.fileToolbarHint}>
+                          Up to 25MB per file.
+                        </span>
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnLight}`}
+                          disabled={uploading}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          {uploading ? "Uploading…" : "Upload file"}
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          hidden
+                          onChange={(e) => {
+                            const list = e.target.files
+                              ? Array.from(e.target.files)
+                              : [];
+                            e.target.value = "";
+                            void uploadFiles(list);
+                          }}
+                        />
                       </div>
-                    ))}
+                      {fileErr && <div className={styles.fileErr}>{fileErr}</div>}
+                      {attachments.length === 0 ? (
+                        <div className={styles.empty}>No files attached.</div>
+                      ) : (
+                        <div className={styles.fileGrid}>
+                          {attachments.map((f) => (
+                            <div key={f.id} className={styles.fileCard}>
+                              <div className={styles.fileIcon}>📄</div>
+                              <div className={styles.fileMeta}>
+                                <div className={styles.fileName}>{f.filename}</div>
+                                <div className={styles.fileSub}>
+                                  {f.fileSize != null ? `${Math.round(f.fileSize / 1024)} KB · ` : ""}
+                                  {fmtDate(f.createdAt)}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className={styles.fileDelete}
+                                aria-label={`Delete ${f.filename}`}
+                                title="Delete file"
+                                onClick={() => deleteAttachment(f.id)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {activeTab === "notes" && (
                     <div className={styles.notesWrap}>

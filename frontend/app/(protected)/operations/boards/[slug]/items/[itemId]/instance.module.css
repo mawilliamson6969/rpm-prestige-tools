@@ -400,6 +400,56 @@
 }
 .fileSub { font-size: 11px; color: var(--pms-ink-4); }
 
+/* Header / tab action buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btnPrimary { background: var(--pms-navy); color: #fff; border-color: var(--pms-navy); }
+.btnLight { background: #fff; color: var(--pms-ink-2); border-color: var(--pms-line-2); }
+
+/* Files tab toolbar + per-file delete */
+.fileToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fileToolbarHint { font-size: 11px; color: var(--pms-ink-4); }
+.fileCard { position: relative; }
+.fileDelete {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--pms-ink-4);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.fileDelete:hover { background: var(--pms-danger-bg); color: var(--pms-danger); }
+.fileErr {
+  background: var(--pms-danger-bg);
+  border: 1px solid #f1b4ab;
+  color: var(--pms-danger);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
 .notesWrap { display: flex; flex-direction: column; gap: 10px; }
 
 /* What's next */
