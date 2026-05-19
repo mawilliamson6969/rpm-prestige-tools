@@ -18,6 +18,7 @@
  */
 
 import { getPool } from "../lib/db.js";
+import { emitEvent } from "../lib/eventBus.js";
 
 function extractMeta(payload) {
   if (!payload || typeof payload !== "object") return { topic: null, event: null, resourceId: null };
@@ -62,6 +63,20 @@ export async function receiveAppfolioWebhook(req, res) {
   } catch (e) {
     console.error("[mb webhook] persist failed", e.message);
     return;
+  }
+
+  // Prestige Connect: mirror onto the new event bus so user-defined
+  // automations can react. We map AppFolio's (topic, event) pair to
+  // 'appfolio.<topic>.<event>' (e.g. appfolio.work_order.created).
+  // Dedupe via resourceId — repeated deliveries collapse to one row.
+  if (topic && event) {
+    const eventType = `appfolio.${String(topic).toLowerCase()}.${String(event).toLowerCase()}`;
+    emitEvent({
+      type: eventType,
+      source: "appfolio",
+      payload,
+      externalId: resourceId ? `${eventType}:${resourceId}` : null,
+    });
   }
 
   // Fire-and-forget the processor. It will mark processed_at on success

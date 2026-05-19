@@ -49,11 +49,13 @@ jobs:
             # --no-cache: force-rebuild every layer (slower but guarantees the
             # latest source files end up in the image; without this, Docker
             # sometimes serves a cached COPY layer with stale code).
-            docker compose build --pull --no-cache backend frontend
-            docker compose up -d --force-recreate --remove-orphans backend frontend
+            docker compose build --pull --no-cache backend frontend prestige-worker
+            docker compose up -d --force-recreate --remove-orphans backend frontend prestige-worker
             # Show backend image build timestamp so we can see if it actually rebuilt
             echo "→ Backend container info:"
             docker compose ps backend
             docker compose exec -T backend node -e "console.log('BACKEND_BUILD =', process.env.BACKEND_BUILD || '(unset)')"
+            echo "→ Worker container info:"
+            docker compose ps prestige-worker
             # Remove dangling images to save disk on a small VPS.
             docker image prune -f

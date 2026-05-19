@@ -3,6 +3,7 @@
  */
 
 import { getPool } from "../lib/db.js";
+import { emitEvent } from "../lib/eventBus.js";
 import {
   vIntId,
   vIntIdOpt,
@@ -167,6 +168,19 @@ export async function createItem(req, res) {
         assignedTo,
       ]
     );
+    emitEvent({
+      type: "internal.board.card_created",
+      source: "internal",
+      payload: {
+        board_id: rows[0].board_id,
+        card_id: rows[0].id,
+        title: rows[0].title,
+        group_id: rows[0].group_id,
+        assigned_to: rows[0].assigned_to,
+        values: rows[0].values ?? {},
+      },
+    });
+
     res.status(201).json({ item: rows[0] });
   } catch (e) {
     if (e.http) return res.status(e.http).json({ error: e.message });
@@ -256,6 +270,25 @@ export async function updateItem(req, res) {
       beforeValues = prev[0]?.values ?? {};
       beforeRow = prev[0] ?? null;
       isSubitem = prev[0]?.parent_item_id != null;
+    }
+
+    // Prestige Connect: capture the BEFORE group_id when the caller is
+    // moving a card between columns, so we can emit a card_moved event
+    // after the UPDATE lands. Separate snapshot from the values-diff
+    // one above because group_id moves are independent of values edits.
+    let beforeGroupId = null;
+    let groupChanging = false;
+    if (body.group_id !== undefined) {
+      groupChanging = true;
+      const { rows: prevGroup } = await pool.query(
+        `SELECT group_id, parent_item_id FROM mb_items WHERE id = $1`,
+        [id]
+      );
+      beforeGroupId = prevGroup[0]?.group_id ?? null;
+      if (prevGroup[0]?.parent_item_id != null) {
+        // Subitem moves aren't board-level card moves; skip emitting.
+        groupChanging = false;
+      }
     }
 
     // Phase 5: status-Done guard. If this is a subitem AND the caller
@@ -355,6 +388,27 @@ export async function updateItem(req, res) {
       recomputeParentAggregation(rows[0].parent_item_id, pool).catch((e) =>
         console.error("[mb] aggregation recompute (subitem update) failed:", e.message)
       );
+    }
+
+    // Prestige Connect: emit a card-moved event only when the column
+    // (group_id) actually changed.
+    if (groupChanging) {
+      const afterGroupId = rows[0].group_id ?? null;
+      if (String(beforeGroupId ?? "") !== String(afterGroupId ?? "")) {
+        emitEvent({
+          type: "internal.board.card_moved",
+          source: "internal",
+          payload: {
+            board_id: rows[0].board_id,
+            card_id: rows[0].id,
+            title: rows[0].title,
+            from_group_id: beforeGroupId,
+            to_group_id: afterGroupId,
+            assigned_to: rows[0].assigned_to,
+            values: rows[0].values ?? {},
+          },
+        });
+      }
     }
 
     res.json({ item: rows[0] });

@@ -2287,6 +2287,178 @@ export async function ensureDocumentsSchema() {
   `);
 }
 
+/**
+ * Prestige Connect Phase 1: event bus + automations engine. Mirror of
+ * backend/migrations/037_automations.sql so a fresh container that
+ * applies schemas via ensure-fn boot picks up the new tables without
+ * needing a manual migration run.
+ */
+export async function ensureAutomationsSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id BIGSERIAL PRIMARY KEY,
+      type VARCHAR(100) NOT NULL,
+      source VARCHAR(50) NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      external_id VARCHAR(255),
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      error TEXT
+    );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_events_pending
+       ON events (created_at) WHERE status = 'pending'`
+  );
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_events_type ON events (type)`);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_events_processing
+       ON events (processed_at) WHERE status = 'processing'`
+  );
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe
+       ON events (source, type, external_id) WHERE external_id IS NOT NULL`
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS automations (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      trigger_type VARCHAR(100) NOT NULL,
+      trigger_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      enabled BOOLEAN NOT NULL DEFAULT false,
+      max_runs_per_day INTEGER,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_automations_trigger
+       ON automations (trigger_type) WHERE enabled = true`
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS automation_steps (
+      id SERIAL PRIMARY KEY,
+      automation_id INTEGER NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+      step_order INTEGER NOT NULL,
+      step_type VARCHAR(50) NOT NULL,
+      config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      UNIQUE (automation_id, step_order)
+    );
+  `);
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS automation_runs (
+      id BIGSERIAL PRIMARY KEY,
+      automation_id INTEGER NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+      event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      status VARCHAR(20) NOT NULL,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      step_results JSONB NOT NULL DEFAULT '[]'::jsonb,
+      error TEXT
+    );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_runs_automation
+       ON automation_runs (automation_id, started_at DESC)`
+  );
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_runs_event ON automation_runs (event_id)`);
+
+  await seedStarterAutomations(p);
+}
+
+/**
+ * Two starter automations so a fresh install has something to demo in
+ * the UI. Both ship disabled — flip the toggle in the editor after
+ * filling in the SMS phone number and the board_id for the create_card
+ * step.
+ */
+async function seedStarterAutomations(p) {
+  const { rows: existing } = await p.query(
+    `SELECT name FROM automations WHERE name = ANY($1::text[])`,
+    [["Emergency work order alert", "Auto-draft SMS reply"]]
+  );
+  const have = new Set(existing.map((r) => r.name));
+
+  if (!have.has("Emergency work order alert")) {
+    const { rows } = await p.query(
+      `INSERT INTO automations (name, description, trigger_type, enabled)
+       VALUES ($1, $2, $3, false)
+       RETURNING id`,
+      [
+        "Emergency work order alert",
+        "When AppFolio reports a work order with priority Emergency, text the maintenance coordinator and create a 4-hour card on the maintenance board.",
+        "appfolio.work_order.created",
+      ]
+    );
+    const id = rows[0].id;
+    await p.query(
+      `INSERT INTO automation_steps (automation_id, step_order, step_type, config) VALUES
+         ($1, 1, 'filter',      $2::jsonb),
+         ($1, 2, 'send_sms',    $3::jsonb),
+         ($1, 3, 'create_card', $4::jsonb)`,
+      [
+        id,
+        JSON.stringify({
+          field: "event.payload.priority",
+          operator: "equals",
+          value: "Emergency",
+        }),
+        JSON.stringify({
+          to: "",
+          body: "EMERGENCY at {{event.payload.property_address}}: {{event.payload.description}}",
+        }),
+        JSON.stringify({
+          board_id: 0,
+          title: "EMERGENCY: {{event.payload.property_address}}",
+          description: "{{event.payload.description}}",
+          due_in_hours: 4,
+        }),
+      ]
+    );
+  }
+
+  if (!have.has("Auto-draft SMS reply")) {
+    const { rows } = await p.query(
+      `INSERT INTO automations (name, description, trigger_type, enabled, max_runs_per_day)
+       VALUES ($1, $2, $3, false, 100)
+       RETURNING id`,
+      [
+        "Auto-draft SMS reply",
+        "When a tenant texts in, Claude drafts a reply and parks it on a review column. A human still has to send it.",
+        "openphone.message.received",
+      ]
+    );
+    const id = rows[0].id;
+    await p.query(
+      `INSERT INTO automation_steps (automation_id, step_order, step_type, config) VALUES
+         ($1, 1, 'ai_draft',    $2::jsonb),
+         ($1, 2, 'create_card', $3::jsonb)`,
+      [
+        id,
+        JSON.stringify({
+          prompt:
+            "You are Lori from Real Property Management Prestige. Draft a friendly, professional reply to this tenant message: {{event.payload.text}}",
+          output_key: "draft",
+          max_tokens: 400,
+        }),
+        JSON.stringify({
+          board_id: 0,
+          title: "Pending SMS reply",
+          description:
+            "Draft: {{context.draft}}\n\nIncoming from: {{event.payload.from}}\nOriginal: {{event.payload.text}}",
+        }),
+      ]
+    );
+  }
+}
+
 const TEAM_SIGNATURE_HTML = {
   mike: `<p>Best regards,</p>
 <p><strong>Mike Williamson</strong><br>Owner/Operator<br>Real Property Management Prestige<br>A Neighborly® Company<br><a href="https://www.rpmhouston.com">www.rpmhouston.com</a><br>Houston, TX</p>`,

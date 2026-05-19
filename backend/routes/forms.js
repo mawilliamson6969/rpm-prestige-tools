@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getPool } from "../lib/db.js";
+import { emitEvent } from "../lib/eventBus.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FORMS_UPLOAD_ROOT = path.join(__dirname, "..", "uploads", "forms");
@@ -1223,6 +1224,24 @@ export async function postPublicFormSubmit(req, res) {
         console.error("[form automation]", err?.message || err);
       }
     }
+
+    // Prestige Connect: emit on the new event bus so user-defined
+    // automations (Phase 1) can react. Existing form-automations.js
+    // above is the legacy path and stays untouched.
+    emitEvent({
+      type: "internal.form.submitted",
+      source: "internal",
+      payload: {
+        form_id: form.id,
+        form_slug: form.slug ?? null,
+        form_name: form.name ?? null,
+        submission_id: submission.id,
+        contact_name: contactName,
+        contact_email: contactEmail,
+        property_name: propertyName,
+        values: cleanedData,
+      },
+    });
 
     res.status(201).json({
       submissionId: submission.id,
