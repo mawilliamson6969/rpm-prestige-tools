@@ -47,6 +47,7 @@ interface Process {
   currentStageId: number | null;
   currentStageName: string | null;
   currentStageColor: string | null;
+  isPinnedByMe: boolean;
 }
 
 interface Stage {
@@ -221,6 +222,7 @@ export default function ProcessDetailClient({
   const [uploading, setUploading] = useState(false);
   const [fileErr, setFileErr] = useState<string | null>(null);
   const [stageBusy, setStageBusy] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadProcess = useCallback(async () => {
@@ -480,6 +482,33 @@ export default function ProcessDetailClient({
     },
     [authHeaders, loadAttachments],
   );
+
+  const togglePin = useCallback(async () => {
+    if (!process || pinBusy) return;
+    const nextPinned = !process.isPinnedByMe;
+    setPinBusy(true);
+    // Optimistic update so the button reacts instantly.
+    setProcess((cur) => (cur ? { ...cur, isPinnedByMe: nextPinned } : cur));
+    try {
+      const res = await fetch(apiUrl(`/processes/${processId}/pin`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ pinned: nextPinned }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Could not update pin.");
+      }
+    } catch (e) {
+      // Revert optimistic change on failure.
+      setProcess((cur) =>
+        cur ? { ...cur, isPinnedByMe: !nextPinned } : cur
+      );
+      setErr(e instanceof Error ? e.message : "Could not update pin.");
+    } finally {
+      setPinBusy(false);
+    }
+  }, [authHeaders, pinBusy, process, processId]);
 
   const changeStage = useCallback(
     async (stageId: number) => {
@@ -760,6 +789,21 @@ export default function ProcessDetailClient({
               </div>
             </div>
             <div className={styles.headerActions}>
+              <button
+                type="button"
+                className={`${styles.btn} ${process.isPinnedByMe ? styles.btnPrimary : styles.btnLight}`}
+                disabled={pinBusy}
+                onClick={togglePin}
+                title={
+                  process.isPinnedByMe
+                    ? "Remove from your pinned processes"
+                    : "Pin to your processes"
+                }
+                aria-pressed={process.isPinnedByMe}
+              >
+                <span aria-hidden="true">📌</span>{" "}
+                {process.isPinnedByMe ? "Pinned" : "Pin"}
+              </button>
               {process.status === "active" && nextStage && (
                 <button
                   type="button"
@@ -1410,6 +1454,7 @@ function coerceProcess(p: Record<string, unknown>): Process {
     currentStageId: typeof p.currentStageId === "number" ? p.currentStageId : null,
     currentStageName: (p.currentStageName as string | null) ?? null,
     currentStageColor: (p.currentStageColor as string | null) ?? null,
+    isPinnedByMe: p.isPinnedByMe === true,
   };
 }
 

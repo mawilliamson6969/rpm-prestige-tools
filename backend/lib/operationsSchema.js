@@ -911,6 +911,17 @@ export async function ensureOperationsSchema() {
   `);
   await pool.query(`ALTER TABLE process_templates ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT TRUE`);
 
+  // Per-user pinned processes — each user has their own working set of pins.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS process_user_pins (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      process_id INTEGER NOT NULL REFERENCES processes(id) ON DELETE CASCADE,
+      pinned_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (user_id, process_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pup_user ON process_user_pins(user_id, pinned_at DESC);
+  `);
+
   // Hotfix: process_automations.test_card_id was created without an ON DELETE
   // rule, so deleting a process that any automation referenced as its test
   // card raised a foreign-key error. Re-add the constraint with SET NULL.
