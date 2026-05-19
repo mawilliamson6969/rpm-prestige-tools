@@ -223,8 +223,16 @@ export async function getProcess(req, res) {
        ORDER BY ps.stage_order ASC, ps.id ASC`,
       [id]
     );
+    let isPinnedByMe = false;
+    if (req.user?.id) {
+      const { rows: pinRows } = await pool.query(
+        `SELECT 1 FROM process_user_pins WHERE user_id = $1 AND process_id = $2`,
+        [req.user.id, id]
+      );
+      isPinnedByMe = pinRows.length > 0;
+    }
     res.json({
-      process: mapProcess(rows[0]),
+      process: { ...mapProcess(rows[0]), isPinnedByMe },
       steps: steps.map(mapStep),
       stages: stages.map(mapProcessStage),
     });
@@ -1234,6 +1242,48 @@ export async function putProcessStage(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not move process." });
+  }
+}
+
+export async function putProcessPin(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  const pinned = req.body?.pinned === true;
+  const userId = req.user?.id;
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid process id." });
+    return;
+  }
+  if (!Number.isFinite(Number(userId))) {
+    res.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows: exists } = await pool.query(
+      `SELECT 1 FROM processes WHERE id = $1`,
+      [id]
+    );
+    if (!exists.length) {
+      res.status(404).json({ error: "Process not found." });
+      return;
+    }
+    if (pinned) {
+      await pool.query(
+        `INSERT INTO process_user_pins (user_id, process_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, process_id) DO NOTHING`,
+        [userId, id]
+      );
+    } else {
+      await pool.query(
+        `DELETE FROM process_user_pins WHERE user_id = $1 AND process_id = $2`,
+        [userId, id]
+      );
+    }
+    res.json({ ok: true, pinned });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not update pin." });
   }
 }
 

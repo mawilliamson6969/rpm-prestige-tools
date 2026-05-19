@@ -738,6 +738,7 @@ import {
   postProcessStepComment,
   putProcess,
   putProcessBoardPosition,
+  putProcessPin,
   putProcessStage,
   putProcessStatus,
   putProcessStep,
@@ -1912,6 +1913,7 @@ app.get("/processes/:id", requireAuth, getProcess);
 app.put("/processes/:id/status", requireAuth, putProcessStatus);
 app.put("/processes/:id/stage", requireAuth, putProcessStage);
 app.put("/processes/:id/board-position", requireAuth, putProcessBoardPosition);
+app.put("/processes/:id/pin", requireAuth, putProcessPin);
 app.put("/processes/:id", requireAuth, putProcess);
 app.delete("/processes/:id", requireAuth, requireAdminRole, deleteProcess);
 
