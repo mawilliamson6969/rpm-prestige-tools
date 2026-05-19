@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OperationsTopBar from "../../../../OperationsTopBar";
 import UpdateComposer from "./components/UpdateComposer";
@@ -205,6 +206,7 @@ export default function ProcessDetailClient({
   processId: number;
 }) {
   const { authHeaders, token, user, isAdmin } = useAuth();
+  const router = useRouter();
   const [process, setProcess] = useState<Process | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -223,6 +225,7 @@ export default function ProcessDetailClient({
   const [fileErr, setFileErr] = useState<string | null>(null);
   const [stageBusy, setStageBusy] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
+  const [cloneBusy, setCloneBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadProcess = useCallback(async () => {
@@ -509,6 +512,50 @@ export default function ProcessDetailClient({
       setPinBusy(false);
     }
   }, [authHeaders, pinBusy, process, processId]);
+
+  const cloneProcess = useCallback(async () => {
+    if (!process || cloneBusy) return;
+    const ok = window.confirm(
+      `Clone this process? A new active instance will be created with the same template${
+        process.propertyName ? ` and tied to ${process.propertyName}` : ""
+      }.`,
+    );
+    if (!ok) return;
+    setCloneBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(apiUrl("/processes"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          templateId: process.templateId,
+          propertyName: process.propertyName,
+          propertyId: process.propertyId,
+          contactName: process.contactName,
+          contactEmail: process.contactEmail,
+          contactPhone: process.contactPhone,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 409 && body?.conflictId) {
+          throw new Error(
+            `${body.error || "Duplicate prevented"} — an active process already exists.`,
+          );
+        }
+        throw new Error(body?.error || "Could not clone process.");
+      }
+      const body = await res.json();
+      const newId = body?.process?.id;
+      if (Number.isFinite(Number(newId))) {
+        router.push(`/operations/boards/${boardSlug}/items/${newId}`);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not clone process.");
+    } finally {
+      setCloneBusy(false);
+    }
+  }, [authHeaders, boardSlug, cloneBusy, process, router]);
 
   const changeStage = useCallback(
     async (stageId: number) => {
@@ -803,6 +850,15 @@ export default function ProcessDetailClient({
               >
                 <span aria-hidden="true">📌</span>{" "}
                 {process.isPinnedByMe ? "Pinned" : "Pin"}
+              </button>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnLight}`}
+                disabled={cloneBusy}
+                onClick={cloneProcess}
+                title="Start a new active process from this one"
+              >
+                {cloneBusy ? "Cloning…" : "Clone"}
               </button>
               {process.status === "active" && nextStage && (
                 <button
