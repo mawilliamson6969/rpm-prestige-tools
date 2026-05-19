@@ -1,7 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Hash, Info } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Plus,
+  Trash2,
+  Hash,
+  Info,
+  Settings,
+  ChevronUp,
+  ChevronDown,
+  X,
+  Save,
+} from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import styles from "./custom-fields.module.css";
@@ -23,6 +33,11 @@ interface ResolvedTemplate {
   name: string;
 }
 
+interface FieldConfig {
+  options?: string[];
+  default?: string | string[] | null;
+}
+
 interface FieldDef {
   id: number;
   fieldLabel: string;
@@ -31,6 +46,7 @@ interface FieldDef {
   isRequired: boolean;
   sectionName: string | null;
   helpText: string | null;
+  fieldConfig: FieldConfig;
 }
 
 const FIELD_TYPES: Array<{ value: string; label: string }> = [
@@ -64,6 +80,11 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState("text");
   const [newRequired, setNewRequired] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editorOptions, setEditorOptions] = useState<string[]>([]);
+  const [editorDefault, setEditorDefault] = useState<string[]>([]);
+  const [editorNewOption, setEditorNewOption] = useState("");
+  const [editorErr, setEditorErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -100,6 +121,10 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
           isRequired: Boolean(d.isRequired),
           sectionName: (d.sectionName as string | null) ?? null,
           helpText: (d.helpText as string | null) ?? null,
+          fieldConfig:
+            d.fieldConfig && typeof d.fieldConfig === "object"
+              ? (d.fieldConfig as FieldConfig)
+              : {},
         }))
       );
     } catch (e) {
@@ -195,6 +220,103 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
     },
     [authHeaders, busy]
   );
+
+  function openOptionsEditor(def: FieldDef) {
+    setEditingId(def.id);
+    setEditorErr(null);
+    setEditorNewOption("");
+    const opts = Array.isArray(def.fieldConfig.options)
+      ? def.fieldConfig.options.filter((o): o is string => typeof o === "string")
+      : [];
+    setEditorOptions(opts);
+    const rawDefault = def.fieldConfig.default;
+    if (Array.isArray(rawDefault)) {
+      setEditorDefault(rawDefault.filter((v): v is string => typeof v === "string"));
+    } else if (typeof rawDefault === "string" && rawDefault) {
+      setEditorDefault([rawDefault]);
+    } else {
+      setEditorDefault([]);
+    }
+  }
+
+  function cancelOptionsEditor() {
+    setEditingId(null);
+    setEditorOptions([]);
+    setEditorDefault([]);
+    setEditorNewOption("");
+    setEditorErr(null);
+  }
+
+  function addOption() {
+    const v = editorNewOption.trim();
+    if (!v) return;
+    if (editorOptions.some((o) => o.toLowerCase() === v.toLowerCase())) {
+      setEditorErr("That option already exists.");
+      return;
+    }
+    setEditorOptions((cur) => [...cur, v]);
+    setEditorNewOption("");
+    setEditorErr(null);
+  }
+
+  function removeOption(idx: number) {
+    setEditorOptions((cur) => {
+      const removed = cur[idx];
+      setEditorDefault((d) => d.filter((v) => v !== removed));
+      return cur.filter((_, i) => i !== idx);
+    });
+  }
+
+  function moveOption(idx: number, dir: -1 | 1) {
+    setEditorOptions((cur) => {
+      const next = [...cur];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return cur;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
+  }
+
+  function toggleDefault(value: string, isMulti: boolean) {
+    setEditorDefault((cur) => {
+      if (isMulti) {
+        return cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+      }
+      return cur.includes(value) ? [] : [value];
+    });
+  }
+
+  async function saveOptionsEditor(def: FieldDef) {
+    if (busy) return;
+    setBusy(true);
+    setEditorErr(null);
+    try {
+      const isMulti = def.fieldType === "multiselect";
+      const fieldConfig: FieldConfig = {
+        options: editorOptions,
+        default: isMulti
+          ? editorDefault
+          : editorDefault[0] ?? null,
+      };
+      const res = await fetch(apiUrl(`/custom-fields/definitions/${def.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ fieldConfig }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b.error || "Could not save options.");
+      }
+      setDefs((cur) =>
+        cur.map((d) => (d.id === def.id ? { ...d, fieldConfig } : d))
+      );
+      cancelOptionsEditor();
+    } catch (e) {
+      setEditorErr(e instanceof Error ? e.message : "Could not save options.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const grouped = useMemo(() => {
     const m = new Map<string, FieldDef[]>();
@@ -325,8 +447,15 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((d) => (
-                    <tr key={d.id}>
+                  {items.map((d) => {
+                    const isChoice = d.fieldType === "select" || d.fieldType === "multiselect";
+                    const isMulti = d.fieldType === "multiselect";
+                    const optionCount = Array.isArray(d.fieldConfig.options)
+                      ? d.fieldConfig.options.length
+                      : 0;
+                    return (
+                    <Fragment key={d.id}>
+                    <tr>
                       <td>
                         <div className={styles.fieldLabelCell}>
                           <span className={styles.typeBadge}>
@@ -368,6 +497,21 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
                         )}
                       </td>
                       <td className={styles.actionsCell}>
+                        {isAdmin && isChoice && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            onClick={() =>
+                              editingId === d.id
+                                ? cancelOptionsEditor()
+                                : openOptionsEditor(d)
+                            }
+                            disabled={busy && editingId !== d.id}
+                            title={editingId === d.id ? "Close" : "Edit options"}
+                          >
+                            <Settings size={13} />
+                          </button>
+                        )}
                         {isAdmin && (
                           <button
                             type="button"
@@ -379,9 +523,124 @@ export default function CustomFieldsClient({ slug }: { slug: string }) {
                             <Trash2 size={13} />
                           </button>
                         )}
+                        {isChoice && !isAdmin && (
+                          <span className={styles.helpText}>
+                            {optionCount} option{optionCount === 1 ? "" : "s"}
+                          </span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    {editingId === d.id && (
+                      <tr className={styles.editorRow}>
+                        <td colSpan={5}>
+                          <div className={styles.optionsEditor}>
+                            <div className={styles.optionsEditorHead}>
+                              Options for <b>{d.fieldLabel}</b>
+                              {isMulti
+                                ? " (multiple choice — tick all defaults)"
+                                : " (single choice — tick the default)"}
+                            </div>
+                            {editorErr && (
+                              <div className={styles.err}>{editorErr}</div>
+                            )}
+                            {editorOptions.length === 0 ? (
+                              <div className={styles.helpText}>
+                                No options yet — add one below.
+                              </div>
+                            ) : (
+                              <ul className={styles.optionList}>
+                                {editorOptions.map((opt, idx) => {
+                                  const isDefault = editorDefault.includes(opt);
+                                  return (
+                                    <li key={opt} className={styles.optionItem}>
+                                      <input
+                                        type={isMulti ? "checkbox" : "radio"}
+                                        name={`def-${d.id}`}
+                                        checked={isDefault}
+                                        onChange={() => toggleDefault(opt, isMulti)}
+                                        title="Default"
+                                      />
+                                      <span className={styles.optionLabel}>{opt}</span>
+                                      <button
+                                        type="button"
+                                        className={styles.iconBtn}
+                                        onClick={() => moveOption(idx, -1)}
+                                        disabled={idx === 0 || busy}
+                                        title="Move up"
+                                      >
+                                        <ChevronUp size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={styles.iconBtn}
+                                        onClick={() => moveOption(idx, 1)}
+                                        disabled={idx === editorOptions.length - 1 || busy}
+                                        title="Move down"
+                                      >
+                                        <ChevronDown size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={styles.iconBtn}
+                                        onClick={() => removeOption(idx)}
+                                        disabled={busy}
+                                        title="Remove option"
+                                      >
+                                        <X size={13} />
+                                      </button>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                            <div className={styles.optionAddRow}>
+                              <input
+                                className={styles.addInput}
+                                placeholder="New option…"
+                                value={editorNewOption}
+                                onChange={(e) => setEditorNewOption(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    addOption();
+                                  }
+                                  if (e.key === "Escape") cancelOptionsEditor();
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnLight}`}
+                                onClick={addOption}
+                                disabled={busy || !editorNewOption.trim()}
+                              >
+                                <Plus size={13} /> Add option
+                              </button>
+                            </div>
+                            <div className={styles.optionActions}>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnPrimary}`}
+                                onClick={() => saveOptionsEditor(d)}
+                                disabled={busy}
+                              >
+                                <Save size={13} /> Save options
+                              </button>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnLight}`}
+                                onClick={cancelOptionsEditor}
+                                disabled={busy}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
