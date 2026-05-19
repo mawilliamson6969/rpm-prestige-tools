@@ -313,3 +313,64 @@ export async function resolveMergeFields(text, processId, senderId) {
   const ctx = await buildMergeContext(processId, senderId);
   return applyMergeContext(text, ctx);
 }
+
+/**
+ * Build a synthetic context with placeholder values so templates can be
+ * previewed without binding to a real process. Mirrors the shape returned by
+ * buildMergeContext so applyMergeContext can be reused unchanged. Used by the
+ * Email/Text Templates editor preview.
+ */
+export function buildSampleMergeContext({ sender = null, senderEmail = null } = {}) {
+  const today = new Date();
+  const future = new Date(today.getTime() + 30 * 86_400_000);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return {
+    process: {
+      id: 0,
+      name: "Sample Process",
+      template_name: "Sample Template",
+      current_stage_name: "Sample Stage",
+      started_at: iso(today),
+      target_completion: iso(future),
+      property_name: "123 Sample St",
+      property_id: null,
+      contact_name: "John Owner",
+      contact_email: "john.owner@example.com",
+      contact_phone: "(713) 555-0002",
+    },
+    property: {
+      property_name: "123 Sample St",
+      property_address: "123 Sample St",
+      address: "123 Sample St",
+      city: "Houston",
+      state: "TX",
+      zip_code: "77001",
+      property_type: "Single Family",
+      rent: "1850",
+      bedrooms: 3,
+      bathrooms: 2,
+      sqft: "1450",
+    },
+    tenant: {
+      tenant: "Jane Tenant",
+      name: "Jane Tenant",
+      primary_tenant: "Jane Tenant",
+      primary_tenant_email: "jane.tenant@example.com",
+      primary_tenant_phone_number: "(832) 555-0001",
+      lease_from: iso(new Date(today.getTime() - 180 * 86_400_000)),
+      lease_to: iso(future),
+      deposit: "1850",
+      rent: "1850",
+      status: "Current",
+    },
+    owner: {
+      owner_name: "John Owner",
+      name: "John Owner",
+      email: "john.owner@example.com",
+      phone: "(713) 555-0002",
+    },
+    customFields: new Map(),
+    sender,
+    senderEmail,
+  };
+}

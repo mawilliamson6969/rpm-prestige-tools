@@ -64,6 +64,12 @@ export default function MessageTemplatesClient({
   const [draft, setDraft] = useState<{ name: string; subject: string; body: string } | null>(
     null
   );
+  const [previewModeId, setPreviewModeId] = useState<number | null>(null);
+  const [samples, setSamples] = useState<
+    Map<number, { subject: string; body: string }>
+  >(new Map());
+  const [previewLoading, setPreviewLoading] = useState<number | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -163,6 +169,47 @@ export default function MessageTemplatesClient({
     }
   }
 
+  async function toggleSamplePreview(id: number) {
+    if (previewModeId === id) {
+      setPreviewModeId(null);
+      return;
+    }
+    setPreviewErr(null);
+    if (!samples.has(id)) {
+      setPreviewLoading(id);
+      try {
+        const path =
+          mode === "email"
+            ? `/processes/email-templates/${id}/preview-sample`
+            : `/processes/text-templates/${id}/preview-sample`;
+        const res = await fetch(apiUrl(path), {
+          method: "POST",
+          headers: { ...authHeaders() },
+        });
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({}));
+          throw new Error(b.error || "Preview failed.");
+        }
+        const body = await res.json();
+        setSamples((cur) => {
+          const next = new Map(cur);
+          next.set(id, {
+            subject: String(body.resolvedSubject ?? ""),
+            body: String(body.resolvedBody ?? ""),
+          });
+          return next;
+        });
+      } catch (e) {
+        setPreviewErr(e instanceof Error ? e.message : "Preview failed.");
+        setPreviewLoading(null);
+        return;
+      } finally {
+        setPreviewLoading(null);
+      }
+    }
+    setPreviewModeId(id);
+  }
+
   async function deleteTemplate(id: number) {
     if (busy || !window.confirm("Delete this template?")) return;
     setBusy(true);
@@ -211,6 +258,14 @@ export default function MessageTemplatesClient({
       }
       await load();
       setDraft(null);
+      // Invalidate cached sample preview — body just changed.
+      setSamples((cur) => {
+        if (!cur.has(id)) return cur;
+        const next = new Map(cur);
+        next.delete(id);
+        return next;
+      });
+      if (previewModeId === id) setPreviewModeId(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save template.");
     } finally {
@@ -308,6 +363,21 @@ export default function MessageTemplatesClient({
                 <div className={styles.previewHead}>
                   <Mail size={15} color="var(--pms-sky)" />
                   <span className={`${styles.previewTitle} pms-cond`}>PREVIEW</span>
+                  {draft === null && (
+                    <button
+                      type="button"
+                      className={styles.smallBtn}
+                      disabled={previewLoading === selectedEmail.id}
+                      onClick={() => toggleSamplePreview(selectedEmail.id)}
+                      title="Resolve {{tokens}} with sample data"
+                    >
+                      {previewLoading === selectedEmail.id
+                        ? "Loading…"
+                        : previewModeId === selectedEmail.id
+                          ? "Raw"
+                          : "Sample"}
+                    </button>
+                  )}
                   {isAdmin && draft === null && (
                     <button
                       type="button"
@@ -373,12 +443,23 @@ export default function MessageTemplatesClient({
                     </div>
                   ) : (
                     <>
+                      {previewErr && previewModeId === selectedEmail.id && (
+                        <div className={styles.err}>{previewErr}</div>
+                      )}
                       <div className={styles.fieldLabel}>Subject</div>
                       <div className={styles.subjectLine}>
-                        {selectedEmail.subject || <em>No subject</em>}
+                        {previewModeId === selectedEmail.id
+                          ? samples.get(selectedEmail.id)?.subject || <em>No subject</em>
+                          : selectedEmail.subject || <em>No subject</em>}
                       </div>
                       <div className={styles.emailBox}>
-                        {selectedEmail.bodyText || selectedEmail.bodyHtml ? (
+                        {previewModeId === selectedEmail.id ? (
+                          samples.get(selectedEmail.id)?.body ? (
+                            samples.get(selectedEmail.id)?.body
+                          ) : (
+                            <em className={styles.muted}>Resolved body is empty.</em>
+                          )
+                        ) : selectedEmail.bodyText || selectedEmail.bodyHtml ? (
                           renderWithVars(selectedEmail.bodyText || selectedEmail.bodyHtml || "")
                         ) : (
                           <em className={styles.muted}>This template has no body yet.</em>
@@ -405,6 +486,21 @@ export default function MessageTemplatesClient({
                     <div className={styles.tplName}>{t.name}</div>
                     <div className={styles.tplPreview}>{t.totalSends} sends</div>
                   </div>
+                  {!editing && (
+                    <button
+                      type="button"
+                      className={styles.smallBtn}
+                      disabled={previewLoading === t.id}
+                      onClick={() => toggleSamplePreview(t.id)}
+                      title="Resolve {{tokens}} with sample data"
+                    >
+                      {previewLoading === t.id
+                        ? "Loading…"
+                        : previewModeId === t.id
+                          ? "Raw"
+                          : "Sample"}
+                    </button>
+                  )}
                   {isAdmin && !editing && (
                     <>
                       <button
@@ -459,13 +555,24 @@ export default function MessageTemplatesClient({
                       </div>
                     </div>
                   ) : (
-                    <div className={styles.bubble}>
-                      {t.body ? (
-                        renderWithVars(t.body)
-                      ) : (
-                        <em className={styles.muted}>Empty message.</em>
+                    <>
+                      {previewErr && previewModeId === t.id && (
+                        <div className={styles.err}>{previewErr}</div>
                       )}
-                    </div>
+                      <div className={styles.bubble}>
+                        {previewModeId === t.id ? (
+                          samples.get(t.id)?.body ? (
+                            samples.get(t.id)?.body
+                          ) : (
+                            <em className={styles.muted}>Resolved body is empty.</em>
+                          )
+                        ) : t.body ? (
+                          renderWithVars(t.body)
+                        ) : (
+                          <em className={styles.muted}>Empty message.</em>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
