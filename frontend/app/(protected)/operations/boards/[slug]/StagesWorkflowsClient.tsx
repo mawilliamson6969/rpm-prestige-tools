@@ -56,6 +56,7 @@ interface Step {
   assignedRole: string | null;
   emailTemplateId: number | null;
   textTemplateId: number | null;
+  branchConfig: Record<string, unknown> | null;
 }
 
 interface NamedTpl {
@@ -220,6 +221,10 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
           assignedRole: (s.assignedRole as string | null) ?? null,
           emailTemplateId: s.emailTemplateId != null ? Number(s.emailTemplateId) : null,
           textTemplateId: s.textTemplateId != null ? Number(s.textTemplateId) : null,
+          branchConfig:
+            s.branchConfig && typeof s.branchConfig === "object"
+              ? (s.branchConfig as Record<string, unknown>)
+              : null,
         }))
       );
       const mapNamed = (b: { templates?: Record<string, unknown>[] }): NamedTpl[] =>
@@ -680,6 +685,7 @@ export default function StagesWorkflowsClient({ slug }: { slug: string }) {
                     busy={busy}
                     emailTpls={emailTpls}
                     textTpls={textTpls}
+                    stages={stages}
                     onToggleEdit={() =>
                       setEditingStepId((cur) => (cur === step.id ? null : step.id))
                     }
@@ -863,6 +869,7 @@ function WorkflowStepRow({
   busy,
   emailTpls,
   textTpls,
+  stages,
   onToggleEdit,
   onSave,
   onDelete,
@@ -876,6 +883,7 @@ function WorkflowStepRow({
   busy: boolean;
   emailTpls: NamedTpl[];
   textTpls: NamedTpl[];
+  stages: Stage[];
   onToggleEdit: () => void;
   onSave: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
@@ -895,6 +903,15 @@ function WorkflowStepRow({
   const [role, setRole] = useState(step.assignedRole ?? "");
   const [emailTemplateId, setEmailTemplateId] = useState(step.emailTemplateId ?? 0);
   const [textTemplateId, setTextTemplateId] = useState(step.textTemplateId ?? 0);
+  const [targetStageId, setTargetStageId] = useState<number>(() => {
+    const raw = step.branchConfig?.target_stage_id ?? step.branchConfig?.targetStageId;
+    const n = Number.parseInt(String(raw), 10);
+    return Number.isFinite(n) ? n : 0;
+  });
+
+  const targetOptions = stages
+    .filter((s) => s.id !== step.stageId)
+    .sort((a, b) => a.stageOrder - b.stageOrder);
 
   return (
     <div className={styles.tlRow}>
@@ -1075,6 +1092,23 @@ function WorkflowStepRow({
                 </select>
               </>
             )}
+            {kind === "stagechange" && (
+              <>
+                <label className={styles.editorLabel}>Target stage</label>
+                <select
+                  className={styles.inlineSelect}
+                  value={targetStageId}
+                  onChange={(e) => setTargetStageId(Number(e.target.value))}
+                >
+                  <option value={0}>— next stage in order —</option>
+                  {targetOptions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
             <div className={styles.editorActions}>
               <button
                 type="button"
@@ -1090,6 +1124,12 @@ function WorkflowStepRow({
                     assignedRole: actor === "manual" ? role.trim() || null : null,
                     emailTemplateId: kind === "email" ? emailTemplateId || null : null,
                     textTemplateId: kind === "text" ? textTemplateId || null : null,
+                    branchConfig:
+                      kind === "stagechange"
+                        ? targetStageId
+                          ? { target_stage_id: targetStageId }
+                          : null
+                        : undefined,
                   })
                 }
               >
