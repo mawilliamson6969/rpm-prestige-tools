@@ -747,6 +747,7 @@ import {
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
+import { executeAutoStageChanges } from "./lib/auto-stage-dispatcher.js";
 import { runAIAnalysis } from "./lib/ai-suggestions-engine.js";
 import { sendDailyDigest } from "./lib/ai-daily-digest.js";
 import {
@@ -2508,6 +2509,14 @@ async function start() {
       );
     });
     console.log("Scheduled step executor: */5 * * * * (every 5 minutes).");
+
+    // Phase 7.4.1: auto stage-change step dispatcher (every 5 minutes).
+    cron.schedule("*/5 * * * *", () => {
+      executeAutoStageChanges().catch((e) =>
+        console.error("[auto-stage cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled auto stage-change dispatcher: */5 * * * * (every 5 minutes).");
 
     // Phase 6: AI suggestions every 15 minutes (cost-aware skip when no recent activity).
     cron.schedule("*/15 * * * *", () => {
