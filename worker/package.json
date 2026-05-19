@@ -1,0 +1,15 @@
+{
+  "name": "rpm-prestige-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test __tests__"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1"
+  }
+}

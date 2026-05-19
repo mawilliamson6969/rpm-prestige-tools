@@ -63,6 +63,31 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
 
+  # Prestige Connect automation worker. Polls the `events` table and
+  # executes user-defined automations. Talks to Postgres over the
+  # compose network and to OpenPhone / Microsoft Graph / Anthropic
+  # over the public internet.
+  prestige-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app
+      OPENPHONE_API_KEY: ${OPENPHONE_API_KEY:-}
+      OPENPHONE_FROM_NUMBER: ${OPENPHONE_FROM_NUMBER:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Docuseal — self-hosted e-signature service. Browser hits sign.prestigedash.com,
   # which Nginx proxies to localhost:3001. Backend talks to it over the compose network at docuseal:3000.
   docuseal:

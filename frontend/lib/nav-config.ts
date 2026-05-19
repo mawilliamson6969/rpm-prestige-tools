@@ -128,6 +128,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/processes" },
       { id: "ops-templates", label: "Templates (legacy)", icon: FileText,     href: "/operations/templates",       adminOnly: true },
       { id: "walkthru",      label: "Walk-Thru Reports", icon: ClipboardList, href: "/admin/walkthru",            adminOnly: true },
+      // Prestige Connect — Zap-style automations engine (Phase 1).
+      { id: "automations",   label: "Automations",       icon: Bot,           href: "/automations" },
     ],
   },
   {

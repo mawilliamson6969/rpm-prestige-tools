@@ -1,0 +1,290 @@
+/* Prestige Connect — Automations module styles.
+   Reuses the platform's card / button / chip vocabulary from
+   the rest of the dashboard (white card surfaces, navy headers,
+   neutral borders, soft shadows). */
+
+.page {
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1b2856;
+  margin: 0;
+}
+
+.sub {
+  color: #6a737b;
+  font-size: 14px;
+  margin: 4px 0 0 0;
+}
+
+.btnPrimary {
+  background: #1b2856;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btnPrimary:hover { background: #243578; }
+.btnPrimary:disabled { background: #aab2c1; cursor: not-allowed; }
+
+.btnSecondary {
+  background: #fff;
+  color: #1b2856;
+  border: 1px solid #d7dbe2;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btnSecondary:hover { background: #f4f6fa; }
+
+.btnDanger {
+  background: #fff;
+  color: #b32317;
+  border: 1px solid #f1c8c5;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btnDanger:hover { background: #fdf2f1; }
+
+.card {
+  background: #fff;
+  border: 1px solid #e6e9ee;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(27, 40, 86, 0.04);
+}
+
+.tableWrap { overflow: auto; }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th {
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a737b;
+  font-weight: 600;
+  background: #f7f9fc;
+  border-bottom: 1px solid #e6e9ee;
+}
+.table td {
+  padding: 14px;
+  border-bottom: 1px solid #f0f2f6;
+  font-size: 14px;
+  color: #28324a;
+}
+.rowLink { color: #1b2856; font-weight: 600; cursor: pointer; }
+.rowLink:hover { text-decoration: underline; }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.toggle input { display: none; }
+.toggle .slider {
+  width: 38px;
+  height: 22px;
+  background: #d7dbe2;
+  border-radius: 12px;
+  position: relative;
+  transition: background 0.15s;
+}
+.toggle .slider::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.toggle input:checked + .slider { background: #1f8a5b; }
+.toggle input:checked + .slider::after { transform: translateX(16px); }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.badgeOn  { background: #e4f5ec; color: #1f8a5b; }
+.badgeOff { background: #f0f2f6; color: #6a737b; }
+.badgeOk  { background: #e4f5ec; color: #1f8a5b; }
+.badgeBad { background: #fdf2f1; color: #b32317; }
+.badgeWarn{ background: #fff5e0; color: #8a5b00; }
+
+/* Editor */
+
+.editorTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.editorTop input.nameInput {
+  flex: 1;
+  border: 1px solid #d7dbe2;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1b2856;
+}
+.editorTop input.nameInput:focus {
+  outline: none;
+  border-color: #1b2856;
+}
+.editorTop .actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+.fieldLabel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a737b;
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: block;
+}
+.input, .select, .textarea {
+  width: 100%;
+  border: 1px solid #d7dbe2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: #28324a;
+  background: #fff;
+  font-family: inherit;
+}
+.textarea { min-height: 80px; resize: vertical; }
+.input:focus, .select:focus, .textarea:focus {
+  outline: none;
+  border-color: #1b2856;
+}
+
+.stepCard {
+  background: #fff;
+  border: 1px solid #e6e9ee;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(27, 40, 86, 0.04);
+}
+.stepHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.stepTitle {
+  font-weight: 700;
+  color: #1b2856;
+  font-size: 14px;
+}
+.stepIndex {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  background: #1b2856;
+  color: #fff;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.addStepRow {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0;
+}
+.addStepBtn {
+  background: #fff;
+  border: 1px dashed #aab2c1;
+  color: #6a737b;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.addStepBtn:hover {
+  border-color: #1b2856;
+  color: #1b2856;
+}
+
+.error {
+  color: #b32317;
+  background: #fdf2f1;
+  border: 1px solid #f1c8c5;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.notice {
+  color: #1f8a5b;
+  background: #e4f5ec;
+  border: 1px solid #b9e0c9;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.muted { color: #6a737b; font-size: 13px; }
+
+.runRow { cursor: pointer; }
+.runDetails {
+  background: #f7f9fc;
+  border: 1px solid #e6e9ee;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty {
+  padding: 36px;
+  text-align: center;
+  color: #6a737b;
+}

@@ -22,6 +22,7 @@ import {
   ensurePlaybookSchema,
   ensureMaintenanceDashboardSchema,
   ensureDocumentsSchema,
+  ensureAutomationsSchema,
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
@@ -32,6 +33,18 @@ import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
 // feed (mbItemDetail.js) survives and is rekeyed below to operate on
 // processes. AppFolio webhook receiver (mbWebhooks.js) survives.
 import { receiveAppfolioWebhook as receiveMbAppfolioWebhook } from "./routes/mbWebhooks.js";
+import { receiveOpenPhoneWebhook, receiveMsGraphWebhook } from "./routes/webhooks.js";
+import {
+  listAutomations as listConnectAutomations,
+  getAutomation as getConnectAutomation,
+  createAutomation as createConnectAutomation,
+  updateAutomation as updateConnectAutomation,
+  deleteAutomation as deleteConnectAutomation,
+  listRuns as listConnectAutomationRuns,
+  getRun as getConnectAutomationRun,
+  testAutomation as testConnectAutomation,
+  getAutomationMeta as getConnectAutomationMeta,
+} from "./routes/automations.js";
 import {
   listItemUpdates as listMbDetailUpdates,
   createItemUpdate as createMbDetailUpdate,
@@ -1028,7 +1041,17 @@ const port = Number(process.env.PORT) || 4000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.use(express.json({ limit: "12mb" }));
+// `verify` stashes the raw bytes so Prestige Connect webhook routes can
+// HMAC-verify signatures. Cheap (one Buffer ref per request) and the
+// rest of the app ignores req.rawBody.
+app.use(
+  express.json({
+    limit: "12mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -2322,6 +2345,25 @@ app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
 /** AppFolio webhook receiver (public — AppFolio server-to-server). JWS verification is Phase 2. */
 app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
 
+/**
+ * Prestige Connect webhook receivers (OpenPhone + Microsoft Graph).
+ * AppFolio uses receiveMbAppfolioWebhook above, which now also mirrors
+ * onto the new `events` table.
+ */
+app.post("/webhooks/openphone", receiveOpenPhoneWebhook);
+app.post("/webhooks/ms-graph", receiveMsGraphWebhook);
+
+// Prestige Connect — Automations CRUD + run history.
+app.get("/automations/meta", requireAuth, getConnectAutomationMeta);
+app.get("/automations", requireAuth, listConnectAutomations);
+app.post("/automations", requireAuth, createConnectAutomation);
+app.get("/automations/:id", requireAuth, getConnectAutomation);
+app.put("/automations/:id", requireAuth, updateConnectAutomation);
+app.delete("/automations/:id", requireAuth, deleteConnectAutomation);
+app.get("/automations/:id/runs", requireAuth, listConnectAutomationRuns);
+app.get("/automations/:id/runs/:runId", requireAuth, getConnectAutomationRun);
+app.post("/automations/:id/test", requireAuth, testConnectAutomation);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     // Each schema applier is wrapped in its own try/catch so a single
@@ -2369,6 +2411,8 @@ async function start() {
       // 035_unification migration. The older per-phase appliers are
       // gone — Phase 7's migration drops their tables.
       ["mb_* unification (Phase 7)", ensureMbUnifiedSchema],
+      // Prestige Connect Phase 1: event bus + automations engine.
+      ["automations / events", ensureAutomationsSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {
