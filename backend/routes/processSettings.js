@@ -8,6 +8,7 @@ import { bumpActivity, logActivity } from "../lib/process-activity.js";
 import {
   applyMergeContext,
   buildMergeContext,
+  buildSampleMergeContext,
 } from "../lib/process-merge-fields.js";
 import {
   resolveRecipient,
@@ -637,6 +638,88 @@ export async function deleteTextTemplate(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Could not delete text template." });
+  }
+}
+
+/* ---------- Template preview (sample merge context) ---------- */
+
+async function resolveSenderForPreview(pool, user) {
+  if (!user || !Number.isFinite(Number(user.id))) {
+    return { sender: null, senderEmail: null };
+  }
+  const sender = {
+    id: Number(user.id),
+    display_name: user.displayName || user.username || null,
+    username: user.username || null,
+  };
+  let senderEmail = null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT mailbox_email FROM email_connections
+       WHERE user_id = $1 AND is_active = true
+       ORDER BY id DESC LIMIT 1`,
+      [sender.id]
+    );
+    if (rows.length) senderEmail = rows[0].mailbox_email;
+  } catch {
+    /* best-effort */
+  }
+  return { sender, senderEmail };
+}
+
+export async function postEmailTemplatePreviewSample(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid template id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT subject, body_html, body_text FROM process_email_templates WHERE id = $1`,
+      [id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Template not found." });
+      return;
+    }
+    const { sender, senderEmail } = await resolveSenderForPreview(pool, req.user);
+    const ctx = buildSampleMergeContext({ sender, senderEmail });
+    const rawBody = rows[0].body_text || rows[0].body_html || "";
+    res.json({
+      resolvedSubject: applyMergeContext(rows[0].subject || "", ctx),
+      resolvedBody: applyMergeContext(rawBody, ctx),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not render preview." });
+  }
+}
+
+export async function postTextTemplatePreviewSample(req, res) {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid template id." });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT body FROM process_text_templates WHERE id = $1`,
+      [id]
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Template not found." });
+      return;
+    }
+    const { sender, senderEmail } = await resolveSenderForPreview(pool, req.user);
+    const ctx = buildSampleMergeContext({ sender, senderEmail });
+    res.json({
+      resolvedBody: applyMergeContext(rows[0].body || "", ctx),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Could not render preview." });
   }
 }
 

@@ -853,6 +853,8 @@ import {
   postProcessTemplatePreview,
   postProcessTypeRole,
   postSuggestionsAnalyzeNow,
+  postEmailTemplatePreviewSample,
+  postTextTemplatePreviewSample,
   postTextTemplate,
   getPendingSuggestionsFeed,
   getSuggestionsStats,
@@ -2025,11 +2027,21 @@ app.get("/processes/templates/:id/email-templates", requireAuth, getEmailTemplat
 app.post("/processes/templates/:id/email-templates", requireAuth, requireAdminRole, postEmailTemplate);
 app.put("/processes/email-templates/:id", requireAuth, requireAdminRole, putEmailTemplate);
 app.delete("/processes/email-templates/:id", requireAuth, requireAdminRole, deleteEmailTemplate);
+app.post(
+  "/processes/email-templates/:id/preview-sample",
+  requireAuth,
+  postEmailTemplatePreviewSample
+);
 
 app.get("/processes/templates/:id/text-templates", requireAuth, getTextTemplates);
 app.post("/processes/templates/:id/text-templates", requireAuth, requireAdminRole, postTextTemplate);
 app.put("/processes/text-templates/:id", requireAuth, requireAdminRole, putTextTemplate);
 app.delete("/processes/text-templates/:id", requireAuth, requireAdminRole, deleteTextTemplate);
+app.post(
+  "/processes/text-templates/:id/preview-sample",
+  requireAuth,
+  postTextTemplatePreviewSample
+);
 
 app.get("/processes/:processId/activity", requireAuth, getProcessActivity);
 app.post("/processes/:processId/activity", requireAuth, postProcessActivityNote);
