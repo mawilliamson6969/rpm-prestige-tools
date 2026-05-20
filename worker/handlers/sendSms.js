@@ -40,12 +40,13 @@ export async function runSendSms({ config }) {
       body: JSON.stringify({ content: body, from, to: [to] }),
     });
   } catch (err) {
-    return { status: "failed", error: `send_sms: network error — ${err.message}` };
+    // Network/DNS errors are transient — retry-worthy.
+    return { status: "failed", transient: true, error: `send_sms: network error — ${err.message}` };
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.message || json?.error || `OpenPhone HTTP ${res.status}`;
-    return { status: "failed", error: `send_sms: ${msg}` };
+    return { status: "failed", status_code: res.status, error: `send_sms: ${msg}` };
   }
   return {
     status: "success",

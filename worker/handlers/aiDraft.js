@@ -72,6 +72,20 @@ export async function runAiDraft({ config, context }) {
       },
     };
   } catch (err) {
-    return { status: "failed", error: `ai_draft: ${err.message}` };
+    // The Anthropic SDK surfaces `.status` on APIError instances. 429
+    // (rate limit), 529 (overloaded), and 5xx are retry-worthy; 4xx
+    // means our prompt or auth is wrong — don't burn budget on retries.
+    const status = typeof err.status === "number" ? err.status : null;
+    const transient =
+      status === 408 ||
+      status === 429 ||
+      status === 529 ||
+      (status != null && status >= 500 && status < 600);
+    return {
+      status: "failed",
+      transient,
+      status_code: status ?? undefined,
+      error: `ai_draft: ${err.message}`,
+    };
   }
 }

@@ -2370,6 +2370,96 @@ export async function ensureAutomationsSchema() {
   );
   await p.query(`CREATE INDEX IF NOT EXISTS idx_runs_event ON automation_runs (event_id)`);
 
+  // Phase 2 §1: retry columns on automation_runs.
+  await p.query(
+    `ALTER TABLE automation_runs
+       ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 1`
+  );
+  await p.query(
+    `ALTER TABLE automation_runs
+       ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 3`
+  );
+  await p.query(
+    `ALTER TABLE automation_runs
+       ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ`
+  );
+  await p.query(
+    `ALTER TABLE automation_runs
+       ADD COLUMN IF NOT EXISTS resume_from_step INTEGER
+       REFERENCES automation_steps(id) ON DELETE SET NULL`
+  );
+  await p.query(
+    `ALTER TABLE automation_runs
+       ADD COLUMN IF NOT EXISTS context JSONB NOT NULL DEFAULT '{}'::jsonb`
+  );
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_runs_retry
+       ON automation_runs (next_retry_at) WHERE status = 'retrying'`
+  );
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_runs_dead_letter
+       ON automation_runs (started_at DESC) WHERE status = 'dead_letter'`
+  );
+
+  // Phase 2 §2: scheduled_for on events + automation_schedules table.
+  await p.query(
+    `ALTER TABLE events ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ`
+  );
+  // Re-create the pending index so it respects scheduled_for. Drop the
+  // old name first — the new one uses the same name but a different
+  // expression, and CREATE INDEX IF NOT EXISTS would short-circuit.
+  await p.query(`DROP INDEX IF EXISTS idx_events_pending`);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_events_pending
+       ON events (COALESCE(scheduled_for, created_at))
+       WHERE status = 'pending'`
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS automation_schedules (
+      id SERIAL PRIMARY KEY,
+      automation_id INTEGER NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+      cron_expression VARCHAR(100) NOT NULL,
+      timezone VARCHAR(50) NOT NULL DEFAULT 'America/Chicago',
+      last_fired_at TIMESTAMPTZ,
+      next_fire_at TIMESTAMPTZ,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_schedules_due
+       ON automation_schedules (next_fire_at) WHERE enabled = true`
+  );
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_automation
+       ON automation_schedules (automation_id)`
+  );
+
+  // Phase 2 §3: branching steps. parent_step_id + branch_path scope
+  // step_order so true/false paths each have their own ordered list,
+  // while existing flat automations (parent NULL, branch NULL) stay
+  // identical.
+  await p.query(
+    `ALTER TABLE automation_steps
+       ADD COLUMN IF NOT EXISTS parent_step_id INTEGER
+       REFERENCES automation_steps(id) ON DELETE CASCADE`
+  );
+  await p.query(
+    `ALTER TABLE automation_steps
+       ADD COLUMN IF NOT EXISTS branch_path VARCHAR(10)`
+  );
+  await p.query(
+    `ALTER TABLE automation_steps
+       DROP CONSTRAINT IF EXISTS automation_steps_automation_id_step_order_key`
+  );
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_steps_path_order
+       ON automation_steps
+          (automation_id, COALESCE(parent_step_id, 0), COALESCE(branch_path, 'main'), step_order)`
+  );
+
   await seedStarterAutomations(p);
 }
 
