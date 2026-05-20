@@ -42,6 +42,7 @@ import {
   deleteAutomation as deleteConnectAutomation,
   listRuns as listConnectAutomationRuns,
   getRun as getConnectAutomationRun,
+  retryRunNow as retryConnectRunNow,
   testAutomation as testConnectAutomation,
   getAutomationMeta as getConnectAutomationMeta,
 } from "./routes/automations.js";
@@ -2362,6 +2363,7 @@ app.put("/automations/:id", requireAuth, updateConnectAutomation);
 app.delete("/automations/:id", requireAuth, deleteConnectAutomation);
 app.get("/automations/:id/runs", requireAuth, listConnectAutomationRuns);
 app.get("/automations/:id/runs/:runId", requireAuth, getConnectAutomationRun);
+app.post("/automations/:id/runs/:runId/retry", requireAuth, retryConnectRunNow);
 app.post("/automations/:id/test", requireAuth, testConnectAutomation);
 
 async function start() {

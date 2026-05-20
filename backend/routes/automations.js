@@ -11,8 +11,29 @@
  * position so the editor UI never has to renumber.
  */
 
+import cronParser from "cron-parser";
 import { getPool } from "../lib/db.js";
 import { emitEvent } from "../lib/eventBus.js";
+
+const DEFAULT_SCHEDULE_TZ = "America/Chicago";
+
+/**
+ * Validate + compute next_fire_at for a schedule. Throws .http=400 on
+ * a bad expression so the route handler can surface it to the user.
+ */
+function computeNextFireAt(cronExpression, timezone) {
+  try {
+    const it = cronParser.parseExpression(cronExpression, {
+      tz: timezone || DEFAULT_SCHEDULE_TZ,
+      currentDate: new Date(),
+    });
+    return it.next().toDate();
+  } catch (err) {
+    const e = new Error(`Invalid cron expression: ${err.message}`);
+    e.http = 400;
+    throw e;
+  }
+}
 
 const ALLOWED_TRIGGERS = new Set([
   "appfolio.work_order.created",
@@ -27,9 +48,27 @@ const ALLOWED_TRIGGERS = new Set([
   "internal.form.submitted",
   "internal.board.card_created",
   "internal.board.card_moved",
+  // Phase 2 §2: time-based trigger. The accompanying automation_schedules
+  // row holds the cron expression + timezone.
+  "schedule.triggered",
 ]);
 
-const ALLOWED_STEP_TYPES = new Set(["filter", "send_sms", "send_email", "create_card", "ai_draft"]);
+// Phase 2 §2: 'delay' step parks the run via the resume-event pattern.
+const ALLOWED_STEP_TYPES = new Set([
+  "filter",
+  "send_sms",
+  "send_email",
+  "create_card",
+  "ai_draft",
+  "delay",
+  // Phase 2 §3: branch step has two child step lists (true_steps,
+  // false_steps) that the API persists as separate automation_steps
+  // rows with parent_step_id pointing at the branch and branch_path
+  // = 'true' / 'false'.
+  "branch",
+]);
+
+const MAX_BRANCH_DEPTH_API = 5;
 
 function badRequest(res, msg) {
   return res.status(400).json({ error: msg });
@@ -45,8 +84,18 @@ function parseId(raw, label = "id") {
   return n;
 }
 
-function normalizeSteps(body) {
-  const arr = Array.isArray(body.steps) ? body.steps : [];
+/**
+ * Validate a list of steps (which may include nested branch children
+ * via .true_steps / .false_steps). Returns the same nested shape with
+ * normalized fields — persistence flattens it via persistSteps below.
+ */
+function normalizeStepsTree(rawSteps, depth = 0) {
+  if (depth > MAX_BRANCH_DEPTH_API) {
+    const e = new Error(`Branch nesting exceeded ${MAX_BRANCH_DEPTH_API} levels.`);
+    e.http = 400;
+    throw e;
+  }
+  const arr = Array.isArray(rawSteps) ? rawSteps : [];
   return arr
     .map((s, i) => {
       if (!s || typeof s !== "object") return null;
@@ -57,12 +106,104 @@ function normalizeSteps(body) {
         throw err;
       }
       const config = s.config && typeof s.config === "object" ? s.config : {};
-      return { step_order: i + 1, step_type, config };
+      const out = { step_order: i + 1, step_type, config };
+      if (step_type === "branch") {
+        out.true_steps = normalizeStepsTree(s.true_steps, depth + 1);
+        out.false_steps = normalizeStepsTree(s.false_steps, depth + 1);
+      }
+      return out;
     })
     .filter(Boolean);
 }
 
-function shapeAutomation(row, steps) {
+function normalizeSteps(body) {
+  return normalizeStepsTree(body.steps);
+}
+
+/**
+ * Recursively persist a normalized step tree under (automationId,
+ * parentStepId, branchPath). Returns the inserted top-level rows
+ * (without children) — the caller pieces the tree back together via
+ * a fresh GET after the transaction commits.
+ */
+async function persistSteps(client, { automationId, parentStepId, branchPath, steps }) {
+  const inserted = [];
+  for (const s of steps) {
+    const { rows } = await client.query(
+      `INSERT INTO automation_steps
+         (automation_id, step_order, step_type, config, parent_step_id, branch_path)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+       RETURNING id, step_order, step_type, config, parent_step_id, branch_path`,
+      [
+        automationId,
+        s.step_order,
+        s.step_type,
+        JSON.stringify(s.config),
+        parentStepId,
+        branchPath,
+      ]
+    );
+    const row = rows[0];
+    inserted.push(row);
+    if (s.step_type === "branch") {
+      await persistSteps(client, {
+        automationId,
+        parentStepId: row.id,
+        branchPath: "true",
+        steps: s.true_steps || [],
+      });
+      await persistSteps(client, {
+        automationId,
+        parentStepId: row.id,
+        branchPath: "false",
+        steps: s.false_steps || [],
+      });
+    }
+  }
+  return inserted;
+}
+
+/**
+ * Load all steps for an automation as a nested tree. Top-level steps
+ * have parent_step_id IS NULL; branch children sit under their parent
+ * with branch_path = 'true' / 'false'.
+ */
+async function loadStepTree(pool, automationId) {
+  const { rows } = await pool.query(
+    `SELECT id, step_order, step_type, config, parent_step_id, branch_path
+       FROM automation_steps
+      WHERE automation_id = $1
+      ORDER BY step_order ASC`,
+    [automationId]
+  );
+  const byParent = new Map(); // key: `${parent}|${branch}` → array
+  for (const r of rows) {
+    const key = `${r.parent_step_id ?? "ROOT"}|${r.branch_path ?? "main"}`;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(r);
+  }
+  function buildList(parentKey) {
+    const list = byParent.get(parentKey) || [];
+    return list.map((r) => {
+      const node = {
+        id: r.id,
+        step_order: r.step_order,
+        step_type: r.step_type,
+        config: r.config || {},
+      };
+      if (r.step_type === "branch") {
+        node.true_steps = buildList(`${r.id}|true`);
+        node.false_steps = buildList(`${r.id}|false`);
+      }
+      return node;
+    });
+  }
+  return buildList("ROOT|main");
+}
+
+function shapeAutomation(row, steps, schedule) {
+  // `steps` may arrive as a nested tree (preferred — from loadStepTree)
+  // OR as a flat top-level list (legacy path). Detect and pass through.
   return {
     id: row.id,
     name: row.name,
@@ -74,13 +215,75 @@ function shapeAutomation(row, steps) {
     created_by: row.created_by,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    steps: (steps || []).map((s) => ({
-      id: s.id,
-      step_order: s.step_order,
-      step_type: s.step_type,
-      config: s.config || {},
-    })),
+    steps: steps || [],
+    schedule: schedule
+      ? {
+          id: schedule.id,
+          cron_expression: schedule.cron_expression,
+          timezone: schedule.timezone,
+          enabled: schedule.enabled,
+          last_fired_at: schedule.last_fired_at,
+          next_fire_at: schedule.next_fire_at,
+        }
+      : null,
   };
+}
+
+async function loadSchedule(pool, automationId) {
+  const { rows } = await pool.query(
+    `SELECT id, cron_expression, timezone, enabled, last_fired_at, next_fire_at
+       FROM automation_schedules WHERE automation_id = $1`,
+    [automationId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Upsert (or clear) the schedule row that backs schedule.triggered.
+ * Pass body.schedule = { cron_expression, timezone?, enabled? } to set
+ * or update; pass body.schedule = null to delete an existing row.
+ */
+async function upsertSchedule(client, automationId, schedulePayload, triggerType) {
+  if (schedulePayload === undefined) return; // caller didn't touch it
+  // Clearing.
+  if (schedulePayload === null) {
+    await client.query(`DELETE FROM automation_schedules WHERE automation_id = $1`, [automationId]);
+    return;
+  }
+  if (typeof schedulePayload !== "object") {
+    const e = new Error("schedule must be an object or null");
+    e.http = 400;
+    throw e;
+  }
+  // A schedule only makes sense for schedule.triggered automations.
+  if (triggerType !== "schedule.triggered") {
+    const e = new Error(
+      "Schedule can only be set on automations whose trigger_type is 'schedule.triggered'."
+    );
+    e.http = 400;
+    throw e;
+  }
+  const cron = String(schedulePayload.cron_expression || "").trim();
+  if (!cron) {
+    const e = new Error("schedule.cron_expression is required");
+    e.http = 400;
+    throw e;
+  }
+  const tz = String(schedulePayload.timezone || DEFAULT_SCHEDULE_TZ).trim() || DEFAULT_SCHEDULE_TZ;
+  const enabled = schedulePayload.enabled === undefined ? true : Boolean(schedulePayload.enabled);
+  const nextFire = computeNextFireAt(cron, tz);
+
+  await client.query(
+    `INSERT INTO automation_schedules (automation_id, cron_expression, timezone, enabled, next_fire_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (automation_id) DO UPDATE
+       SET cron_expression = EXCLUDED.cron_expression,
+           timezone = EXCLUDED.timezone,
+           enabled = EXCLUDED.enabled,
+           next_fire_at = EXCLUDED.next_fire_at,
+           updated_at = NOW()`,
+    [automationId, cron, tz, enabled, nextFire]
+  );
 }
 
 export async function listAutomations(_req, res) {
@@ -124,14 +327,9 @@ export async function getAutomation(req, res) {
     const pool = getPool();
     const { rows } = await pool.query(`SELECT * FROM automations WHERE id = $1`, [id]);
     if (!rows.length) return res.status(404).json({ error: "Automation not found." });
-    const { rows: steps } = await pool.query(
-      `SELECT id, step_order, step_type, config
-         FROM automation_steps
-        WHERE automation_id = $1
-        ORDER BY step_order ASC`,
-      [id]
-    );
-    res.json({ automation: shapeAutomation(rows[0], steps) });
+    const steps = await loadStepTree(pool, id);
+    const schedule = await loadSchedule(pool, id);
+    res.json({ automation: shapeAutomation(rows[0], steps, schedule) });
   } catch (err) {
     if (err.http) return res.status(err.http).json({ error: err.message });
     console.error("[automations] get failed:", err);
@@ -173,18 +371,20 @@ export async function createAutomation(req, res) {
     );
     const automation = rows[0];
 
-    const insertedSteps = [];
-    for (const s of steps) {
-      const { rows: sr } = await client.query(
-        `INSERT INTO automation_steps (automation_id, step_order, step_type, config)
-         VALUES ($1, $2, $3, $4::jsonb)
-         RETURNING id, step_order, step_type, config`,
-        [automation.id, s.step_order, s.step_type, JSON.stringify(s.config)]
-      );
-      insertedSteps.push(sr[0]);
+    await persistSteps(client, {
+      automationId: automation.id,
+      parentStepId: null,
+      branchPath: null,
+      steps,
+    });
+    // Phase 2 §2: optional schedule for time-based triggers.
+    if (body.schedule !== undefined) {
+      await upsertSchedule(client, automation.id, body.schedule, triggerType);
     }
     await client.query("COMMIT");
-    res.status(201).json({ automation: shapeAutomation(automation, insertedSteps) });
+    const tree = await loadStepTree(pool, automation.id);
+    const schedule = await loadSchedule(pool, automation.id);
+    res.status(201).json({ automation: shapeAutomation(automation, tree, schedule) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     if (err.http) return res.status(err.http).json({ error: err.message });
@@ -257,26 +457,29 @@ export async function updateAutomation(req, res) {
     if (Array.isArray(body.steps)) {
       const steps = normalizeSteps(body);
       await client.query(`DELETE FROM automation_steps WHERE automation_id = $1`, [id]);
-      for (const s of steps) {
-        await client.query(
-          `INSERT INTO automation_steps (automation_id, step_order, step_type, config)
-           VALUES ($1, $2, $3, $4::jsonb)`,
-          [id, s.step_order, s.step_type, JSON.stringify(s.config)]
-        );
-      }
+      await persistSteps(client, {
+        automationId: id,
+        parentStepId: null,
+        branchPath: null,
+        steps,
+      });
+    }
+    // Phase 2 §2: schedule upsert/clear. Need the current trigger_type
+    // (which may have just been updated above) to gate the operation.
+    if (body.schedule !== undefined) {
+      const { rows: curr } = await client.query(
+        `SELECT trigger_type FROM automations WHERE id = $1`,
+        [id]
+      );
+      await upsertSchedule(client, id, body.schedule, curr[0]?.trigger_type);
     }
     await client.query("COMMIT");
 
     const { rows } = await pool.query(`SELECT * FROM automations WHERE id = $1`, [id]);
     if (!rows.length) return res.status(404).json({ error: "Automation not found." });
-    const { rows: steps } = await pool.query(
-      `SELECT id, step_order, step_type, config
-         FROM automation_steps
-        WHERE automation_id = $1
-        ORDER BY step_order ASC`,
-      [id]
-    );
-    res.json({ automation: shapeAutomation(rows[0], steps) });
+    const tree = await loadStepTree(pool, id);
+    const schedule = await loadSchedule(pool, id);
+    res.json({ automation: shapeAutomation(rows[0], tree, schedule) });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     if (err.http) return res.status(err.http).json({ error: err.message });
@@ -305,22 +508,68 @@ export async function listRuns(req, res) {
   try {
     const id = parseId(req.params.id);
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const onlyStatus = typeof req.query.status === "string" ? req.query.status.trim() : "";
     const pool = getPool();
+    const params = [id, limit];
+    let statusFilter = "";
+    if (onlyStatus) {
+      params.push(onlyStatus);
+      statusFilter = ` AND r.status = $${params.length}`;
+    }
     const { rows } = await pool.query(
       `SELECT r.id, r.status, r.started_at, r.finished_at, r.step_results, r.error,
-              r.event_id, e.type AS event_type, e.payload AS event_payload
+              r.event_id, r.attempt, r.max_attempts, r.next_retry_at, r.resume_from_step,
+              e.type AS event_type, e.payload AS event_payload
          FROM automation_runs r
          LEFT JOIN events e ON e.id = r.event_id
-        WHERE r.automation_id = $1
+        WHERE r.automation_id = $1${statusFilter}
         ORDER BY r.started_at DESC
         LIMIT $2`,
-      [id, limit]
+      params
     );
     res.json({ runs: rows });
   } catch (err) {
     if (err.http) return res.status(err.http).json({ error: err.message });
     console.error("[automations] runs failed:", err);
     res.status(500).json({ error: "Could not load runs." });
+  }
+}
+
+/**
+ * Phase 2 §1: manual "Retry now" — flip a dead_letter or failed run
+ * back to 'retrying' with next_retry_at=NOW() so the worker picks it
+ * up on the next poll. Counts as another attempt (incrementing
+ * attempt), but caps at max_attempts + 1 so a human can always force
+ * one more try. resume_from_step is preserved from the prior attempt
+ * if set, otherwise the run replays from the first non-success step.
+ */
+export async function retryRunNow(req, res) {
+  try {
+    const automationId = parseId(req.params.id);
+    const runId = parseId(req.params.runId, "run id");
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `UPDATE automation_runs
+          SET status = 'retrying',
+              next_retry_at = NOW(),
+              attempt = attempt + 1,
+              max_attempts = GREATEST(max_attempts, attempt + 1),
+              error = COALESCE(error, '') || ' [manual retry requested]'
+        WHERE id = $1 AND automation_id = $2
+          AND status IN ('dead_letter', 'failed')
+        RETURNING id, status, attempt, max_attempts, next_retry_at`,
+      [runId, automationId]
+    );
+    if (!rows.length) {
+      return res
+        .status(409)
+        .json({ error: "Run not found, or not in a retryable state." });
+    }
+    res.json({ run: rows[0] });
+  } catch (err) {
+    if (err.http) return res.status(err.http).json({ error: err.message });
+    console.error("[automations] retry-now failed:", err);
+    res.status(500).json({ error: "Could not enqueue retry." });
   }
 }
 

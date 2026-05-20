@@ -20,7 +20,13 @@ import { getPool } from "./db.js";
  * Errors are logged but never thrown so an upstream business path
  * (form submission, card move) is never blocked by the event bus.
  */
-export async function emitEvent({ type, source = "internal", payload = {}, externalId = null } = {}) {
+export async function emitEvent({
+  type,
+  source = "internal",
+  payload = {},
+  externalId = null,
+  scheduledFor = null,
+} = {}) {
   if (!type || typeof type !== "string") {
     console.warn("[eventBus] emitEvent called without a type — ignored");
     return null;
@@ -28,13 +34,13 @@ export async function emitEvent({ type, source = "internal", payload = {}, exter
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      `INSERT INTO events (type, source, payload, external_id)
-       VALUES ($1, $2, $3::jsonb, $4)
+      `INSERT INTO events (type, source, payload, external_id, scheduled_for)
+       VALUES ($1, $2, $3::jsonb, $4, $5)
        ON CONFLICT (source, type, external_id)
          WHERE external_id IS NOT NULL
          DO NOTHING
        RETURNING id`,
-      [type, source, JSON.stringify(payload ?? {}), externalId]
+      [type, source, JSON.stringify(payload ?? {}), externalId, scheduledFor]
     );
     return rows[0]?.id ?? null;
   } catch (err) {

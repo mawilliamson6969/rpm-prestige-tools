@@ -1,4 +1,20 @@
-export type StepType = "filter" | "send_sms" | "send_email" | "create_card" | "ai_draft";
+export type StepType =
+  | "filter"
+  | "send_sms"
+  | "send_email"
+  | "create_card"
+  | "ai_draft"
+  | "delay"
+  | "branch";
+
+export type AutomationSchedule = {
+  id: number;
+  cron_expression: string;
+  timezone: string;
+  enabled: boolean;
+  last_fired_at: string | null;
+  next_fire_at: string | null;
+};
 
 export type StepConfig = Record<string, unknown>;
 
@@ -7,6 +23,9 @@ export type AutomationStep = {
   step_order?: number;
   step_type: StepType;
   config: StepConfig;
+  /** Branch step children — only set when step_type === "branch". */
+  true_steps?: AutomationStep[];
+  false_steps?: AutomationStep[];
 };
 
 export type Automation = {
@@ -21,6 +40,7 @@ export type Automation = {
   created_at: string;
   updated_at: string;
   steps: AutomationStep[];
+  schedule?: AutomationSchedule | null;
 };
 
 export type AutomationListRow = {
@@ -38,12 +58,22 @@ export type AutomationListRow = {
   runs_last_24h: number;
 };
 
+export type RunStatus =
+  | "success"
+  | "failed"
+  | "filtered_out"
+  | "skipped"
+  | "running"
+  | "retrying"
+  | "dead_letter";
+
 export type AutomationRun = {
   id: number;
-  status: "success" | "failed" | "filtered_out" | "skipped";
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
   step_results: Array<{
+    step_id?: number;
     step_order: number;
     step_type: string;
     status: string;
@@ -54,6 +84,10 @@ export type AutomationRun = {
   event_id: number;
   event_type: string | null;
   event_payload: unknown;
+  attempt?: number;
+  max_attempts?: number;
+  next_retry_at?: string | null;
+  resume_from_step?: number | null;
 };
 
 export const TRIGGER_OPTIONS: Array<{ value: string; label: string; description: string }> = [
@@ -107,6 +141,11 @@ export const TRIGGER_OPTIONS: Array<{ value: string; label: string; description:
     label: "Internal: Card moved between columns",
     description: "Fires when a card moves to a different column (group) on a board.",
   },
+  {
+    value: "schedule.triggered",
+    label: "Schedule: Cron / time-based",
+    description: "Fires on a recurring schedule. Configure the cron expression and timezone below.",
+  },
 ];
 
 export const STEP_TYPE_LABELS: Record<StepType, string> = {
@@ -115,6 +154,8 @@ export const STEP_TYPE_LABELS: Record<StepType, string> = {
   send_email: "Send Email",
   create_card: "Create card on board",
   ai_draft: "AI draft (Claude)",
+  delay: "Delay (wait, then continue)",
+  branch: "Branch (if / else)",
 };
 
 export const FILTER_OPERATORS: Array<{ value: string; label: string }> = [
@@ -142,6 +183,10 @@ export function defaultConfigFor(stepType: StepType): StepConfig {
       return { board_id: "", title: "", description: "", due_in_hours: "" };
     case "ai_draft":
       return { prompt: "", output_key: "draft", max_tokens: 600 };
+    case "delay":
+      return { duration_minutes: 15, duration_hours: 0, duration_days: 0 };
+    case "branch":
+      return { field: "event.payload.priority", operator: "equals", value: "Emergency" };
     default:
       return {};
   }

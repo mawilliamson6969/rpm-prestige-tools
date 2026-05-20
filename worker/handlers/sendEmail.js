@@ -67,6 +67,17 @@ export async function runSendEmail({ config }) {
       },
     };
   } catch (err) {
-    return { status: "failed", error: `send_email: ${err.message}` };
+    // Nodemailer surfaces SMTP transport errors with codes like
+    // 'ECONNECTION', 'ETIMEDOUT', 'EAUTH'. The first two are transient;
+    // EAUTH is permanent (wrong creds). Let the central classifier
+    // decide via err.code, but tag a hint when we have one.
+    const code = typeof err.code === "string" ? err.code : null;
+    const transient =
+      code === "ECONNECTION" || code === "ETIMEDOUT" || code === "ESOCKET" || code === "ECONNRESET";
+    return {
+      status: "failed",
+      transient,
+      error: `send_email: ${err.message}${code ? ` [${code}]` : ""}`,
+    };
   }
 }

@@ -71,35 +71,8 @@ export default function AutomationEditorClient({ automationId }: Props) {
     setAutomation((a) => (a ? { ...a, [key]: value } : a));
   }
 
-  function updateStep(i: number, patcher: (s: AutomationStep) => AutomationStep) {
-    setAutomation((a) => {
-      if (!a) return a;
-      const next = a.steps.slice();
-      next[i] = patcher(next[i]);
-      return { ...a, steps: next };
-    });
-  }
-
-  function setStepType(i: number, type: StepType) {
-    updateStep(i, (s) => ({ ...s, step_type: type, config: defaultConfigFor(type) }));
-  }
-
-  function setStepConfig(i: number, key: string, value: unknown) {
-    updateStep(i, (s) => ({ ...s, config: { ...s.config, [key]: value } }));
-  }
-
-  function addStep(at: number) {
-    setAutomation((a) => {
-      if (!a) return a;
-      const newStep: AutomationStep = { step_type: "filter", config: defaultConfigFor("filter") };
-      const next = [...a.steps.slice(0, at), newStep, ...a.steps.slice(at)];
-      return { ...a, steps: next };
-    });
-  }
-
-  function removeStep(i: number) {
-    setAutomation((a) => (a ? { ...a, steps: a.steps.filter((_, k) => k !== i) } : a));
-  }
+  // Step list management moved into the recursive <StepList> component
+  // so a branch's true/false child lists use the same logic.
 
   async function save() {
     if (!automation || saving) return;
@@ -107,7 +80,7 @@ export default function AutomationEditorClient({ automationId }: Props) {
     setErr(null);
     setNotice(null);
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         name: automation.name,
         description: automation.description,
         trigger_type: automation.trigger_type,
@@ -115,6 +88,20 @@ export default function AutomationEditorClient({ automationId }: Props) {
         max_runs_per_day: automation.max_runs_per_day,
         steps: automation.steps.map((s) => ({ step_type: s.step_type, config: s.config })),
       };
+      // Phase 2 §2: when the trigger is schedule.triggered, persist the
+      // schedule too. When it isn't, clear any stale schedule row so the
+      // worker's ticker stops firing it.
+      if (automation.trigger_type === "schedule.triggered") {
+        if (automation.schedule) {
+          body.schedule = {
+            cron_expression: automation.schedule.cron_expression,
+            timezone: automation.schedule.timezone,
+            enabled: automation.schedule.enabled,
+          };
+        }
+      } else {
+        body.schedule = null;
+      }
       const res = await fetch(apiUrl(`/automations/${automationId}`), {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -254,6 +241,15 @@ export default function AutomationEditorClient({ automationId }: Props) {
         </label>
         {triggerMeta ? <div className={styles.muted}>{triggerMeta.description}</div> : null}
 
+        {automation.trigger_type === "schedule.triggered" ? (
+          <ScheduleEditor
+            schedule={automation.schedule ?? null}
+            onChange={(next) =>
+              setAutomation((a) => (a ? { ...a, schedule: next } : a))
+            }
+          />
+        ) : null}
+
         <label className={styles.field} style={{ marginTop: 12 }}>
           <span className={styles.fieldLabel}>Description (optional)</span>
           <textarea
@@ -281,20 +277,84 @@ export default function AutomationEditorClient({ automationId }: Props) {
         </label>
       </div>
 
-      {automation.steps.map((s, i) => (
+      <StepList
+        steps={automation.steps}
+        onChange={(next) => setAutomation((a) => (a ? { ...a, steps: next } : a))}
+      />
+
+      <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
+        <button className={styles.btnDanger} onClick={deleteAutomation}>
+          Delete automation
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Recursive list of steps with add/remove/reconfigure. Branch step
+ * children are rendered via two nested StepLists (true / false) so
+ * the entire editor only knows one component pattern.
+ */
+function StepList({
+  steps,
+  onChange,
+  depth = 0,
+}: {
+  steps: AutomationStep[];
+  onChange: (next: AutomationStep[]) => void;
+  depth?: number;
+}) {
+  function patchAt(i: number, patcher: (s: AutomationStep) => AutomationStep) {
+    const next = steps.slice();
+    next[i] = patcher(next[i]);
+    onChange(next);
+  }
+  function addAt(at: number) {
+    const newStep: AutomationStep = { step_type: "filter", config: defaultConfigFor("filter") };
+    onChange([...steps.slice(0, at), newStep, ...steps.slice(at)]);
+  }
+  function removeAt(i: number) {
+    onChange(steps.filter((_, k) => k !== i));
+  }
+  function setType(i: number, type: StepType) {
+    patchAt(i, (s) => {
+      const next: AutomationStep = { ...s, step_type: type, config: defaultConfigFor(type) };
+      if (type === "branch") {
+        next.true_steps = next.true_steps ?? [];
+        next.false_steps = next.false_steps ?? [];
+      } else {
+        delete next.true_steps;
+        delete next.false_steps;
+      }
+      return next;
+    });
+  }
+  function setConfigKey(i: number, key: string, value: unknown) {
+    patchAt(i, (s) => ({ ...s, config: { ...s.config, [key]: value } }));
+  }
+
+  return (
+    <>
+      {steps.map((s, i) => (
         <div key={i}>
           <div className={styles.addStepRow}>
-            <button className={styles.addStepBtn} onClick={() => addStep(i)}>
+            <button className={styles.addStepBtn} onClick={() => addAt(i)}>
               + Add step
             </button>
           </div>
-          <div className={styles.stepCard}>
+          <div
+            className={styles.stepCard}
+            style={depth > 0 ? { borderLeft: "3px solid #1b2856", marginLeft: 8 } : undefined}
+          >
             <div className={styles.stepHeader}>
               <div>
                 <span className={styles.stepIndex}>{i + 1}</span>
-                <span className={styles.stepTitle}>{STEP_TYPE_LABELS[s.step_type] ?? s.step_type}</span>
+                <span className={styles.stepTitle}>
+                  {STEP_TYPE_LABELS[s.step_type] ?? s.step_type}
+                </span>
               </div>
-              <button className={styles.btnDanger} onClick={() => removeStep(i)}>
+              <button className={styles.btnDanger} onClick={() => removeAt(i)}>
                 Remove
               </button>
             </div>
@@ -304,7 +364,7 @@ export default function AutomationEditorClient({ automationId }: Props) {
               <select
                 className={styles.select}
                 value={s.step_type}
-                onChange={(e) => setStepType(i, e.target.value as StepType)}
+                onChange={(e) => setType(i, e.target.value as StepType)}
               >
                 {Object.entries(STEP_TYPE_LABELS).map(([v, label]) => (
                   <option key={v} value={v}>
@@ -316,23 +376,62 @@ export default function AutomationEditorClient({ automationId }: Props) {
 
             <StepConfigEditor
               step={s}
-              onChange={(key, value) => setStepConfig(i, key, value)}
+              onChange={(key, value) => setConfigKey(i, key, value)}
             />
+
+            {s.step_type === "branch" ? (
+              <BranchChildren
+                step={s}
+                depth={depth + 1}
+                onTrueChange={(t) => patchAt(i, (st) => ({ ...st, true_steps: t }))}
+                onFalseChange={(f) => patchAt(i, (st) => ({ ...st, false_steps: f }))}
+              />
+            ) : null}
           </div>
         </div>
       ))}
 
       <div className={styles.addStepRow}>
-        <button className={styles.addStepBtn} onClick={() => addStep(automation.steps.length)}>
+        <button className={styles.addStepBtn} onClick={() => addAt(steps.length)}>
           + Add step
         </button>
       </div>
+    </>
+  );
+}
 
-      <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
-        <button className={styles.btnDanger} onClick={deleteAutomation}>
-          Delete automation
-        </button>
+function BranchChildren({
+  step,
+  depth,
+  onTrueChange,
+  onFalseChange,
+}: {
+  step: AutomationStep;
+  depth: number;
+  onTrueChange: (next: AutomationStep[]) => void;
+  onFalseChange: (next: AutomationStep[]) => void;
+}) {
+  const trueSteps = step.true_steps ?? [];
+  const falseSteps = step.false_steps ?? [];
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        background: "#f7f9fc",
+        border: "1px solid #e6e9ee",
+        borderRadius: 6,
+      }}
+    >
+      <div className={styles.fieldLabel} style={{ marginBottom: 8 }}>
+        If true (condition passes)
       </div>
+      <StepList steps={trueSteps} onChange={onTrueChange} depth={depth} />
+
+      <div className={styles.fieldLabel} style={{ marginTop: 16, marginBottom: 8 }}>
+        Otherwise
+      </div>
+      <StepList steps={falseSteps} onChange={onFalseChange} depth={depth} />
     </div>
   );
 }
@@ -568,5 +667,199 @@ function StepConfigEditor({
     );
   }
 
+  if (step.step_type === "branch") {
+    // Same field/operator/value shape as Filter — the worker shares
+    // the runFilter helper to evaluate it.
+    return (
+      <>
+        <div className={styles.muted} style={{ marginBottom: 8 }}>
+          Evaluates the condition. If true, the steps under <strong>If true</strong> run; otherwise
+          the steps under <strong>Otherwise</strong> run. Steps after the branch (at the same
+          level) run after either path completes.
+        </div>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Field path</span>
+          <input
+            className={styles.input}
+            value={asString(c.field)}
+            onChange={(e) => onChange("field", e.target.value)}
+            placeholder="event.payload.priority"
+          />
+        </label>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Operator</span>
+          <select
+            className={styles.select}
+            value={asString(c.operator) || "equals"}
+            onChange={(e) => onChange("operator", e.target.value)}
+          >
+            {FILTER_OPERATORS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Value</span>
+          <input
+            className={styles.input}
+            value={asString(c.value)}
+            onChange={(e) => onChange("value", e.target.value)}
+            placeholder="Emergency"
+          />
+        </label>
+      </>
+    );
+  }
+
+  if (step.step_type === "delay") {
+    return (
+      <>
+        <div className={styles.muted} style={{ marginBottom: 8 }}>
+          The worker doesn&apos;t actually sleep — it parks the run and schedules a resume
+          event, so the engine stays free to handle other automations. Total wait is the
+          sum of all three fields.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Minutes</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={0}
+              value={asString(c.duration_minutes)}
+              onChange={(e) =>
+                onChange(
+                  "duration_minutes",
+                  e.target.value === "" ? 0 : Math.max(0, Number(e.target.value))
+                )
+              }
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Hours</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={0}
+              value={asString(c.duration_hours)}
+              onChange={(e) =>
+                onChange(
+                  "duration_hours",
+                  e.target.value === "" ? 0 : Math.max(0, Number(e.target.value))
+                )
+              }
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Days</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={0}
+              value={asString(c.duration_days)}
+              onChange={(e) =>
+                onChange(
+                  "duration_days",
+                  e.target.value === "" ? 0 : Math.max(0, Number(e.target.value))
+                )
+              }
+            />
+          </label>
+        </div>
+      </>
+    );
+  }
+
   return null;
+}
+
+type Schedule = NonNullable<Automation["schedule"]>;
+
+const CRON_PRESETS: Array<{ label: string; expr: string }> = [
+  { label: "Every day at 9am", expr: "0 9 * * *" },
+  { label: "Every weekday at 9am", expr: "0 9 * * 1-5" },
+  { label: "Every Monday at 9am", expr: "0 9 * * 1" },
+  { label: "Every hour on the hour", expr: "0 * * * *" },
+  { label: "Every 15 minutes", expr: "*/15 * * * *" },
+];
+
+function ScheduleEditor({
+  schedule,
+  onChange,
+}: {
+  schedule: Schedule | null;
+  onChange: (next: Schedule | null) => void;
+}) {
+  const current: Schedule = schedule ?? {
+    id: 0,
+    cron_expression: "0 9 * * *",
+    timezone: "America/Chicago",
+    enabled: true,
+    last_fired_at: null,
+    next_fire_at: null,
+  };
+
+  function patch(p: Partial<Schedule>) {
+    onChange({ ...current, ...p });
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: 12,
+        border: "1px solid #e6e9ee",
+        borderRadius: 6,
+        background: "#f7f9fc",
+      }}
+    >
+      <div className={styles.fieldLabel}>Schedule</div>
+      <label className={styles.field} style={{ marginTop: 6 }}>
+        <span className={styles.fieldLabel}>Preset</span>
+        <select
+          className={styles.select}
+          value={CRON_PRESETS.find((p) => p.expr === current.cron_expression)?.expr ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v) patch({ cron_expression: v });
+          }}
+        >
+          <option value="">— pick one (or write a cron expression) —</option>
+          {CRON_PRESETS.map((p) => (
+            <option key={p.expr} value={p.expr}>
+              {p.label} ({p.expr})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Cron expression (5 fields: min hour dom month dow)</span>
+        <input
+          className={styles.input}
+          value={current.cron_expression}
+          onChange={(e) => patch({ cron_expression: e.target.value })}
+          placeholder="0 9 * * *"
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Timezone</span>
+        <input
+          className={styles.input}
+          value={current.timezone}
+          onChange={(e) => patch({ timezone: e.target.value })}
+          placeholder="America/Chicago"
+        />
+      </label>
+      {current.next_fire_at ? (
+        <div className={styles.muted}>
+          Next fire: {new Date(current.next_fire_at).toLocaleString()}
+          {current.last_fired_at ? (
+            <> · last fired {new Date(current.last_fired_at).toLocaleString()}</>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
