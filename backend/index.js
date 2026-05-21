@@ -16,6 +16,7 @@ import {
   ensureUsersSchema,
   ensureAskAiSchema,
   ensureAiFailoverLogSchema,
+  ensureAiTemplatesSchema,
   ensureVideoFoldersTable,
   ensureVideosSchema,
   ensureWalkthruSchema,
@@ -237,6 +238,14 @@ import {
   putInboxSignatureDefault,
 } from "./routes/emailSignatures.js";
 import { getAskHistory, postAsk } from "./routes/ask.js";
+import {
+  deleteTemplate as deleteAiTemplate,
+  getTemplates as getAiTemplates,
+  getTools as getAiTools,
+  postGenerate as postAiGenerate,
+  postTemplate as postAiTemplate,
+  putTemplate as putAiTemplate,
+} from "./routes/aiAssistant.js";
 import {
   deleteL10Issue,
   deleteL10Todo,
@@ -1250,6 +1259,14 @@ app.delete("/eos/l10/issues/:id", requireAuth, deleteL10Issue);
 
 app.post("/ask", requireAuth, postAsk);
 app.get("/ask/history", requireAuth, getAskHistory);
+
+/** AI Assistant — tool config, streaming generate, templates CRUD. */
+app.get("/ai-assistant/tools", requireAuth, getAiTools);
+app.post("/ai-assistant/generate", requireAuth, postAiGenerate);
+app.get("/ai-assistant/templates", requireAuth, getAiTemplates);
+app.post("/ai-assistant/templates", requireAuth, postAiTemplate);
+app.put("/ai-assistant/templates/:id", requireAuth, putAiTemplate);
+app.delete("/ai-assistant/templates/:id", requireAuth, deleteAiTemplate);
 
 app.post("/inbox/microsoft/authorize-url", requireAuth, postMicrosoftAuthorizeUrl);
 app.get("/inbox/connections", requireAuth, getInboxConnections);
@@ -2385,6 +2402,7 @@ async function start() {
       ["individual scorecards", ensureIndividualScorecardSchema],
       ["ask_ai_history", ensureAskAiSchema],
       ["ai_failover_log", ensureAiFailoverLogSchema],
+      ["ai_templates", ensureAiTemplatesSchema],
       ["inbox / tickets", ensureInboxSchema],
       // Video library: folder table must exist before videos.folder_id migration.
       ["video_folders", ensureVideoFoldersTable],

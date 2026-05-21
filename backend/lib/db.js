@@ -348,6 +348,26 @@ export async function ensureAskAiSchema() {
   `);
 }
 
+export async function ensureAiTemplatesSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS ai_templates (
+      id SERIAL PRIMARY KEY,
+      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(160) NOT NULL,
+      icon VARCHAR(64),
+      description TEXT,
+      system_prompt TEXT NOT NULL,
+      inputs JSONB NOT NULL DEFAULT '[]'::jsonb,
+      is_shared BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ai_templates_owner_idx ON ai_templates (owner_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS ai_templates_shared_idx ON ai_templates (is_shared, created_at DESC);
+  `);
+}
+
 export async function ensureAiFailoverLogSchema() {
   const p = getPool();
   await p.query(`
