@@ -1,7 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { askAI, isAiConfigured } from "./ai-provider.js";
 import { getPool } from "./db.js";
 
-const MODEL = "claude-sonnet-4-20250514";
 const RATE_LIMIT_PER_HOUR = 30;
 const MAX_ROWS_FOR_INTERPRET = 50;
 
@@ -150,15 +149,6 @@ function extractSqlFromAssistantText(text) {
   return s;
 }
 
-function textFromMessage(msg) {
-  if (!msg?.content) return "";
-  const parts = [];
-  for (const block of msg.content) {
-    if (block.type === "text") parts.push(block.text);
-  }
-  return parts.join("\n").trim();
-}
-
 /** Reject anything that isn't a single read-only statement. */
 export function isSafeReadOnlySql(sqlRaw) {
   const sql = sqlRaw.trim().replace(/;+\s*$/g, "").trim();
@@ -182,14 +172,12 @@ function ensureLimit50(sqlRaw) {
   return `${sql} LIMIT 50`;
 }
 
-function getAnthropic() {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!key) {
-    const err = new Error("ANTHROPIC_API_KEY is not set.");
+function ensureAiConfigured() {
+  if (!isAiConfigured()) {
+    const err = new Error("AI provider is not configured.");
     err.code = "AI_NOT_CONFIGURED";
     throw err;
   }
-  return new Anthropic({ apiKey: key });
 }
 
 export async function checkAskAiRateLimit(userId) {
@@ -202,23 +190,23 @@ export async function checkAskAiRateLimit(userId) {
   return rows[0].c < RATE_LIMIT_PER_HOUR;
 }
 
-async function generateSql(anthropic, question, fixHint) {
+async function generateSql(question, fixHint) {
   const userContent = fixHint
     ? `The previous SQL failed or was invalid.\nError or instruction:\n${fixHint}\n\nOriginal question:\n${question}\n\nReturn ONLY the corrected SQL query, nothing else.`
     : question;
 
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 8192,
-    system: SQL_SYSTEM_PROMPT,
+  const { text } = await askAI({
+    feature: "ask-ai-sql",
+    systemPrompt: SQL_SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent }],
+    maxTokens: 8192,
   });
-  return extractSqlFromAssistantText(textFromMessage(msg));
+  return extractSqlFromAssistantText(text);
 }
 
-async function interpretAnswer(anthropic, question, rows) {
+async function interpretAnswer(question, rows) {
   const payload = rows.slice(0, MAX_ROWS_FOR_INTERPRET);
-  const userMsg = `You are an AI assistant for RPM Prestige, a property management company. 
+  const userMsg = `You are an AI assistant for RPM Prestige, a property management company.
 The user asked: ${JSON.stringify(question)}
 
 Here are the query results:
@@ -226,12 +214,12 @@ ${JSON.stringify(payload, null, 2)}
 
 Provide a clear, helpful answer based on this data. Format numbers nicely (currency with $, percentages with %). If the results are empty, say you couldn't find matching data and suggest what they might try instead. Keep your answer concise but complete. If there are multiple results, summarize and highlight key items.`;
 
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
+  const { text } = await askAI({
+    feature: "ask-ai-interpret",
     messages: [{ role: "user", content: userMsg }],
+    maxTokens: 4096,
   });
-  return textFromMessage(msg);
+  return text;
 }
 
 /**
@@ -253,14 +241,14 @@ export async function runAskAi(userId, question) {
     throw err;
   }
 
-  const anthropic = getAnthropic();
+  ensureAiConfigured();
   const pool = getPool();
 
   let sql = "";
   let lastErr = "";
   for (let attempt = 0; attempt < 3; attempt++) {
     const hint = attempt === 0 ? null : lastErr;
-    sql = await generateSql(anthropic, q, hint);
+    sql = await generateSql(q, hint);
     if (!sql) {
       lastErr = "Empty SQL returned. Return a single SELECT (or WITH … SELECT) query only.";
       continue;
@@ -276,7 +264,7 @@ export async function runAskAi(userId, question) {
       const rowCount = data.length;
       let answer;
       try {
-        answer = await interpretAnswer(anthropic, q, data);
+        answer = await interpretAnswer(q, data);
       } catch (interpErr) {
         console.error("[ask-ai] interpretAnswer", interpErr);
         answer = `Here are ${rowCount} row(s) from your data. (The assistant could not format a full narrative — raw keys: ${Object.keys(data[0] || {}).slice(0, 8).join(", ") || "none"}.)`;
