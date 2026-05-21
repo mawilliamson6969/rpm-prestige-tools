@@ -1,8 +1,9 @@
 import { getAskHistoryForUser, runAskAi } from "../lib/ask-ai.js";
+import { isAiConfigured } from "../lib/ai-provider.js";
 
 export async function postAsk(req, res) {
   const question = req.body?.question;
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+  if (!isAiConfigured()) {
     res.status(503).json({
       error: "AI assistant is not configured. Contact your administrator.",
       code: "AI_NOT_CONFIGURED",

@@ -348,6 +348,26 @@ export async function ensureAskAiSchema() {
   `);
 }
 
+export async function ensureAiFailoverLogSchema() {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS ai_failover_log (
+      id SERIAL PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      feature VARCHAR(128),
+      primary_provider VARCHAR(32) NOT NULL,
+      primary_model VARCHAR(128) NOT NULL,
+      fallback_provider VARCHAR(32),
+      fallback_model VARCHAR(128),
+      reason VARCHAR(64) NOT NULL,
+      status_code INTEGER,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS ai_failover_log_created_idx ON ai_failover_log (created_at DESC);
+    CREATE INDEX IF NOT EXISTS ai_failover_log_feature_idx ON ai_failover_log (feature, created_at DESC);
+  `);
+}
+
 export async function ensureInboxSchema() {
   const p = getPool();
   await p.query(`

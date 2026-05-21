@@ -15,6 +15,7 @@ import {
   ensureOwnerTerminationSchema,
   ensureUsersSchema,
   ensureAskAiSchema,
+  ensureAiFailoverLogSchema,
   ensureVideoFoldersTable,
   ensureVideosSchema,
   ensureWalkthruSchema,
@@ -2383,6 +2384,7 @@ async function start() {
       ["portfolio_snapshots", ensurePortfolioSnapshotsSchema],
       ["individual scorecards", ensureIndividualScorecardSchema],
       ["ask_ai_history", ensureAskAiSchema],
+      ["ai_failover_log", ensureAiFailoverLogSchema],
       ["inbox / tickets", ensureInboxSchema],
       // Video library: folder table must exist before videos.folder_id migration.
       ["video_folders", ensureVideoFoldersTable],
