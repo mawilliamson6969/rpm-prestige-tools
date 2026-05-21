@@ -1,12 +1,12 @@
 import { askAI, isAiConfigured } from "../lib/ai-provider.js";
 import {
   AI_TOOLS,
-  BRAND_VOICE,
   getBuiltInTool,
   resolveToolProvider,
   toolPublicView,
   formatUserMessage,
 } from "../lib/ai-tools.js";
+import { buildSystemPrompt } from "../lib/build-system-prompt.js";
 import { getPool } from "../lib/db.js";
 
 /* ---------- helpers --------------------------------------------------- */
@@ -71,7 +71,6 @@ async function resolveToolOrTemplate(idOrKey, userId, userRole) {
 export async function getTools(req, res) {
   res.json({
     tools: AI_TOOLS.map(toolPublicView),
-    brandVoiceConfigured: Boolean(BRAND_VOICE),
     aiConfigured: isAiConfigured(),
   });
 }
@@ -109,7 +108,7 @@ export async function postGenerate(req, res) {
     }
   }
 
-  const systemPrompt = `${BRAND_VOICE}\n\n${tool.systemPrompt}`.trim();
+  const systemPrompt = await buildSystemPrompt(tool);
   const userMessage = formatUserMessage(tool, inputs || {});
   if (!userMessage) return badRequest(res, "At least one input value is required.");
 
