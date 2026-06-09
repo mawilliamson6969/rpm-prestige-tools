@@ -4,25 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import styles from "./operations.module.css";
-import { useAuth } from "../../../context/AuthContext";
 
 export default function OperationsTopBar({ actions }: { actions?: ReactNode }) {
   const pathname = usePathname() || "/";
-  const { isAdmin } = useAuth();
+  // Three Phase-7 cleanups (Renewals (Beta), Manage Boards, Templates) are
+  // intentionally absent:
+  //   * Renewals (Beta) → users land here via Processes → "Lease Renewal"
+  //     tile. The standalone tab was a pre-unification convenience.
+  //   * Manage Boards → /operations/boards/manage was never a real page;
+  //     the boards/[slug] catch-all would try to resolve "manage" as a
+  //     template slug and 404.
+  //   * Templates → the pre-Phase-7 standalone editor. The canonical
+  //     editor is now the "Stages" tab inside the per-template board
+  //     view (see operations/boards/[slug]/page.tsx header comment).
   const links = [
     { href: "/operations/tasks", label: "Tasks" },
     { href: "/operations/my-tasks", label: "My Tasks" },
     { href: "/operations/projects", label: "Projects" },
     { href: "/operations/processes", label: "Processes" },
-    { href: "/operations/boards/renewals", label: "Renewals (Beta)" },
     { href: "/operations/analytics", label: "Analytics" },
     { href: "/operations/insights", label: "AI Insights" },
-    ...(isAdmin
-      ? [
-          { href: "/operations/boards/manage", label: "Manage Boards" },
-          { href: "/operations/templates", label: "Templates" },
-        ]
-      : []),
   ];
   return (
     <div className={styles.topBar}>
