@@ -68,6 +68,23 @@ CREATE TABLE IF NOT EXISTS mb_item_updates (
   CHECK (update_type IN ('comment','status_change','system','appfolio_sync'))
 );
 
+-- Backfill missing columns on databases that already had a pre-Phase-7
+-- mb_item_updates from migrations 029 / 032. CREATE TABLE IF NOT EXISTS
+-- above is a no-op when the relation exists, so any column added in
+-- this rewrite (process_id, body_html, parent_update_id, edited_at,
+-- deleted_at) was never created on those rows. Without these ALTERs
+-- the next CREATE INDEX on process_id raises "column process_id does
+-- not exist" and aborts the whole applier — which is exactly what
+-- happened to production: every downstream column add in
+-- 035_unification.sql was skipped, leaving processes.js INSERTs
+-- referencing instruction_objective failing with the same error.
+ALTER TABLE mb_item_updates
+  ADD COLUMN IF NOT EXISTS process_id       INTEGER REFERENCES processes(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS body_html        TEXT,
+  ADD COLUMN IF NOT EXISTS parent_update_id INTEGER REFERENCES mb_item_updates(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS edited_at        TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS deleted_at       TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_mb_item_updates_process
   ON mb_item_updates (process_id, created_at DESC)
   WHERE process_id IS NOT NULL;
