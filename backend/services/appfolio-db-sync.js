@@ -24,8 +24,8 @@
 
 import appfolioDbApi from "./appfolio-db-api.js";
 
-// Resource registry. Endpoint paths match the Database API v0 routes the
-// existing lib/appfolio-db/resources/ wrappers use.
+// Resource registry. Endpoint paths follow the Database API v0 convention
+// of one top-level route per entity.
 const RESOURCES = {
   properties: { path: "/properties", table: "af_properties" },
   units: { path: "/units", table: "af_units" },
@@ -48,8 +48,7 @@ const DELTA_OVERLAP_MS = 5 * 60_000;
 
 // Lazy pool import: lib/db.js pulls in pg + bcryptjs, which aren't
 // available in every context this module loads in (offline harnesses
-// inject their own pool). Same pattern as lib/appfolio-db/client.js's
-// audit logger.
+// inject their own pool).
 let _getPool = null;
 async function resolvePool(injected) {
   if (injected) return injected;

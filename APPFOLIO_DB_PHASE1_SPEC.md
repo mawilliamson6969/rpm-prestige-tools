@@ -3,6 +3,14 @@
 **Status:** Implemented and verified live on the VPS (2026-06-09).
 **Implementation:** `backend/services/appfolio-db-api.js`, proof-of-life `backend/scripts/test-appfolio-db-api.js`.
 
+> Revision 2026-06-09 (Phase 1.1): the legacy `backend/lib/appfolio-db/`
+> class-based client (May substrate) is retired — this service is the only
+> Database API client. Sections 1 and 3 amended: `APPFOLIO_DB_BASE_URL`
+> (optional override, validated https + *.appfolio.com; sandbox
+> `https://practicerpmtx033.appfolio.com/api/v0`) and `APPFOLIO_DB_DRY_RUN`
+> (write gate — GETs normal, POST/PATCH/DELETE logged and skipped, returns
+> `{ dryRun: true }`; default false) now apply to this client.
+>
 > Revision 2026-06-09: section 4 originally specified a token-bucket limiter
 > (start at 7 tokens, refill 7/sec). Implementation review showed that shape
 > allows ~13 requests inside the first rolling second (initial burst plus
@@ -42,8 +50,16 @@ secret. Fail loudly with a clear error naming the missing var(s).
 module load, so importing the service before credentials are provisioned
 cannot crash app boot. The base64 encoding is computed once and cached.)
 
-Optional: `APPFOLIO_DB_DEBUG=true` emits one debug line per request
-(method, path, status, latency — never bodies, never secrets).
+Optional (Phase 1.1):
+
+- `APPFOLIO_DB_BASE_URL` — override the production base URL (see section 3).
+- `APPFOLIO_DB_DRY_RUN=true` — write gate: GETs run normally;
+  POST/PATCH/DELETE are not sent. The skipped write is logged (method,
+  path, payload summary — key names and size, never values) and a
+  structured `{ dryRun: true, method, path }` is returned. Default false.
+  Recommended wherever write features are under test.
+- `APPFOLIO_DB_DEBUG=true` — emits one debug line per request
+  (method, path, status, latency — never bodies, never secrets).
 
 ### 2. Authentication
 
@@ -54,9 +70,14 @@ HTTP Basic Auth plus a custom header on every request:
 - `X-AppFolio-Developer-ID: <developer-id>`
 - `Content-Type: application/json`
 
-### 3. Base URL
+### 3. Base URL (revised — Phase 1.1)
 
-`https://api.appfolio.com/api/v0` — hardcoded in this service file only.
+Read from `APPFOLIO_DB_BASE_URL`; defaults to production
+`https://api.appfolio.com/api/v0` when unset. Validated on first use: must
+be https on a `*.appfolio.com` host, else an `APPFOLIO_DB_CONFIG` error is
+thrown (a typo'd or hostile override must never receive Basic credentials).
+Sandbox: `https://practicerpmtx033.appfolio.com/api/v0`. No Database API
+base URL may appear anywhere else in the codebase.
 
 ### 4. Rate limiter (revised — sliding window)
 

@@ -34,6 +34,12 @@ function firstIdentifyingField(property) {
 }
 
 async function main() {
+  // Resolving settings validates APPFOLIO_DB_BASE_URL (https, *.appfolio.com)
+  // before any request is made.
+  const settings = appfolioDbApi.getSettings();
+  console.log(`Base URL: ${settings.baseUrl}`);
+  console.log(`Dry run:  ${settings.dryRun ? "ON (writes will be skipped)" : "off"}`);
+
   const response = await appfolioDbApi.get("/properties", {
     filters: { LastUpdatedAtFrom: "1970-01-01T00:00:00Z" },
     page: { size: 10 },
