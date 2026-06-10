@@ -51,7 +51,24 @@ const ALLOWED_TRIGGERS = new Set([
   // Phase 2 §2: time-based trigger. The accompanying automation_schedules
   // row holds the cron expression + timezone.
   "schedule.triggered",
+  // Generic event-bus trigger: trigger_config.event_type_pattern matches
+  // the event type exactly, or as a prefix when it ends in ".*"
+  // (e.g. "appfolio.sync.*"). Matching lives in worker/matching.js.
+  "custom.event",
 ]);
+
+/**
+ * trigger_config validation for 'custom.event'. Returns an error string
+ * or null. No regex — exact-or-prefix only, so the only rule is a
+ * non-empty pattern.
+ */
+function customEventConfigError(triggerConfig) {
+  const pattern = String(triggerConfig?.event_type_pattern ?? "").trim();
+  if (!pattern) {
+    return "Custom event trigger requires a non-empty trigger_config.event_type_pattern (exact event type, or a prefix ending in '.*' like 'appfolio.sync.*').";
+  }
+  return null;
+}
 
 // Phase 2 §2: 'delay' step parks the run via the resume-event pattern.
 const ALLOWED_STEP_TYPES = new Set([
@@ -349,6 +366,10 @@ export async function createAutomation(req, res) {
     if (!ALLOWED_TRIGGERS.has(triggerType) && !triggerType.startsWith("custom.")) {
       return badRequest(res, `Unsupported trigger_type: ${triggerType}`);
     }
+    if (triggerType === "custom.event") {
+      const cfgError = customEventConfigError(body.trigger_config);
+      if (cfgError) return badRequest(res, cfgError);
+    }
     const steps = normalizeSteps(body);
 
     await client.query("BEGIN");
@@ -420,10 +441,26 @@ export async function updateAutomation(req, res) {
       if (!ALLOWED_TRIGGERS.has(tt) && !tt.startsWith("custom.")) {
         return badRequest(res, `Unsupported trigger_type: ${tt}`);
       }
+      // Switching to (or saving as) custom.event requires a valid pattern
+      // in the same request — the editor always sends both together.
+      if (tt === "custom.event") {
+        const cfgError = customEventConfigError(body.trigger_config);
+        if (cfgError) return badRequest(res, cfgError);
+      }
       sets.push(`trigger_type = $${n++}`);
       vals.push(tt);
     }
     if (body.trigger_config !== undefined) {
+      // Editing a custom automation's config to a blank pattern must
+      // fail even when trigger_type isn't in the request body.
+      if (
+        body.trigger_type === undefined &&
+        body.trigger_config &&
+        "event_type_pattern" in body.trigger_config
+      ) {
+        const cfgError = customEventConfigError(body.trigger_config);
+        if (cfgError) return badRequest(res, cfgError);
+      }
       sets.push(`trigger_config = $${n++}::jsonb`);
       vals.push(JSON.stringify(body.trigger_config || {}));
     }
