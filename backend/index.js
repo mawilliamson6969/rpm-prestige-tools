@@ -45,6 +45,7 @@ import {
 } from "./routes/contacts.js";
 import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
 import { ensureAfMirrorSchema } from "./lib/af-mirror-schema.js";
+import { ensureAppfolioSyncScheduled } from "./services/appfolio-db-scheduler.js";
 // Phase 7 (Unification): the System B route files for boards / items /
 // subitems / customization / dashboards / Phase 1 subitem templates
 // are dormant — the tables they read are gone. The Phase 4 updates
@@ -2502,6 +2503,11 @@ async function start() {
       runFullSync("cron", { includeDaily: false }).catch((e) => console.error("[sync cron]", e.message || e));
     });
     console.log("Scheduled AppFolio cache sync: 0 */4 * * * (every 4 hours).");
+
+    // AppFolio Database API mirror (appfolio.* tables): hourly delta +
+    // nightly full pass with missing-sweep. Self-disables (with a log
+    // line) when APPFOLIO_SYNC_ENABLED=false or DB-API creds are absent.
+    ensureAppfolioSyncScheduled();
 
     cron.schedule("0 2 * * *", () => {
       runFullSync("daily", { includeDaily: true }).catch((e) => console.error("[sync daily]", e.message || e));
