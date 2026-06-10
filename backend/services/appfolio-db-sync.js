@@ -46,6 +46,18 @@ const MAX_PAGES = 10_000;
 // in flight are never missed. Upserts make the overlap harmless.
 const DELTA_OVERLAP_MS = 5 * 60_000;
 
+// PII that must never reach the mirror. Deleted from every record, for
+// every resource, before upsert. The values are never logged anywhere —
+// not even in debug mode — so do not add logging around the scrub.
+// One-time cleanup of rows mirrored before this existed:
+// migrations/044_appfolio_curated_columns.sql.
+const SCRUB_KEYS = ["SocialSecurityNumber", "BirthDate"];
+
+function scrubRecord(record) {
+  for (const key of SCRUB_KEYS) delete record[key];
+  return record;
+}
+
 // Lazy pool import: lib/db.js pulls in pg + bcryptjs, which aren't
 // available in every context this module loads in (offline harnesses
 // inject their own pool).
@@ -103,7 +115,7 @@ async function upsertPage(pool, table, records) {
       skipped += 1;
       continue;
     }
-    byId.set(id, record);
+    byId.set(id, scrubRecord(record));
   }
   if (byId.size === 0) return { upserted: 0, skipped };
 
@@ -156,13 +168,15 @@ async function writeSyncState(pool, resource, { highWaterMark, status, error, ro
 // /properties, /units, and /tenants all drew 400 Bad Request with that
 // SAME shape — while the Phase 1 smoke test's GET /properties
 // (page[size]=10 + LastUpdatedAtFrom epoch filter) works against the same
-// server and credentials. The 400 bodies weren't captured that night
-// (fixed — errors now carry them), so the exact rejected parameter is
-// unknown: per-endpoint page-size caps and required-filter rules are both
-// consistent with the evidence.
+// server and credentials. Live rerun (2026-06-09, post-observability-fix)
+// confirmed the cause: the v0 LIST endpoints for properties/units/tenants
+// REQUIRE at least one filter; /leases does not. The ladder stays as the
+// general mechanism (it also covers page-size caps if AppFolio ever adds
+// them) — endpoints that need a filter converge on the epoch-filter
+// variants in 3 extra requests.
 //
-// Rather than guess once, the walk tries shapes from fastest to most
-// conservative and locks in the first one the endpoint accepts. A
+// The walk tries shapes from fastest to most conservative and locks in
+// the first one the endpoint accepts. A
 // rejected variant costs exactly one request (the 400 arrives on its
 // first page), and upserts are idempotent, so restarting the walk under a
 // new shape is harmless. The last variant is the exact smoke-test-proven

@@ -1,12 +1,16 @@
 /**
- * AppFolio Database API mirror schema applier (Phase 2).
+ * AppFolio Database API mirror schema applier (Phase 2 + 2.1).
  *
- * The DDL lives in backend/migrations/043_appfolio_mirror_tables.sql and
- * creates the dedicated `appfolio` schema (mirror tables live there, per
- * the platform decision on integration tables). We read it at boot and
- * run it against the pool — same pattern as agentHubSchema.js. The
- * migration is idempotent (CREATE SCHEMA/TABLE IF NOT EXISTS throughout)
- * so it's safe to re-run on every restart.
+ * The DDL lives in numbered migrations applied in order:
+ *   043_appfolio_mirror_tables.sql   — schema + mirror tables + sync_state
+ *   044_appfolio_curated_columns.sql — PII scrub of pre-existing rows,
+ *                                      generated columns, indexes,
+ *                                      appfolio.current_tenancies view
+ *
+ * We read them at boot and run them against the pool — same pattern as
+ * agentHubSchema.js. Both migrations are idempotent (CREATE ... IF NOT
+ * EXISTS / CREATE OR REPLACE / guarded UPDATE throughout) so re-running
+ * on every restart is safe.
  */
 
 import fs from "node:fs";
@@ -15,17 +19,24 @@ import { fileURLToPath } from "node:url";
 import { getPool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION_PATH = path.join(__dirname, "..", "migrations", "043_appfolio_mirror_tables.sql");
+const MIGRATION_FILES = [
+  "043_appfolio_mirror_tables.sql",
+  "044_appfolio_curated_columns.sql",
+];
 
 let cachedSql = null;
 
-function loadMigration() {
+function loadMigrations() {
   if (cachedSql) return cachedSql;
-  cachedSql = fs.readFileSync(MIGRATION_PATH, "utf8");
+  cachedSql = MIGRATION_FILES.map((f) =>
+    fs.readFileSync(path.join(__dirname, "..", "migrations", f), "utf8")
+  );
   return cachedSql;
 }
 
 export async function ensureAfMirrorSchema() {
   const pool = getPool();
-  await pool.query(loadMigration());
+  for (const sql of loadMigrations()) {
+    await pool.query(sql);
+  }
 }
