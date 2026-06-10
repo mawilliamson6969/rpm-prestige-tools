@@ -2457,10 +2457,10 @@ async function start() {
       ["automations / events", ensureAutomationsSchema],
       // Contacts hub (PR 1): stable identity layer over the AppFolio cache.
       ["contacts + contact_identities", ensureContactsSchema],
-      // AppFolio Database API mirror tables (af_properties, af_units,
-      // af_tenants, af_leases, af_sync_state). Backfill is manual:
-      // scripts/backfill-appfolio-db.js.
-      ["af_* mirror tables", ensureAfMirrorSchema],
+      // AppFolio Database API mirror tables in the dedicated `appfolio`
+      // schema (properties, units, tenants, leases, sync_state).
+      // Backfill is manual: scripts/backfill-appfolio-db.js.
+      ["appfolio.* mirror tables", ensureAfMirrorSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

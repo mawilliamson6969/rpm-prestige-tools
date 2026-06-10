@@ -1,5 +1,11 @@
--- 037_af_mirror_tables.sql
+-- 043_appfolio_mirror_tables.sql
 -- AppFolio Database API, Phase 2: local mirror tables + sync bookkeeping.
+--
+-- Tables live in the dedicated `appfolio` schema per the platform decision
+-- that integration tables get their own schema rather than prefixed names
+-- in public. (This migration supersedes the never-deployed
+-- 037_af_mirror_tables.sql, which both collided with 037_automations.sql
+-- and created public af_* tables.)
 --
 -- Design: JSONB-first. We do not yet know the Database API's exact field
 -- inventory (no live credentials at build time), and AppFolio may add
@@ -19,48 +25,50 @@
 -- Idempotent: safe to re-run on every boot (applied by
 -- lib/af-mirror-schema.js, same pattern as agentHubSchema).
 
-CREATE TABLE IF NOT EXISTS af_properties (
-  id TEXT PRIMARY KEY,
-  data JSONB NOT NULL,
-  last_updated_at TIMESTAMPTZ,
-  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS af_properties_last_updated_idx ON af_properties (last_updated_at);
-CREATE INDEX IF NOT EXISTS af_properties_data_gin ON af_properties USING GIN (data jsonb_path_ops);
+CREATE SCHEMA IF NOT EXISTS appfolio;
 
-CREATE TABLE IF NOT EXISTS af_units (
+CREATE TABLE IF NOT EXISTS appfolio.properties (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL,
   last_updated_at TIMESTAMPTZ,
   synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS af_units_last_updated_idx ON af_units (last_updated_at);
-CREATE INDEX IF NOT EXISTS af_units_data_gin ON af_units USING GIN (data jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS properties_last_updated_idx ON appfolio.properties (last_updated_at);
+CREATE INDEX IF NOT EXISTS properties_data_gin ON appfolio.properties USING GIN (data jsonb_path_ops);
 
-CREATE TABLE IF NOT EXISTS af_tenants (
+CREATE TABLE IF NOT EXISTS appfolio.units (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL,
   last_updated_at TIMESTAMPTZ,
   synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS af_tenants_last_updated_idx ON af_tenants (last_updated_at);
-CREATE INDEX IF NOT EXISTS af_tenants_data_gin ON af_tenants USING GIN (data jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS units_last_updated_idx ON appfolio.units (last_updated_at);
+CREATE INDEX IF NOT EXISTS units_data_gin ON appfolio.units USING GIN (data jsonb_path_ops);
 
-CREATE TABLE IF NOT EXISTS af_leases (
+CREATE TABLE IF NOT EXISTS appfolio.tenants (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL,
   last_updated_at TIMESTAMPTZ,
   synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS af_leases_last_updated_idx ON af_leases (last_updated_at);
-CREATE INDEX IF NOT EXISTS af_leases_data_gin ON af_leases USING GIN (data jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS tenants_last_updated_idx ON appfolio.tenants (last_updated_at);
+CREATE INDEX IF NOT EXISTS tenants_data_gin ON appfolio.tenants USING GIN (data jsonb_path_ops);
+
+CREATE TABLE IF NOT EXISTS appfolio.leases (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL,
+  last_updated_at TIMESTAMPTZ,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS leases_last_updated_idx ON appfolio.leases (last_updated_at);
+CREATE INDEX IF NOT EXISTS leases_data_gin ON appfolio.leases USING GIN (data jsonb_path_ops);
 
 -- One row per mirrored resource. `high_water_mark` is the max
 -- last_updated_at observed across all successful runs; delta syncs start
 -- from it (minus a small overlap) so nothing is missed between runs.
 -- NULL high-water mark = the API records carried no usable timestamp, in
 -- which case a "delta" run silently degrades to a full pass.
-CREATE TABLE IF NOT EXISTS af_sync_state (
+CREATE TABLE IF NOT EXISTS appfolio.sync_state (
   resource TEXT PRIMARY KEY,
   high_water_mark TIMESTAMPTZ,
   last_run_at TIMESTAMPTZ,

@@ -1,10 +1,12 @@
 /**
  * AppFolio Database API mirror schema applier (Phase 2).
  *
- * The DDL lives in backend/migrations/037_af_mirror_tables.sql. We read
- * it at boot and run it against the pool — same pattern as
- * agentHubSchema.js. The migration is idempotent (CREATE TABLE IF NOT
- * EXISTS throughout) so it's safe to re-run on every restart.
+ * The DDL lives in backend/migrations/043_appfolio_mirror_tables.sql and
+ * creates the dedicated `appfolio` schema (mirror tables live there, per
+ * the platform decision on integration tables). We read it at boot and
+ * run it against the pool — same pattern as agentHubSchema.js. The
+ * migration is idempotent (CREATE SCHEMA/TABLE IF NOT EXISTS throughout)
+ * so it's safe to re-run on every restart.
  */
 
 import fs from "node:fs";
@@ -13,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { getPool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION_PATH = path.join(__dirname, "..", "migrations", "037_af_mirror_tables.sql");
+const MIGRATION_PATH = path.join(__dirname, "..", "migrations", "043_appfolio_mirror_tables.sql");
 
 let cachedSql = null;
 

@@ -11,9 +11,9 @@
  *   DATABASE_URL
  *   APPFOLIO_DB_CLIENT_ID, APPFOLIO_DB_CLIENT_SECRET, APPFOLIO_DB_DEVELOPER_ID
  *
- * The af_* tables are created at app boot; this script also applies the
- * migration itself so it works against a fresh database without the API
- * server having started.
+ * The appfolio.* mirror tables are created at app boot; this script also
+ * applies the migration itself so it works against a fresh database
+ * without the API server having started.
  *
  * Exits 0 when every requested resource synced; 1 otherwise.
  */
