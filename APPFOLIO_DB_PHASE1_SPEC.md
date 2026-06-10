@@ -168,6 +168,75 @@ the count and the first property's identifying field; exits 0/1.
 Mirror tables, backfill jobs, webhook receiver/JWS, UI, feature endpoints,
 response caching, tests beyond the proof-of-life script.
 
+## Phase 2.1 — PII scrub, curated columns, current_tenancies
+
+Shipped in `migrations/044_appfolio_curated_columns.sql` (applied at boot
+by `lib/af-mirror-schema.js` after 043; append-only and idempotent) plus
+the sync-engine scrub.
+
+### PII scrub policy
+
+The mirror must never hold `SocialSecurityNumber` or `BirthDate`. The
+sync engine (`SCRUB_KEYS` in `backend/services/appfolio-db-sync.js`)
+deletes those keys from **every** record, for **all** resources, before
+upsert; migration 044 scrubbed rows mirrored before the policy existed.
+Scrubbed values are never logged anywhere, including debug mode. Adding a
+key to `SCRUB_KEYS` requires a matching one-time `UPDATE ... SET data =
+data - 'Key'` migration for existing rows.
+
+### Curated generated columns
+
+Each mirror table promotes a curated set of STORED generated columns from
+`data` (snake_case of AppFolio's PascalCase keys, defensive
+`NULLIF(...,'')` casts; date/timestamptz casts go through declared-
+immutable `appfolio.iso_date` / `appfolio.iso_timestamptz` helpers since
+generated columns demand immutable expressions):
+
+- **properties:** name, address1, address2, city, state, zip,
+  property_type, class, portfolio_id, management_start_date (date),
+  management_end_date (date), management_end_reason, hidden_at (tstz)
+- **units:** property_id, current_occupancy_id, name, address1, city,
+  state, zip, bedrooms / bathrooms / square_feet / market_rent (numeric),
+  status, rent_status, rent_ready (bool), available_on (date),
+  non_revenue (bool), hidden_at (tstz)
+- **tenants:** occupancy_id, property_id, unit_id, first_name, last_name,
+  email, phone_number, status, tenant_type, primary_tenant (bool),
+  move_in_on / move_out_on / lease_start_date / lease_end_date (date),
+  current_rent (numeric), is_monthly_lease (bool), hidden_at (tstz)
+- **leases:** occupancy_id, start_on / end_on / signed_on / renewed_on
+  (date), is_mtm (bool), status
+
+Every `*_id` join key is indexed, plus tenants.status, leases.end_on, and
+partial active-row indexes on properties/units (`hidden_at IS NULL`).
+
+### View contract: `appfolio.current_tenancies`
+
+One row per **active unit** (unit `hidden_at IS NULL`) on an **actively
+managed property** (`management_end_date IS NULL AND hidden_at IS NULL`).
+LEFT JOINs (vacant units stay visible with NULL tenant/lease columns):
+
+- the **primary current tenant**: `occupancy_id = units.
+  current_occupancy_id`, `status IN ('Current','Notice','Evict')`,
+  `primary_tenant`
+- the **lease covering today** for that occupancy: `start_on <=
+  CURRENT_DATE AND (is_mtm OR end_on >= CURRENT_DATE)`, latest `start_on`
+  wins (lateral, LIMIT 1)
+
+Exposes property/unit ids + names, unit address1/city/state/zip, tenant
+id/name/email/phone/status, current_rent, lease id/start_on/end_on/is_mtm.
+
+### Data-model facts (learned from live data, 2026-06-09)
+
+- Lease `Status` is the **e-signature workflow state**, not lease
+  currency. The current lease is the one **covering today** for an
+  occupancy — never select "the" lease by status.
+- Tenants are **per person**; an occupancy can have several, with
+  `PrimaryTenant` marking the primary. Observed tenant statuses:
+  `Current`, `Past`, `Notice`, `Evict`, `Future`.
+- v0 **list endpoints for properties/units/tenants require at least one
+  filter** (the cause of the first backfill's 400s); `/leases` lists
+  unfiltered. The sync engine's request-shape ladder handles this.
+
 ## Phase roadmap
 
 1. **Client + proof-of-life** — this document. ✅ shipped & verified
@@ -176,5 +245,7 @@ response caching, tests beyond the proof-of-life script.
    (`appfolio.properties` etc.) per the platform decision on integration
    tables — `migrations/043_appfolio_mirror_tables.sql`,
    `backend/services/appfolio-db-sync.js`,
-   `backend/scripts/backfill-appfolio-db.js`
+   `backend/scripts/backfill-appfolio-db.js`. ✅ shipped & backfilled
+   2.1. **PII scrub + curated columns + current_tenancies view** —
+   `migrations/044_appfolio_curated_columns.sql` (this section). ✅
 3. Webhooks / delta scheduling — not yet specified
