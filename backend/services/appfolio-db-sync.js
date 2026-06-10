@@ -3,15 +3,15 @@
  *
  * Pulls properties / units / tenants / leases through
  * services/appfolio-db-api.js (which owns auth, rate limiting, and retry)
- * and upserts each record into its af_* mirror table created by
- * migrations/037_af_mirror_tables.sql.
+ * and upserts each record into its mirror table in the dedicated
+ * `appfolio` schema, created by migrations/043_appfolio_mirror_tables.sql.
  *
  * Two modes:
  *   full  — no filters; walks every page of the resource. This is the
  *           initial backfill.
  *   delta — filters[LastUpdatedAtFrom] = high_water_mark - 5min overlap,
  *           where the high-water mark is the max LastUpdatedAt seen on a
- *           previous successful run (tracked in af_sync_state). If no
+ *           previous successful run (tracked in appfolio.sync_state). If no
  *           mark exists yet, delta degrades to a full pass.
  *
  * Mirror rows are JSONB-first: the whole API record lands in `data`, and
@@ -27,10 +27,10 @@ import appfolioDbApi from "./appfolio-db-api.js";
 // Resource registry. Endpoint paths follow the Database API v0 convention
 // of one top-level route per entity.
 const RESOURCES = {
-  properties: { path: "/properties", table: "af_properties" },
-  units: { path: "/units", table: "af_units" },
-  tenants: { path: "/tenants", table: "af_tenants" },
-  leases: { path: "/leases", table: "af_leases" },
+  properties: { path: "/properties", table: "appfolio.properties" },
+  units: { path: "/units", table: "appfolio.units" },
+  tenants: { path: "/tenants", table: "appfolio.tenants" },
+  leases: { path: "/leases", table: "appfolio.leases" },
 };
 
 const PAGE_SIZE = 500;
@@ -128,7 +128,7 @@ async function upsertPage(pool, table, records) {
 
 async function readSyncState(pool, resource) {
   const r = await pool.query(
-    `SELECT high_water_mark FROM af_sync_state WHERE resource = $1`,
+    `SELECT high_water_mark FROM appfolio.sync_state WHERE resource = $1`,
     [resource]
   );
   return r.rows?.[0] ?? null;
@@ -136,10 +136,10 @@ async function readSyncState(pool, resource) {
 
 async function writeSyncState(pool, resource, { highWaterMark, status, error, rowCount }) {
   await pool.query(
-    `INSERT INTO af_sync_state (resource, high_water_mark, last_run_at, last_status, last_error, last_row_count)
+    `INSERT INTO appfolio.sync_state (resource, high_water_mark, last_run_at, last_status, last_error, last_row_count)
      VALUES ($1, $2, NOW(), $3, $4, $5)
      ON CONFLICT (resource) DO UPDATE SET
-       high_water_mark = GREATEST(COALESCE(EXCLUDED.high_water_mark, af_sync_state.high_water_mark), af_sync_state.high_water_mark),
+       high_water_mark = GREATEST(COALESCE(EXCLUDED.high_water_mark, sync_state.high_water_mark), sync_state.high_water_mark),
        last_run_at = NOW(),
        last_status = EXCLUDED.last_status,
        last_error = EXCLUDED.last_error,

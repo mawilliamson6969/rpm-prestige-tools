@@ -165,7 +165,9 @@ response caching, tests beyond the proof-of-life script.
 
 1. **Client + proof-of-life** — this document. ✅ shipped & verified
 2. **Local mirror tables + initial backfill** for `properties`, `units`,
-   `tenants`, `leases` — `migrations/037_af_mirror_tables.sql`,
+   `tenants`, `leases` — mirrors live in the dedicated `appfolio` schema
+   (`appfolio.properties` etc.) per the platform decision on integration
+   tables — `migrations/043_appfolio_mirror_tables.sql`,
    `backend/services/appfolio-db-sync.js`,
    `backend/scripts/backfill-appfolio-db.js`
 3. Webhooks / delta scheduling — not yet specified
