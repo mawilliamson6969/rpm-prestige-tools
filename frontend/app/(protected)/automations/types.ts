@@ -146,6 +146,12 @@ export const TRIGGER_OPTIONS: Array<{ value: string; label: string; description:
     label: "Schedule: Cron / time-based",
     description: "Fires on a recurring schedule. Configure the cron expression and timezone below.",
   },
+  {
+    value: "custom.event",
+    label: "Internal: Custom event",
+    description:
+      "Fires on any event-bus type matching a pattern — exact, or a prefix when it ends in .*. Configure the pattern below.",
+  },
 ];
 
 export const STEP_TYPE_LABELS: Record<StepType, string> = {

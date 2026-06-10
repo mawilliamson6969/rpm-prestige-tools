@@ -76,6 +76,15 @@ export default function AutomationEditorClient({ automationId }: Props) {
 
   async function save() {
     if (!automation || saving) return;
+    // Custom-event triggers need their pattern before the backend will
+    // accept the save — fail fast with a friendlier message.
+    if (
+      automation.trigger_type === "custom.event" &&
+      !String(automation.trigger_config?.event_type_pattern ?? "").trim()
+    ) {
+      setErr("Custom event trigger needs an event type pattern (e.g. appfolio.sync.failed or appfolio.sync.*).");
+      return;
+    }
     setSaving(true);
     setErr(null);
     setNotice(null);
@@ -84,6 +93,7 @@ export default function AutomationEditorClient({ automationId }: Props) {
         name: automation.name,
         description: automation.description,
         trigger_type: automation.trigger_type,
+        trigger_config: automation.trigger_config ?? {},
         enabled: automation.enabled,
         max_runs_per_day: automation.max_runs_per_day,
         steps: automation.steps.map((s) => ({ step_type: s.step_type, config: s.config })),
@@ -248,6 +258,30 @@ export default function AutomationEditorClient({ automationId }: Props) {
               setAutomation((a) => (a ? { ...a, schedule: next } : a))
             }
           />
+        ) : null}
+
+        {automation.trigger_type === "custom.event" ? (
+          <label className={styles.field} style={{ marginTop: 12 }}>
+            <span className={styles.fieldLabel}>Event type pattern (required)</span>
+            <input
+              className={styles.input}
+              value={String(automation.trigger_config?.event_type_pattern ?? "")}
+              onChange={(e) =>
+                patch("trigger_config", {
+                  ...automation.trigger_config,
+                  event_type_pattern: e.target.value,
+                })
+              }
+              placeholder="appfolio.sync.failed"
+            />
+            <span className={styles.muted}>
+              Matches the event bus type exactly, or as a prefix when it ends in “.*”.
+              Examples: <code>appfolio.sync.failed</code> (one event type) ·{" "}
+              <code>appfolio.sync.*</code> (failed and recovered). The event’s payload is
+              available to steps as merge fields, e.g.{" "}
+              <code>{"{{event.payload.resource}}"}</code>.
+            </span>
+          </label>
         ) : null}
 
         <label className={styles.field} style={{ marginTop: 12 }}>

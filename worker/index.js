@@ -19,6 +19,7 @@
 
 import cronParser from "cron-parser";
 import { getPool } from "./db.js";
+import { customPatternMatches } from "./matching.js";
 import { renderDeep } from "./templating.js";
 import { isTransient, backoffMs } from "./errors.js";
 import { runFilter } from "./handlers/filter.js";
@@ -88,12 +89,20 @@ async function claimPendingEvents(batchSize) {
  */
 async function loadMatchingAutomations(eventType) {
   const pool = getPool();
-  const { rows: automations } = await pool.query(
+  // 'custom.event' automations match by pattern (exact, or prefix when
+  // the pattern ends in ".*") instead of by literal trigger_type, so
+  // they're fetched alongside every lookup and filtered in JS.
+  const { rows: candidates } = await pool.query(
     `SELECT id, name, trigger_type, trigger_config, max_runs_per_day
        FROM automations
-      WHERE enabled = true AND trigger_type = $1
+      WHERE enabled = true AND (trigger_type = $1 OR trigger_type = 'custom.event')
       ORDER BY id ASC`,
     [eventType]
+  );
+  const automations = candidates.filter((a) =>
+    a.trigger_type === "custom.event"
+      ? customPatternMatches(a.trigger_config?.event_type_pattern, eventType)
+      : true
   );
   if (!automations.length) return [];
   const ids = automations.map((a) => a.id);
