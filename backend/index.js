@@ -28,6 +28,16 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
+import { ensureContactsSchema } from "./lib/contactsSchema.js";
+import {
+  listContacts,
+  createContact,
+  getContact,
+  updateContact,
+  archiveContact,
+  mergeContacts,
+  resyncContacts,
+} from "./routes/contacts.js";
 import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
 // Phase 7 (Unification): the System B route files for boards / items /
 // subitems / customization / dashboards / Phase 1 subitem templates
@@ -2384,6 +2394,15 @@ app.get("/automations/:id/runs/:runId", requireAuth, getConnectAutomationRun);
 app.post("/automations/:id/runs/:runId/retry", requireAuth, retryConnectRunNow);
 app.post("/automations/:id/test", requireAuth, testConnectAutomation);
 
+/** Contacts hub (PR 1). Merge + resync are admin-gated; the rest is team-wide. */
+app.get("/contacts", requireAuth, listContacts);
+app.post("/contacts", requireAuth, createContact);
+app.post("/contacts/resync", requireAuth, requireAdminRole, resyncContacts);
+app.get("/contacts/:id", requireAuth, getContact);
+app.patch("/contacts/:id", requireAuth, updateContact);
+app.delete("/contacts/:id", requireAuth, archiveContact);
+app.post("/contacts/:id/merge", requireAuth, requireAdminRole, mergeContacts);
+
 async function start() {
   if (process.env.DATABASE_URL) {
     // Each schema applier is wrapped in its own try/catch so a single
@@ -2435,6 +2454,8 @@ async function start() {
       ["mb_* unification (Phase 7)", ensureMbUnifiedSchema],
       // Prestige Connect Phase 1: event bus + automations engine.
       ["automations / events", ensureAutomationsSchema],
+      // Contacts hub (PR 1): stable identity layer over the AppFolio cache.
+      ["contacts + contact_identities", ensureContactsSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

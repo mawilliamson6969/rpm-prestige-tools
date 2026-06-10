@@ -126,6 +126,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // Boards list (below in the Sidebar component) lists every
       // active template as a child link.
       { id: "ops-processes", label: "Processes",         icon: ClipboardList, href: "/operations/processes" },
+      // Contacts hub (PR 1) — stable people layer over the AppFolio cache.
+      { id: "contacts",      label: "Contacts",          icon: Users,         href: "/contacts" },
       { id: "ops-templates", label: "Templates (legacy)", icon: FileText,     href: "/operations/templates",       adminOnly: true },
       { id: "walkthru",      label: "Walk-Thru Reports", icon: ClipboardList, href: "/admin/walkthru",            adminOnly: true },
       // Prestige Connect — Zap-style automations engine (Phase 1).
