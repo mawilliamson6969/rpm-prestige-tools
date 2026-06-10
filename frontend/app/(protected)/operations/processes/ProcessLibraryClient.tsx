@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import CreateProcessModal from "../CreateProcessModal";
 import styles from "./process-library.module.css";
 
 type TemplateRow = {
@@ -97,6 +98,7 @@ export default function ProcessLibraryClient() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -157,11 +159,28 @@ export default function ProcessLibraryClient() {
           <button className={`${styles.btn} ${styles.btnLight}`} type="button">
             <Copy size={14} /> Clone from library
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button">
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="button"
+            onClick={() => setCreateOpen(true)}
+          >
             <Plus size={14} /> New Process
           </button>
         </div>
       </header>
+
+      <CreateProcessModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(template) => {
+          // Match cardOpen()'s routing: prefer the new template's slug,
+          // fall back to `template-${id}` for templates without a slug
+          // (the backend POST doesn't auto-generate one yet).
+          const slug = template.slug || `template-${template.id}`;
+          router.push(`/operations/boards/${slug}`);
+        }}
+      />
+
 
       <section className={styles.statsGrid}>
         <BigStat label="Live processes" value={summary?.liveTemplates ?? "—"} sub="active templates" />
