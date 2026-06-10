@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OperationsTopBar from "../../../../OperationsTopBar";
+import PeoplePanel from "./components/PeoplePanel";
 import UpdateComposer from "./components/UpdateComposer";
 import UpdateEntry from "./components/UpdateEntry";
 import type { MentionableUser } from "./components/MentionDropdown";
@@ -1127,9 +1128,12 @@ export default function ProcessDetailClient({
               </RailCard>
 
               <RailCard title="People">
+                {/* Contacts hub (PR 2): role-attached contacts + suggestions.
+                    The freeform launch contact stays below as legacy context. */}
+                <PeoplePanel processId={processId} />
                 {process.contactName && (
-                  <div className={styles.person}>
-                    <div className={styles.personRole}>CONTACT</div>
+                  <div className={styles.person} style={{ marginTop: "0.6rem" }}>
+                    <div className={styles.personRole}>CONTACT (FROM LAUNCH)</div>
                     <div className={styles.personName}>{process.contactName}</div>
                     {(process.contactEmail || process.contactPhone) && (
                       <div className={styles.personSub}>
@@ -1140,7 +1144,6 @@ export default function ProcessDetailClient({
                     )}
                   </div>
                 )}
-                {!process.contactName && <div className={styles.empty}>No contact on file.</div>}
               </RailCard>
 
               <RailCard title="Custom Fields">

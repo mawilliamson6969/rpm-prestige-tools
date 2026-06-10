@@ -7,6 +7,7 @@ import { evaluateConditions } from "../lib/condition-engine.js";
 import { calculateDueDateAtLaunch, recalcDependentDueDates } from "../lib/due-dates.js";
 import { bumpActivity, logActivity, recordStageEntry } from "../lib/process-activity.js";
 import { executeImmediateSendsForStage } from "../lib/process-messaging.js";
+import { autoAttachProcessContacts } from "../lib/process-contacts.js";
 
 /**
  * Map a custom_field_values row to its single rendered value, picking the right
@@ -459,6 +460,14 @@ export async function postProcess(req, res) {
     res.status(201).json({ process: mapProcess(finalRows[0]), steps: steps.map(mapStep) });
     setImmediate(async () => {
       try {
+        // Auto-attach tenant/owner contacts FIRST — the immediate sends
+        // below resolve recipients through process_contacts, so the
+        // attachments must exist before executeImmediateSendsForStage.
+        try {
+          await autoAttachProcessContacts(processRow.id);
+        } catch (attachErr) {
+          console.warn("[contacts] auto-attach failed:", attachErr.message);
+        }
         await logActivity(processRow.id, {
           actionType: "process_created",
           description: `Process started from template: ${template.name}`,

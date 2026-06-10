@@ -1,0 +1,246 @@
+/* People panel inside the process right rail. Matches contacts.module.css
+   badge/button patterns (UI design rules). */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.person {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.personMain {
+  min-width: 0;
+}
+
+.roleBadge {
+  display: inline-block;
+  font-size: 0.66rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(0, 152, 208, 0.12);
+  color: #0073a0;
+  margin-bottom: 0.2rem;
+}
+
+.roleOwner {
+  background: rgba(27, 40, 86, 0.1);
+  color: var(--navy, #1b2856);
+}
+
+.roleVendor {
+  background: rgba(42, 157, 143, 0.14);
+  color: #1d7a6c;
+}
+
+.roleOther {
+  background: rgba(106, 115, 123, 0.13);
+  color: var(--grey, #6a737b);
+}
+
+.personName {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--navy, #1b2856);
+  text-decoration: none;
+  display: block;
+}
+
+.personName:hover {
+  color: var(--blue, #0098d0);
+}
+
+.personSub {
+  font-size: 0.78rem;
+  color: var(--grey, #6a737b);
+  word-break: break-word;
+}
+
+.removeBtn {
+  border: none;
+  background: transparent;
+  color: var(--grey, #6a737b);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.removeBtn:hover {
+  color: var(--red, #e63946);
+  background: rgba(230, 57, 70, 0.08);
+}
+
+.empty {
+  color: var(--grey, #6a737b);
+  font-size: 0.84rem;
+  padding: 0.3rem 0;
+}
+
+.suggestHead {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey, #6a737b);
+  margin: 0.7rem 0 0.35rem;
+}
+
+.suggestRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  font-size: 0.84rem;
+}
+
+.attachBtn {
+  border: 1px solid rgba(0, 152, 208, 0.4);
+  background: rgba(0, 152, 208, 0.06);
+  color: var(--blue, #0098d0);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.attachBtn:hover {
+  background: rgba(0, 152, 208, 0.12);
+}
+
+.addBtn {
+  margin-top: 0.7rem;
+  width: 100%;
+  border: 1px dashed rgba(27, 40, 86, 0.25);
+  background: transparent;
+  color: var(--grey, #6a737b);
+  border-radius: 8px;
+  padding: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.addBtn:hover {
+  border-color: var(--blue, #0098d0);
+  color: var(--blue, #0098d0);
+}
+
+/* ---------- Add-person modal ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--white, #fff);
+  border-radius: 12px;
+  width: min(440px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(27, 40, 86, 0.25);
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.modalTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy, #1b2856);
+  margin: 0 0 0.8rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.7rem;
+}
+
+.field label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--navy, #1b2856);
+}
+
+.field input,
+.field select {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.88rem;
+  font-family: inherit;
+  color: var(--navy, #1b2856);
+  background: var(--white, #fff);
+}
+
+.resultRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.resultRow:hover {
+  background: rgba(0, 152, 208, 0.06);
+}
+
+.resultName {
+  font-weight: 600;
+  color: var(--navy, #1b2856);
+}
+
+.resultSub {
+  color: var(--grey, #6a737b);
+  font-size: 0.76rem;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.6rem;
+}
+
+.cancelBtn {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--white, #fff);
+  color: var(--navy, #1b2856);
+  border-radius: 8px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.error {
+  background: rgba(230, 57, 70, 0.08);
+  border: 1px solid rgba(230, 57, 70, 0.25);
+  color: var(--red, #e63946);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.7rem;
+}

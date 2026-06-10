@@ -47,11 +47,48 @@ function plainText(body) {
 /* ---------- recipient resolution ---------- */
 
 /**
- * Look up the email/phone for a step based on its recipient_type and the
- * process's linked tenant/owner/role-assignment.
+ * Contacts-hub lookup: the primary attached contact for a role on this
+ * process (process_contacts → contacts). Returns null when the process
+ * has no attachment for the role — callers fall back to the legacy
+ * cache-based resolution so pre-hub processes keep sending.
+ */
+async function contactForRole(pool, processId, role) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.display_name, c.email, c.phone
+         FROM process_contacts pc
+         JOIN contacts c ON c.id = pc.contact_id
+        WHERE pc.process_id = $1 AND pc.role = $2
+          AND c.merged_into_contact_id IS NULL AND c.archived_at IS NULL
+        ORDER BY pc.is_primary DESC, pc.id ASC
+        LIMIT 1`,
+      [processId, role]
+    );
+    return rows[0] ?? null;
+  } catch {
+    // Table missing (pre-migration boot) — behave as "no attachment".
+    return null;
+  }
+}
+
+/**
+ * Look up the email/phone for a step based on its recipient_type.
+ *
+ * Resolution order (tenant/owner): the process's attached contact for
+ * that role first — swapping the contact on the People panel fixes every
+ * pending send at once — then the legacy AppFolio-cache lookup.
  */
 export async function resolveRecipient({ processId, recipientType, recipientValue }) {
   const pool = getPool();
+
+  // Contacts-hub path for role-shaped recipient types.
+  if (recipientType === "tenant" || recipientType === "owner") {
+    const c = await contactForRole(pool, processId, recipientType);
+    if (c && (c.email || c.phone)) {
+      return { email: c.email || null, phone: c.phone || null, name: c.display_name || null };
+    }
+  }
+
   const ctx = await buildMergeContext(processId, null, pool);
   const tenantEmail =
     ctx.tenant?.primary_tenant_email || ctx.tenant?.email || null;
@@ -95,8 +132,15 @@ export async function resolveRecipient({ processId, recipientType, recipientValu
         name: r?.display_name || r?.username || null,
       };
     }
-    default:
+    default: {
+      // Unknown recipient types may be custom contact roles (e.g.
+      // "vendor" on Maintenance Escalation) — try the hub before nulls.
+      const c = await contactForRole(pool, processId, recipientType);
+      if (c && (c.email || c.phone)) {
+        return { email: c.email || null, phone: c.phone || null, name: c.display_name || null };
+      }
       return { email: null, phone: null, name: null };
+    }
   }
 }
 

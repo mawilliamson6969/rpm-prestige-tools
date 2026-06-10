@@ -11,6 +11,7 @@ import {
   SOURCE_LABELS,
   type Contact,
   type ContactIdentity,
+  type ContactProcess,
   type ContactThread,
   type IdentitySource,
 } from "../types";
@@ -53,6 +54,7 @@ export default function ContactCardClient() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [identities, setIdentities] = useState<ContactIdentity[]>([]);
   const [threads, setThreads] = useState<ContactThread[]>([]);
+  const [processes, setProcesses] = useState<ContactProcess[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -78,6 +80,7 @@ export default function ContactCardClient() {
       setContact(body.contact);
       setIdentities(body.identities || []);
       setThreads(body.threads || []);
+      setProcesses(body.processes || []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load contact.");
     } finally {
@@ -175,13 +178,33 @@ export default function ContactCardClient() {
 
       <div className={styles.cardGrid}>
         <div>
-          {/* Processes — populated by PR 2 (process_contacts). */}
           <div className={`${styles.card} ${styles.cardPad} ${styles.section}`}>
             <h2 className={styles.cardTitle}>Processes</h2>
-            <div className={styles.empty}>
-              No linked processes yet. Process attachment ships with the next
-              phase — launched processes will appear here automatically.
-            </div>
+            {processes.length === 0 ? (
+              <div className={styles.empty}>
+                No linked processes. Launching a process against this
+                contact&rsquo;s property attaches them automatically.
+              </div>
+            ) : (
+              processes.map((p) => (
+                <div key={`${p.id}-${p.role}`} className={styles.threadRow}>
+                  <span className={styles.threadSubject}>
+                    <Link
+                      href={`/operations/processes/${p.id}`}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {p.name}
+                    </Link>
+                    <span className={`${styles.badge} ${styles.badgeManual}`} style={{ marginLeft: "0.4rem" }}>
+                      {p.role}
+                    </span>
+                  </span>
+                  <span className={styles.threadMeta}>
+                    {p.status} · {fmtDate(p.started_at)}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           <div className={`${styles.card} ${styles.cardPad} ${styles.section}`}>

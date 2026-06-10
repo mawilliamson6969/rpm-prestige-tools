@@ -64,3 +64,14 @@ export type ContactThread = {
   last_message_at: string;
   message_count: number;
 };
+
+export type ContactProcess = {
+  id: number;
+  name: string;
+  status: string;
+  role: string;
+  is_primary: boolean;
+  property_name: string | null;
+  started_at: string | null;
+  template_slug: string | null;
+};
