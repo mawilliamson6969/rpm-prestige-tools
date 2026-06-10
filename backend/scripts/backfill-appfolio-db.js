@@ -34,6 +34,13 @@ if (unknown.length) {
 
 const onProgress = (msg) => console.log(`  ${msg}`);
 
+// e.g. "properties: 217 upserted across 3 page(s) [page[size]=100 + LastUpdatedAtFrom filter]"
+function describeResult(r) {
+  const shape = `page[size]=${r.pageSize}${r.filtered ? " + LastUpdatedAtFrom filter" : ""}`;
+  const skipped = r.skipped ? `, ${r.skipped} skipped (no id)` : "";
+  return `${r.resource}: ${r.upserted} upserted across ${r.pages} page(s)${skipped} [${shape}]`;
+}
+
 async function main() {
   await ensureAfMirrorSchema();
   console.log(`Mode: ${mode}${requested.length ? ` | resources: ${requested.join(", ")}` : " | all resources"}`);
@@ -42,7 +49,7 @@ async function main() {
   if (requested.length === 0) {
     const summary = await syncAll({ mode, triggeredBy: "cli", onProgress });
     for (const r of summary.results) {
-      console.log(`${r.resource}: ${r.upserted} upserted across ${r.pages} page(s)${r.skipped ? `, ${r.skipped} skipped (no id)` : ""}`);
+      console.log(describeResult(r));
     }
     for (const e of summary.errors) {
       console.error(`${e.resource}: FAILED — ${e.message}`);
@@ -52,7 +59,7 @@ async function main() {
     for (const name of requested) {
       try {
         const r = await syncResource(name, { mode, onProgress });
-        console.log(`${r.resource}: ${r.upserted} upserted across ${r.pages} page(s)${r.skipped ? `, ${r.skipped} skipped (no id)` : ""}`);
+        console.log(describeResult(r));
       } catch (err) {
         ok = false;
         console.error(`${name}: FAILED — ${err.message}`);

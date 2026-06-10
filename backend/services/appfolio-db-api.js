@@ -289,15 +289,38 @@ async function readJsonBody(res) {
   try {
     return JSON.parse(text);
   } catch {
-    return null; // not JSON — caller gets null per the error contract
+    return null; // success path stays JSON-or-null
+  }
+}
+
+/**
+ * Error bodies keep whatever AppFolio sent: parsed JSON when it is JSON,
+ * otherwise the raw text (truncated). The live 400s during the first
+ * backfill carried an explanation we discarded by returning null here —
+ * never again.
+ */
+async function readErrorBody(res) {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text.slice(0, 2000);
   }
 }
 
 function structuredError({ status, statusText, path, method, body }) {
+  // Surface the response body in the message itself so anything that only
+  // stores err.message (CLI output, appfolio.sync_state.last_error) still
+  // carries AppFolio's explanation.
+  const bodyExcerpt =
+    body === undefined || body === null
+      ? ""
+      : ` — ${typeof body === "string" ? body : JSON.stringify(body)}`.slice(0, 500);
   const err = new Error(
     `AppFolio Database API ${method} ${path} failed: ${status} ${
       statusText || ""
-    }`.trim()
+    }`.trim() + bodyExcerpt
   );
   err.status = status;
   err.statusText = statusText;
@@ -337,7 +360,11 @@ async function request(method, path, { query, body } = {}) {
   }
 
   const config = getConfig();
-  const url = `${getBaseUrl()}${path}${buildQueryString(query)}`;
+  // Full request path including the query string. Used for the URL, debug
+  // lines, and thrown errors — the query string (filters/page params, no
+  // PII, no secrets) is routinely the diagnostic that matters.
+  const fullPath = `${path}${buildQueryString(query)}`;
+  const url = `${getBaseUrl()}${fullPath}`;
 
   const headers = {
     Authorization: config.authHeader,
@@ -355,25 +382,26 @@ async function request(method, path, { query, body } = {}) {
     await acquire();
 
     const startedAt = Date.now();
-    // Never log query/body — only method, path, timestamp.
-    debug(`-> ${method} ${path} @ ${new Date(startedAt).toISOString()}`);
+    // Never log request/response bodies — method, full path (with query
+    // string), timestamp, status, latency only.
+    debug(`-> ${method} ${fullPath} @ ${new Date(startedAt).toISOString()}`);
 
     let res;
     try {
       res = await fetch(url, init);
     } catch (networkErr) {
-      debug(`x  ${method} ${path} network error after ${Date.now() - startedAt}ms`);
+      debug(`x  ${method} ${fullPath} network error after ${Date.now() - startedAt}ms`);
       throw structuredError({
         status: 0,
         statusText: networkErr.message || "network error",
-        path,
+        path: fullPath,
         method,
         body: null,
       });
     }
 
     const latency = Date.now() - startedAt;
-    debug(`<- ${method} ${path} ${res.status} ${latency}ms`);
+    debug(`<- ${method} ${fullPath} ${res.status} ${latency}ms`);
 
     if (res.ok) {
       return readJsonBody(res);
@@ -399,18 +427,18 @@ async function request(method, path, { query, body } = {}) {
       }
       attempt += 1;
       debug(
-        `~  ${method} ${path} ${res.status} retry ${attempt}/${MAX_RETRIES} in ${waitMs}ms`
+        `~  ${method} ${fullPath} ${res.status} retry ${attempt}/${MAX_RETRIES} in ${waitMs}ms`
       );
       await sleep(waitMs);
       continue;
     }
 
     // Non-retryable, or retries exhausted.
-    const errorBody = await readJsonBody(res);
+    const errorBody = await readErrorBody(res);
     throw structuredError({
       status: res.status,
       statusText: res.statusText,
-      path,
+      path: fullPath,
       method,
       body: errorBody,
     });
