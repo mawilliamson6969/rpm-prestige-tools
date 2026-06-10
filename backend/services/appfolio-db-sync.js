@@ -1,25 +1,38 @@
 /**
- * AppFolio Database API → local mirror tables (Phase 2).
+ * AppFolio Database API → local mirror tables (Phase 2 engine, Phase 3
+ * scheduling semantics).
  *
  * Pulls properties / units / tenants / leases through
  * services/appfolio-db-api.js (which owns auth, rate limiting, and retry)
- * and upserts each record into its mirror table in the dedicated
- * `appfolio` schema, created by migrations/043_appfolio_mirror_tables.sql.
+ * and upserts each record into its appfolio.* mirror table
+ * (migrations 043–045).
  *
- * Two modes:
- *   full  — no filters; walks every page of the resource. This is the
- *           initial backfill.
- *   delta — filters[LastUpdatedAtFrom] = high_water_mark - 5min overlap,
- *           where the high-water mark is the max LastUpdatedAt seen on a
- *           previous successful run (tracked in appfolio.sync_state). If no
- *           mark exists yet, delta degrades to a full pass.
+ * Request shape (Phase 3): EVERY list request carries
+ * filters[LastUpdatedAtFrom]. The v0 list endpoints for properties /
+ * units / tenants require at least one filter (confirmed live — the
+ * cause of the first backfill's 400s); /leases doesn't, but gets the
+ * same filter for uniformity. Full runs use the epoch; delta runs use
+ * the stored high-water mark minus a 15-minute overlap (epoch when no
+ * mark exists yet). The Phase 2 400-fallback ladder is retired.
  *
- * Mirror rows are JSONB-first: the whole API record lands in `data`, and
- * only id / last_updated_at are promoted (see the migration's header).
+ * Concurrency: every sync run takes a per-resource Postgres advisory
+ * lock (session-scoped, on a dedicated client). If the lock is held —
+ * scheduled run vs. CLI, or overlapping crons — the run SKIPS that
+ * resource and reports it; nothing queues.
  *
- * Not in this phase: cron scheduling, webhooks, feature endpoints. Run
- * via scripts/backfill-appfolio-db.js or call syncAll() from later-phase
- * code.
+ * Deletion detection (Phase 3): rows are never hard-deleted. Upserts
+ * clear `missing_since`; the nightly full pass (scheduler) flags rows
+ * its successful fetch did not touch by setting `missing_since = NOW()`.
+ *
+ * Failure events: each resource failure increments
+ * appfolio.sync_state.consecutive_failures; at exactly 2 an
+ * `appfolio.sync.failed` event is emitted to the Prestige Connect bus.
+ * The next success after >= 2 failures emits `appfolio.sync.recovered`
+ * with the downtime duration. Any success resets the counter.
+ *
+ * PII: SCRUB_KEYS are deleted from every record, for every resource,
+ * before upsert, and the values are never logged anywhere — not even in
+ * debug mode. Do not add logging around the scrub.
  */
 
 import appfolioDbApi from "./appfolio-db-api.js";
@@ -35,16 +48,20 @@ const RESOURCES = {
 
 const PAGE_SIZE = 500;
 
-// Pagination is defensive because we can't see live response envelopes
-// yet: we stop on an EMPTY page rather than a short one (a server that
-// clamps page[size] below our ask would otherwise end the walk after
-// page 1), and we abort if two consecutive pages start with the same id
-// (a server that ignores page[number] would otherwise loop forever).
+// Pagination is defensive: we stop on an EMPTY page rather than a short
+// one (a server that clamps page[size] below our ask would otherwise end
+// the walk after page 1), and we abort if two consecutive pages start
+// with the same id (a server that ignores page[number] would otherwise
+// loop forever).
 const MAX_PAGES = 10_000;
 
-// Delta runs re-read a little history so records updated while a sync was
-// in flight are never missed. Upserts make the overlap harmless.
-const DELTA_OVERLAP_MS = 5 * 60_000;
+// Delta runs re-read 15 minutes of history so records updated while a
+// sync was in flight are never missed. Upserts make the overlap harmless.
+const DELTA_OVERLAP_MS = 15 * 60_000;
+
+// Full runs are "everything since the epoch" — semantically unfiltered,
+// but the filter must be present (see header).
+const EPOCH = "1970-01-01T00:00:00Z";
 
 // PII that must never reach the mirror. Deleted from every record, for
 // every resource, before upsert. The values are never logged anywhere —
@@ -69,6 +86,17 @@ async function resolvePool(injected) {
     _getPool = m.getPool;
   }
   return _getPool();
+}
+
+// Lazy event-bus import, same reasoning. emitEvent never throws.
+let _emitEvent = null;
+async function resolveEmitter(injected) {
+  if (injected) return injected;
+  if (!_emitEvent) {
+    const m = await import("../lib/eventBus.js");
+    _emitEvent = m.emitEvent;
+  }
+  return _emitEvent;
 }
 
 /** Rows out of the API envelope: { results: [...] } | { data: [...] } | bare array. */
@@ -99,13 +127,50 @@ function extractLastUpdatedAt(record) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Upsert one page of records. Records without a recognizable id are
- * counted and skipped, never thrown — one malformed record must not sink
- * a backfill. Within-page duplicate ids keep the last occurrence
- * (Postgres rejects ON CONFLICT touching the same row twice in one
- * statement).
- */
+// ---------------------------------------------------------------------------
+// Advisory locks — one per resource, namespaced under 'appfolio_sync'.
+//
+// pg advisory locks are SESSION-scoped, so the lock must live on a
+// dedicated client held for the whole run; pool.query() would grab a
+// different connection per call and the lock would be meaningless. The
+// two-int form keyed by hashtext() is stable across processes, which is
+// what makes the CLI and the in-process scheduler mutually exclusive.
+// ---------------------------------------------------------------------------
+
+async function tryResourceLock(pool, resource) {
+  const client = await pool.connect();
+  try {
+    const r = await client.query(
+      `SELECT pg_try_advisory_lock(hashtext('appfolio_sync'), hashtext($1)) AS locked`,
+      [resource]
+    );
+    if (r.rows?.[0]?.locked === true) {
+      return {
+        async release() {
+          try {
+            await client.query(
+              `SELECT pg_advisory_unlock(hashtext('appfolio_sync'), hashtext($1))`,
+              [resource]
+            );
+          } finally {
+            client.release();
+          }
+        },
+      };
+    }
+    client.release();
+    return null;
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Upserts — scrub first; ON CONFLICT refreshes data and clears
+// missing_since (the record is demonstrably present again).
+// ---------------------------------------------------------------------------
+
 async function upsertPage(pool, table, records) {
   const byId = new Map();
   let skipped = 0;
@@ -132,91 +197,106 @@ async function upsertPage(pool, table, records) {
      ON CONFLICT (id) DO UPDATE SET
        data = EXCLUDED.data,
        last_updated_at = EXCLUDED.last_updated_at,
-       synced_at = NOW()`,
+       synced_at = NOW(),
+       missing_since = NULL`,
     params
   );
   return { upserted: byId.size, skipped };
 }
 
+// ---------------------------------------------------------------------------
+// sync_state bookkeeping + failure/recovery events.
+//
+// Reads-then-writes here are race-free because the caller holds the
+// per-resource advisory lock for the whole run.
+// ---------------------------------------------------------------------------
+
 async function readSyncState(pool, resource) {
   const r = await pool.query(
-    `SELECT high_water_mark FROM appfolio.sync_state WHERE resource = $1`,
+    `SELECT high_water_mark, consecutive_failures, last_success_at
+       FROM appfolio.sync_state WHERE resource = $1`,
     [resource]
   );
   return r.rows?.[0] ?? null;
 }
 
-async function writeSyncState(pool, resource, { highWaterMark, status, error, rowCount }) {
+const FAILURE_EVENT_THRESHOLD = 2;
+
+async function recordSuccess(pool, emit, resource, { highWaterMark, rowCount }) {
+  const prior = await readSyncState(pool, resource);
+  const priorFailures = prior?.consecutive_failures ?? 0;
+
   await pool.query(
-    `INSERT INTO appfolio.sync_state (resource, high_water_mark, last_run_at, last_status, last_error, last_row_count)
-     VALUES ($1, $2, NOW(), $3, $4, $5)
+    `INSERT INTO appfolio.sync_state
+       (resource, high_water_mark, last_run_at, last_status, last_error, last_row_count, consecutive_failures, last_success_at)
+     VALUES ($1, $2, NOW(), 'ok', NULL, $3, 0, NOW())
      ON CONFLICT (resource) DO UPDATE SET
-       high_water_mark = GREATEST(COALESCE(EXCLUDED.high_water_mark, sync_state.high_water_mark), sync_state.high_water_mark),
+       high_water_mark = GREATEST(COALESCE(EXCLUDED.high_water_mark, appfolio.sync_state.high_water_mark), appfolio.sync_state.high_water_mark),
        last_run_at = NOW(),
-       last_status = EXCLUDED.last_status,
-       last_error = EXCLUDED.last_error,
-       last_row_count = EXCLUDED.last_row_count`,
-    [resource, highWaterMark, status, error, rowCount]
+       last_status = 'ok',
+       last_error = NULL,
+       last_row_count = EXCLUDED.last_row_count,
+       consecutive_failures = 0,
+       last_success_at = NOW()`,
+    [resource, highWaterMark, rowCount]
   );
+
+  if (priorFailures >= FAILURE_EVENT_THRESHOLD) {
+    const lastSuccessAt = prior?.last_success_at ? new Date(prior.last_success_at) : null;
+    await emit({
+      type: "appfolio.sync.recovered",
+      source: "appfolio-sync",
+      payload: {
+        resource,
+        downtimeMs: lastSuccessAt ? Date.now() - lastSuccessAt.getTime() : null,
+        lastSuccessAt: lastSuccessAt ? lastSuccessAt.toISOString() : null,
+        failuresCleared: priorFailures,
+      },
+    });
+  }
+}
+
+async function recordFailure(pool, emit, resource, err) {
+  const prior = await readSyncState(pool, resource);
+  const failures = (prior?.consecutive_failures ?? 0) + 1;
+  const message = String(err?.message || err).slice(0, 2000);
+
+  await pool.query(
+    `INSERT INTO appfolio.sync_state
+       (resource, high_water_mark, last_run_at, last_status, last_error, last_row_count, consecutive_failures)
+     VALUES ($1, NULL, NOW(), 'failed', $2, 0, $3)
+     ON CONFLICT (resource) DO UPDATE SET
+       last_run_at = NOW(),
+       last_status = 'failed',
+       last_error = EXCLUDED.last_error,
+       last_row_count = 0,
+       consecutive_failures = $3`,
+    [resource, message, failures]
+  );
+
+  // Exactly-at-threshold so a long outage produces one event, not one per
+  // failed run. err.message already embeds AppFolio's response body.
+  if (failures === FAILURE_EVENT_THRESHOLD) {
+    await emit({
+      type: "appfolio.sync.failed",
+      source: "appfolio-sync",
+      payload: {
+        resource,
+        error: message,
+        consecutiveFailures: failures,
+        lastSuccessAt: prior?.last_success_at
+          ? new Date(prior.last_success_at).toISOString()
+          : null,
+      },
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Request-shape fallback ladder.
-//
-// First live backfill (2026-06-09): /leases succeeded with the default
-// shape (page[size]=500, no filter; 933 rows, clean pagination), but
-// /properties, /units, and /tenants all drew 400 Bad Request with that
-// SAME shape — while the Phase 1 smoke test's GET /properties
-// (page[size]=10 + LastUpdatedAtFrom epoch filter) works against the same
-// server and credentials. Live rerun (2026-06-09, post-observability-fix)
-// confirmed the cause: the v0 LIST endpoints for properties/units/tenants
-// REQUIRE at least one filter; /leases does not. The ladder stays as the
-// general mechanism (it also covers page-size caps if AppFolio ever adds
-// them) — endpoints that need a filter converge on the epoch-filter
-// variants in 3 extra requests.
-//
-// The walk tries shapes from fastest to most conservative and locks in
-// the first one the endpoint accepts. A
-// rejected variant costs exactly one request (the 400 arrives on its
-// first page), and upserts are idempotent, so restarting the walk under a
-// new shape is harmless. The last variant is the exact smoke-test-proven
-// shape. If every variant fails, the thrown error (and
-// appfolio.sync_state.last_error) now includes AppFolio's explanation.
+// The page walk — fixed request shape, always filtered.
 // ---------------------------------------------------------------------------
 
-const EPOCH_FILTER = Object.freeze({ LastUpdatedAtFrom: "1970-01-01T00:00:00Z" });
-
-const FALLBACK_SIZES = [PAGE_SIZE, 100, 10]; // 500 → 100 → 10
-
-function buildVariants(mode, deltaFilters, explicitPageSize) {
-  // Delta keeps its high-water-mark filter (dropping it would silently
-  // turn a delta into a full pass) and only steps the page size down.
-  if (mode === "delta" && deltaFilters) {
-    return FALLBACK_SIZES.map((size) => ({ size, filters: deltaFilters }));
-  }
-  // An explicit pageSize from the caller is respected: only the
-  // add-the-epoch-filter fallback remains.
-  if (explicitPageSize) {
-    return [
-      { size: explicitPageSize },
-      { size: explicitPageSize, filters: EPOCH_FILTER },
-    ];
-  }
-  // Full mode: descending sizes unfiltered (the /leases-proven family),
-  // then the same sizes with the epoch filter, which is semantically
-  // identical to "everything" and ends at the smoke-proven shape.
-  return [
-    ...FALLBACK_SIZES.map((size) => ({ size })),
-    ...FALLBACK_SIZES.map((size) => ({ size, filters: EPOCH_FILTER })),
-  ];
-}
-
-function describeVariant(v) {
-  return `page[size]=${v.size}${v.filters ? " + LastUpdatedAtFrom filter" : ""}`;
-}
-
-/** One complete page walk under a fixed request shape. */
-async function walkResource({ def, name, api, pool, onProgress, variant }) {
+async function walkResource({ def, name, api, pool, onProgress, filters, pageSize }) {
   let pages = 0;
   let upserted = 0;
   let skipped = 0;
@@ -225,8 +305,8 @@ async function walkResource({ def, name, api, pool, onProgress, variant }) {
 
   for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
     const response = await api.get(def.path, {
-      filters: variant.filters,
-      page: { number: pageNumber, size: variant.size },
+      filters,
+      page: { number: pageNumber, size: pageSize },
     });
     const rows = extractRows(response);
     if (rows.length === 0) break;
@@ -256,16 +336,19 @@ async function walkResource({ def, name, api, pool, onProgress, variant }) {
 }
 
 /**
- * Sync one resource. Returns { resource, mode, pages, upserted, skipped,
- * pageSize, filtered } — pageSize/filtered describe the request shape the
- * endpoint actually accepted.
+ * Sync one resource under its advisory lock.
+ *
+ * Returns { resource, mode, pages, upserted, skipped, since, durationMs }
+ * on success, or { resource, lockSkipped: true } when another run holds
+ * the lock (skip-and-log semantics — nothing queues).
  *
  * @param {string} name           Key of RESOURCES.
  * @param {object} [opts]
  * @param {"full"|"delta"} [opts.mode]  Default "full".
- * @param {number} [opts.pageSize]      Pin the page size (skips the size ladder).
- * @param {object} [opts.pool]    Injected pg pool (tests/offline).
- * @param {object} [opts.api]     Injected API client (tests/offline).
+ * @param {number} [opts.pageSize]
+ * @param {object} [opts.pool]      Injected pg pool (tests/offline).
+ * @param {object} [opts.api]       Injected API client (tests/offline).
+ * @param {Function} [opts.emitEvent] Injected event emitter (tests/offline).
  * @param {(msg: string) => void} [opts.onProgress]
  */
 export async function syncResource(name, opts = {}) {
@@ -278,76 +361,66 @@ export async function syncResource(name, opts = {}) {
   const mode = opts.mode === "delta" ? "delta" : "full";
   const api = opts.api || appfolioDbApi;
   const pool = await resolvePool(opts.pool);
+  const emit = await resolveEmitter(opts.emitEvent);
   const onProgress = opts.onProgress || (() => {});
 
-  // Delta start point: stored high-water mark minus overlap. No mark yet
-  // → no filter → the variant builder treats it as a full pass.
-  let deltaFilters;
-  if (mode === "delta") {
-    const state = await readSyncState(pool, name);
-    const mark = state?.high_water_mark ? new Date(state.high_water_mark) : null;
-    if (mark && !Number.isNaN(mark.getTime())) {
-      deltaFilters = {
-        LastUpdatedAtFrom: new Date(mark.getTime() - DELTA_OVERLAP_MS).toISOString(),
-      };
-    }
+  const lock = await tryResourceLock(pool, name);
+  if (!lock) {
+    onProgress(`${name}: skipped — another sync holds the advisory lock`);
+    return { resource: name, mode, lockSkipped: true };
   }
 
-  const variants = buildVariants(mode, deltaFilters, opts.pageSize);
-  let lastErr = null;
-
-  for (let i = 0; i < variants.length; i++) {
-    const variant = variants[i];
-    try {
-      const walk = await walkResource({ def, name, api, pool, onProgress, variant });
-      await writeSyncState(pool, name, {
-        highWaterMark: walk.maxUpdatedAt,
-        status: "ok",
-        error: null,
-        rowCount: walk.upserted,
-      });
-      return {
-        resource: name,
-        mode,
-        pages: walk.pages,
-        upserted: walk.upserted,
-        skipped: walk.skipped,
-        pageSize: variant.size,
-        filtered: Boolean(variant.filters),
-      };
-    } catch (err) {
-      lastErr = err;
-      // Only a 400 means "this endpoint rejects this request shape" —
-      // anything else (auth, 5xx after retries, our own pagination guard)
-      // would fail identically under every variant.
-      if (err?.status === 400 && i < variants.length - 1) {
-        onProgress(
-          `${name}: 400 with ${describeVariant(variant)} — retrying walk with ${describeVariant(variants[i + 1])}`
-        );
-        continue;
+  const startedAt = Date.now();
+  try {
+    // Every list request is filtered (required by the v0 list endpoints
+    // for properties/units/tenants; applied to leases for uniformity).
+    let since = EPOCH;
+    if (mode === "delta") {
+      const state = await readSyncState(pool, name);
+      const mark = state?.high_water_mark ? new Date(state.high_water_mark) : null;
+      if (mark && !Number.isNaN(mark.getTime())) {
+        since = new Date(mark.getTime() - DELTA_OVERLAP_MS).toISOString();
       }
-      break;
     }
-  }
 
-  // Record the failure but preserve the previous high-water mark
-  // (writeSyncState only ever raises it). err.message now embeds the
-  // response body excerpt, so last_error carries AppFolio's explanation.
-  await writeSyncState(pool, name, {
-    highWaterMark: null,
-    status: "failed",
-    error: String(lastErr?.message || lastErr).slice(0, 2000),
-    rowCount: 0,
-  }).catch(() => {}); // state write is best-effort on the failure path
-  throw lastErr;
+    const walk = await walkResource({
+      def,
+      name,
+      api,
+      pool,
+      onProgress,
+      filters: { LastUpdatedAtFrom: since },
+      pageSize: opts.pageSize || PAGE_SIZE,
+    });
+
+    await recordSuccess(pool, emit, name, {
+      highWaterMark: walk.maxUpdatedAt,
+      rowCount: walk.upserted,
+    });
+
+    return {
+      resource: name,
+      mode,
+      pages: walk.pages,
+      upserted: walk.upserted,
+      skipped: walk.skipped,
+      since,
+      durationMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    await recordFailure(pool, emit, name, err).catch(() => {});
+    throw err;
+  } finally {
+    await lock.release().catch(() => {});
+  }
 }
 
 /**
- * Sync every mirrored resource. One resource failing does not stop the
- * others; failures are collected and reported. Writes one sync_log row
+ * Sync every mirrored resource. One resource failing (or being
+ * lock-skipped) does not stop the others. Writes one sync_log row
  * (source 'appfolio_db') to match the platform's other sync engines.
  *
- * Returns { ok, results: [...], errors: [{ resource, message }] }.
+ * Returns { ok, results: [...], errors: [...], lockSkipped: [...] }.
  */
 export async function syncAll(opts = {}) {
   const mode = opts.mode === "delta" ? "delta" : "full";
@@ -356,9 +429,12 @@ export async function syncAll(opts = {}) {
 
   const results = [];
   const errors = [];
+  const lockSkipped = [];
   for (const name of Object.keys(RESOURCES)) {
     try {
-      results.push(await syncResource(name, { ...opts, mode, pool }));
+      const r = await syncResource(name, { ...opts, mode, pool });
+      if (r.lockSkipped) lockSkipped.push(name);
+      else results.push(r);
     } catch (err) {
       errors.push({ resource: name, message: String(err?.message || err) });
     }
@@ -379,7 +455,8 @@ export async function syncAll(opts = {}) {
     )
     .catch(() => {}); // sync_log is observability, not correctness
 
-  return { ok: errors.length === 0, results, errors };
+  return { ok: errors.length === 0, results, errors, lockSkipped };
 }
 
 export const MIRRORED_RESOURCES = Object.keys(RESOURCES);
+export { RESOURCES as RESOURCE_DEFS };

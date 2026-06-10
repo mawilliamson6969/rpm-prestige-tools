@@ -6,6 +6,8 @@
  *   044_appfolio_curated_columns.sql — PII scrub of pre-existing rows,
  *                                      generated columns, indexes,
  *                                      appfolio.current_tenancies view
+ *   045_appfolio_sync_phase3.sql     — missing_since, failure counters,
+ *                                      missing-aware current_tenancies
  *
  * We read them at boot and run them against the pool — same pattern as
  * agentHubSchema.js. Both migrations are idempotent (CREATE ... IF NOT
@@ -22,6 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILES = [
   "043_appfolio_mirror_tables.sql",
   "044_appfolio_curated_columns.sql",
+  "045_appfolio_sync_phase3.sql",
 ];
 
 let cachedSql = null;

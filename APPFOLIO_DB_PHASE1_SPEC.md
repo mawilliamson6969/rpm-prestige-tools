@@ -237,6 +237,74 @@ id/name/email/phone/status, current_rent, lease id/start_on/end_on/is_mtm.
   filter** (the cause of the first backfill's 400s); `/leases` lists
   unfiltered. The sync engine's request-shape ladder handles this.
 
+## Phase 3 — Scheduled syncs, deletion detection, failure events
+
+Shipped in `migrations/045_appfolio_sync_phase3.sql`,
+`backend/services/appfolio-db-scheduler.js`, and the reworked sync
+engine. Wired from `index.js` like the Reports-API cache syncs.
+
+### Request shape (ladder retired)
+
+Every list request to every resource carries
+`filters[LastUpdatedAtFrom]` — required by the v0 list endpoints for
+properties/units/tenants, applied to leases for uniformity. Full runs
+send the epoch; delta runs send `high_water_mark − 15 minutes` (epoch
+when no mark exists). The Phase 2 400-fallback ladder is gone; a 400 is
+now a real failure.
+
+### Cadences
+
+- **Delta, hourly** (`APPFOLIO_SYNC_DELTA_CRON`, default `0 * * * *`):
+  fetch since the overlap-adjusted high-water mark, upsert (clears
+  `missing_since`), advance the mark. The 15-minute overlap re-reads a
+  little history so records updated mid-sync are never missed; upserts
+  make the re-read harmless.
+- **Full, nightly 3:00 AM America/Chicago** (`APPFOLIO_SYNC_FULL_CRON`,
+  default `0 3 * * *`): epoch-filtered full fetch, then the missing
+  sweep.
+
+### missing_since semantics (deletion detection)
+
+Rows are **never hard-deleted**. The nightly full pass records its start
+time; after a resource's fetch completes **successfully**, rows that
+fetch did not touch (`synced_at < run start AND missing_since IS NULL`)
+get `missing_since = NOW()`. Any later upsert that sees the record again
+clears it. A failed or lock-skipped resource skips its sweep entirely —
+a partial fetch must not flag live records as missing.
+`current_tenancies` excludes missing-flagged units, tenants, and leases.
+
+### Lock strategy
+
+Every sync run (scheduled or CLI) takes a per-resource Postgres advisory
+lock — `pg_try_advisory_lock(hashtext('appfolio_sync'),
+hashtext(resource))` on a dedicated client held for the whole run
+(advisory locks are session-scoped; pooled per-query connections would
+make them meaningless). Held lock = skip and log, never queue.
+
+### Config
+
+`APPFOLIO_SYNC_ENABLED` (default true; auto-disabled with a clear log
+line when DB-API creds are absent — local dev must not error),
+`APPFOLIO_SYNC_DELTA_CRON`, `APPFOLIO_SYNC_FULL_CRON`. One summary log
+line per run; per-page detail stays behind `APPFOLIO_DB_DEBUG`.
+
+### Failure / recovery event contract (Prestige Connect)
+
+Emitted via `lib/eventBus.js` (emit-only; no automation config in code),
+`source: "appfolio-sync"`:
+
+- `appfolio.sync.failed` — emitted when a resource's
+  `consecutive_failures` reaches **exactly 2** (one event per outage,
+  not per failed run). Payload: `resource`, `error` (message including
+  AppFolio's response body), `consecutiveFailures`, `lastSuccessAt`.
+- `appfolio.sync.recovered` — emitted on the first success after a
+  streak of ≥ 2 failures. Payload: `resource`, `downtimeMs`,
+  `lastSuccessAt` (the pre-outage success), `failuresCleared`. Any
+  success resets the counter.
+
+`appfolio.sync_state` gained `consecutive_failures` and
+`last_success_at` (the latter feeds the events' downtime math).
+
 ## Phase roadmap
 
 1. **Client + proof-of-life** — this document. ✅ shipped & verified
@@ -247,5 +315,8 @@ id/name/email/phone/status, current_rent, lease id/start_on/end_on/is_mtm.
    `backend/services/appfolio-db-sync.js`,
    `backend/scripts/backfill-appfolio-db.js`. ✅ shipped & backfilled
    2.1. **PII scrub + curated columns + current_tenancies view** —
-   `migrations/044_appfolio_curated_columns.sql` (this section). ✅
-3. Webhooks / delta scheduling — not yet specified
+   `migrations/044_appfolio_curated_columns.sql`. ✅
+3. **Scheduled delta syncs + deletion detection + failure events** —
+   `migrations/045_appfolio_sync_phase3.sql`,
+   `backend/services/appfolio-db-scheduler.js` (this section). ✅
+4. Webhooks — only if a feature later needs sub-hourly freshness

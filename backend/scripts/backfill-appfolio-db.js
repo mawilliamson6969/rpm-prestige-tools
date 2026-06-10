@@ -34,11 +34,13 @@ if (unknown.length) {
 
 const onProgress = (msg) => console.log(`  ${msg}`);
 
-// e.g. "properties: 217 upserted across 3 page(s) [page[size]=100 + LastUpdatedAtFrom filter]"
+// e.g. "properties: 217 upserted across 3 page(s) (since 1970-01-01T00:00:00Z, 4.1s)"
 function describeResult(r) {
-  const shape = `page[size]=${r.pageSize}${r.filtered ? " + LastUpdatedAtFrom filter" : ""}`;
+  if (r.lockSkipped) {
+    return `${r.resource}: SKIPPED — another sync (scheduler or CLI) holds the advisory lock`;
+  }
   const skipped = r.skipped ? `, ${r.skipped} skipped (no id)` : "";
-  return `${r.resource}: ${r.upserted} upserted across ${r.pages} page(s)${skipped} [${shape}]`;
+  return `${r.resource}: ${r.upserted} upserted across ${r.pages} page(s)${skipped} (since ${r.since}, ${(r.durationMs / 1000).toFixed(1)}s)`;
 }
 
 async function main() {
@@ -50,6 +52,9 @@ async function main() {
     const summary = await syncAll({ mode, triggeredBy: "cli", onProgress });
     for (const r of summary.results) {
       console.log(describeResult(r));
+    }
+    for (const name of summary.lockSkipped) {
+      console.log(describeResult({ resource: name, lockSkipped: true }));
     }
     for (const e of summary.errors) {
       console.error(`${e.resource}: FAILED — ${e.message}`);
@@ -67,6 +72,8 @@ async function main() {
     }
   }
 
+  // Lock-skips are not failures: the data is being synced by whoever
+  // holds the lock. Exit 0 unless something actually failed.
   process.exit(ok ? 0 : 1);
 }
 
