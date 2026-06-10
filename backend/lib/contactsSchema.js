@@ -14,8 +14,10 @@ import { getPool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_PATH = path.join(__dirname, "..", "migrations", "042_contacts.sql");
+const PHASE2_PATH = path.join(__dirname, "..", "migrations", "043_process_contacts.sql");
 
 let cachedSql = null;
+let cachedPhase2Sql = null;
 
 function loadMigration() {
   if (cachedSql) return cachedSql;
@@ -23,7 +25,23 @@ function loadMigration() {
   return cachedSql;
 }
 
+function loadPhase2Migration() {
+  if (cachedPhase2Sql) return cachedPhase2Sql;
+  cachedPhase2Sql = fs.readFileSync(PHASE2_PATH, "utf8");
+  return cachedPhase2Sql;
+}
+
 export async function ensureContactsSchema() {
   const pool = getPool();
   await pool.query(loadMigration());
+}
+
+/**
+ * Phase 2: process_contacts + contact_roles on process_templates.
+ * Separate applier (own steps-array entry) so a Phase 2 failure can't
+ * take the Phase 1 tables down with it.
+ */
+export async function ensureProcessContactsSchema() {
+  const pool = getPool();
+  await pool.query(loadPhase2Migration());
 }

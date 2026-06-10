@@ -28,7 +28,12 @@ import {
 } from "./lib/db.js";
 import { ensureFilesSchema } from "./lib/files-db.js";
 import { ensureAgentHubSchema } from "./lib/agentHubSchema.js";
-import { ensureContactsSchema } from "./lib/contactsSchema.js";
+import { ensureContactsSchema, ensureProcessContactsSchema } from "./lib/contactsSchema.js";
+import {
+  listProcessContacts,
+  addProcessContact,
+  removeProcessContact,
+} from "./routes/processContacts.js";
 import {
   listContacts,
   createContact,
@@ -2396,6 +2401,10 @@ app.post("/automations/:id/test", requireAuth, testConnectAutomation);
 
 /** Contacts hub (PR 1). Merge + resync are admin-gated; the rest is team-wide. */
 app.get("/contacts", requireAuth, listContacts);
+/** Process People panel (Contacts PR 2). */
+app.get("/processes/:id/contacts", requireAuth, listProcessContacts);
+app.post("/processes/:id/contacts", requireAuth, addProcessContact);
+app.delete("/processes/:id/contacts/:rowId", requireAuth, removeProcessContact);
 app.post("/contacts", requireAuth, createContact);
 app.post("/contacts/resync", requireAuth, requireAdminRole, resyncContacts);
 app.get("/contacts/:id", requireAuth, getContact);
@@ -2456,6 +2465,8 @@ async function start() {
       ["automations / events", ensureAutomationsSchema],
       // Contacts hub (PR 1): stable identity layer over the AppFolio cache.
       ["contacts + contact_identities", ensureContactsSchema],
+      // Contacts hub (PR 2): process links + per-template roles.
+      ["process_contacts + contact_roles", ensureProcessContactsSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {

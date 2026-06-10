@@ -238,14 +238,26 @@ export async function getContact(req, res) {
       }
     }
 
-    res.json({
-      contact,
-      identities,
-      threads,
-      // PR 2 fills this from process_contacts; the card shows the section
-      // with an empty state until then.
-      processes: [],
-    });
+    // Processes this contact is attached to (PR 2).
+    let processes = [];
+    try {
+      const { rows: p } = await pool.query(
+        `SELECT pc.role, pc.is_primary, p.id, p.name, p.status,
+                p.property_name, p.started_at, t.slug AS template_slug
+           FROM process_contacts pc
+           JOIN processes p ON p.id = pc.process_id
+           LEFT JOIN process_templates t ON t.id = p.template_id
+          WHERE pc.contact_id = $1
+          ORDER BY p.started_at DESC NULLS LAST, p.id DESC
+          LIMIT 25`,
+        [id]
+      );
+      processes = p;
+    } catch (e) {
+      console.error("[contacts] processes lookup", e.message);
+    }
+
+    res.json({ contact, identities, threads, processes });
   } catch (e) {
     if (e.http) return res.status(e.http).json({ error: e.message });
     console.error("[contacts] get", e);
