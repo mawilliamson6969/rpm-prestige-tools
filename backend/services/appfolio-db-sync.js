@@ -148,13 +148,108 @@ async function writeSyncState(pool, resource, { highWaterMark, status, error, ro
   );
 }
 
+// ---------------------------------------------------------------------------
+// Request-shape fallback ladder.
+//
+// First live backfill (2026-06-09): /leases succeeded with the default
+// shape (page[size]=500, no filter; 933 rows, clean pagination), but
+// /properties, /units, and /tenants all drew 400 Bad Request with that
+// SAME shape — while the Phase 1 smoke test's GET /properties
+// (page[size]=10 + LastUpdatedAtFrom epoch filter) works against the same
+// server and credentials. The 400 bodies weren't captured that night
+// (fixed — errors now carry them), so the exact rejected parameter is
+// unknown: per-endpoint page-size caps and required-filter rules are both
+// consistent with the evidence.
+//
+// Rather than guess once, the walk tries shapes from fastest to most
+// conservative and locks in the first one the endpoint accepts. A
+// rejected variant costs exactly one request (the 400 arrives on its
+// first page), and upserts are idempotent, so restarting the walk under a
+// new shape is harmless. The last variant is the exact smoke-test-proven
+// shape. If every variant fails, the thrown error (and
+// appfolio.sync_state.last_error) now includes AppFolio's explanation.
+// ---------------------------------------------------------------------------
+
+const EPOCH_FILTER = Object.freeze({ LastUpdatedAtFrom: "1970-01-01T00:00:00Z" });
+
+const FALLBACK_SIZES = [PAGE_SIZE, 100, 10]; // 500 → 100 → 10
+
+function buildVariants(mode, deltaFilters, explicitPageSize) {
+  // Delta keeps its high-water-mark filter (dropping it would silently
+  // turn a delta into a full pass) and only steps the page size down.
+  if (mode === "delta" && deltaFilters) {
+    return FALLBACK_SIZES.map((size) => ({ size, filters: deltaFilters }));
+  }
+  // An explicit pageSize from the caller is respected: only the
+  // add-the-epoch-filter fallback remains.
+  if (explicitPageSize) {
+    return [
+      { size: explicitPageSize },
+      { size: explicitPageSize, filters: EPOCH_FILTER },
+    ];
+  }
+  // Full mode: descending sizes unfiltered (the /leases-proven family),
+  // then the same sizes with the epoch filter, which is semantically
+  // identical to "everything" and ends at the smoke-proven shape.
+  return [
+    ...FALLBACK_SIZES.map((size) => ({ size })),
+    ...FALLBACK_SIZES.map((size) => ({ size, filters: EPOCH_FILTER })),
+  ];
+}
+
+function describeVariant(v) {
+  return `page[size]=${v.size}${v.filters ? " + LastUpdatedAtFrom filter" : ""}`;
+}
+
+/** One complete page walk under a fixed request shape. */
+async function walkResource({ def, name, api, pool, onProgress, variant }) {
+  let pages = 0;
+  let upserted = 0;
+  let skipped = 0;
+  let maxUpdatedAt = null;
+  let prevFirstId = null;
+
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
+    const response = await api.get(def.path, {
+      filters: variant.filters,
+      page: { number: pageNumber, size: variant.size },
+    });
+    const rows = extractRows(response);
+    if (rows.length === 0) break;
+
+    const firstId = extractId(rows[0]);
+    if (firstId !== null && firstId === prevFirstId) {
+      throw new Error(
+        `${def.path} returned the same first record (id ${firstId}) on consecutive pages — server appears to ignore page[number]; aborting to avoid an infinite loop.`
+      );
+    }
+    prevFirstId = firstId;
+
+    const result = await upsertPage(pool, def.table, rows);
+    upserted += result.upserted;
+    skipped += result.skipped;
+    pages += 1;
+
+    for (const record of rows) {
+      const ts = extractLastUpdatedAt(record);
+      if (ts && (!maxUpdatedAt || ts > maxUpdatedAt)) maxUpdatedAt = ts;
+    }
+
+    onProgress(`${name}: page ${pageNumber} → ${result.upserted} upserted (running total ${upserted})`);
+  }
+
+  return { pages, upserted, skipped, maxUpdatedAt };
+}
+
 /**
- * Sync one resource. Returns { resource, mode, pages, upserted, skipped }.
+ * Sync one resource. Returns { resource, mode, pages, upserted, skipped,
+ * pageSize, filtered } — pageSize/filtered describe the request shape the
+ * endpoint actually accepted.
  *
  * @param {string} name           Key of RESOURCES.
  * @param {object} [opts]
  * @param {"full"|"delta"} [opts.mode]  Default "full".
- * @param {number} [opts.pageSize]
+ * @param {number} [opts.pageSize]      Pin the page size (skips the size ladder).
  * @param {object} [opts.pool]    Injected pg pool (tests/offline).
  * @param {object} [opts.api]     Injected API client (tests/offline).
  * @param {(msg: string) => void} [opts.onProgress]
@@ -167,78 +262,70 @@ export async function syncResource(name, opts = {}) {
     );
   }
   const mode = opts.mode === "delta" ? "delta" : "full";
-  const pageSize = opts.pageSize || PAGE_SIZE;
   const api = opts.api || appfolioDbApi;
   const pool = await resolvePool(opts.pool);
   const onProgress = opts.onProgress || (() => {});
 
-  // Delta start point: stored high-water mark minus overlap.
-  let filters;
+  // Delta start point: stored high-water mark minus overlap. No mark yet
+  // → no filter → the variant builder treats it as a full pass.
+  let deltaFilters;
   if (mode === "delta") {
     const state = await readSyncState(pool, name);
     const mark = state?.high_water_mark ? new Date(state.high_water_mark) : null;
     if (mark && !Number.isNaN(mark.getTime())) {
-      filters = {
+      deltaFilters = {
         LastUpdatedAtFrom: new Date(mark.getTime() - DELTA_OVERLAP_MS).toISOString(),
       };
     }
-    // No mark yet → fall through with no filter (full pass).
   }
 
-  let pages = 0;
-  let upserted = 0;
-  let skipped = 0;
-  let maxUpdatedAt = null;
-  let prevFirstId = null;
+  const variants = buildVariants(mode, deltaFilters, opts.pageSize);
+  let lastErr = null;
 
-  try {
-    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
-      const response = await api.get(def.path, {
-        filters,
-        page: { number: pageNumber, size: pageSize },
+  for (let i = 0; i < variants.length; i++) {
+    const variant = variants[i];
+    try {
+      const walk = await walkResource({ def, name, api, pool, onProgress, variant });
+      await writeSyncState(pool, name, {
+        highWaterMark: walk.maxUpdatedAt,
+        status: "ok",
+        error: null,
+        rowCount: walk.upserted,
       });
-      const rows = extractRows(response);
-      if (rows.length === 0) break;
-
-      const firstId = extractId(rows[0]);
-      if (firstId !== null && firstId === prevFirstId) {
-        throw new Error(
-          `${def.path} returned the same first record (id ${firstId}) on consecutive pages — server appears to ignore page[number]; aborting to avoid an infinite loop.`
+      return {
+        resource: name,
+        mode,
+        pages: walk.pages,
+        upserted: walk.upserted,
+        skipped: walk.skipped,
+        pageSize: variant.size,
+        filtered: Boolean(variant.filters),
+      };
+    } catch (err) {
+      lastErr = err;
+      // Only a 400 means "this endpoint rejects this request shape" —
+      // anything else (auth, 5xx after retries, our own pagination guard)
+      // would fail identically under every variant.
+      if (err?.status === 400 && i < variants.length - 1) {
+        onProgress(
+          `${name}: 400 with ${describeVariant(variant)} — retrying walk with ${describeVariant(variants[i + 1])}`
         );
+        continue;
       }
-      prevFirstId = firstId;
-
-      const result = await upsertPage(pool, def.table, rows);
-      upserted += result.upserted;
-      skipped += result.skipped;
-      pages += 1;
-
-      for (const record of rows) {
-        const ts = extractLastUpdatedAt(record);
-        if (ts && (!maxUpdatedAt || ts > maxUpdatedAt)) maxUpdatedAt = ts;
-      }
-
-      onProgress(`${name}: page ${pageNumber} → ${result.upserted} upserted (running total ${upserted})`);
+      break;
     }
-
-    await writeSyncState(pool, name, {
-      highWaterMark: maxUpdatedAt,
-      status: "ok",
-      error: null,
-      rowCount: upserted,
-    });
-    return { resource: name, mode, pages, upserted, skipped };
-  } catch (err) {
-    // Record the failure but preserve the previous high-water mark
-    // (writeSyncState only ever raises it).
-    await writeSyncState(pool, name, {
-      highWaterMark: null,
-      status: "failed",
-      error: String(err?.message || err).slice(0, 2000),
-      rowCount: upserted,
-    }).catch(() => {}); // state write is best-effort on the failure path
-    throw err;
   }
+
+  // Record the failure but preserve the previous high-water mark
+  // (writeSyncState only ever raises it). err.message now embeds the
+  // response body excerpt, so last_error carries AppFolio's explanation.
+  await writeSyncState(pool, name, {
+    highWaterMark: null,
+    status: "failed",
+    error: String(lastErr?.message || lastErr).slice(0, 2000),
+    rowCount: 0,
+  }).catch(() => {}); // state write is best-effort on the failure path
+  throw lastErr;
 }
 
 /**

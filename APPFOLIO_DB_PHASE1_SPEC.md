@@ -138,11 +138,18 @@ delete(path)
 Query-string rule: the square brackets in `filters[Key]` / `page[size]` stay
 literal (AppFolio requires it); values are URL-encoded.
 
-Logging: debug-level method/path/timestamp outbound, status/latency on
-response. Never log POST/PATCH bodies or response bodies (tenant PII).
+Logging: debug-level method + full request path *including the query
+string* (filters/page params — no PII, no secrets) + timestamp outbound,
+status/latency on response. Never log POST/PATCH bodies or response
+bodies (tenant PII). (Query strings were added after the first live
+backfill, where the bare path hid exactly the diagnostic that mattered.)
 
 Errors are structured: `{ status, statusText, path, method, body }` where
-`body` is the JSON response body or null.
+`path` includes the query string and `body` is the response body —
+parsed JSON when AppFolio sends JSON, otherwise the raw text (truncated).
+A short body excerpt is also embedded in `err.message` so consumers that
+only store the message (CLI output, `appfolio.sync_state.last_error`)
+still carry AppFolio's explanation.
 
 ### 7. Dependencies
 
