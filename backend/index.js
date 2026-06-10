@@ -39,6 +39,7 @@ import {
   resyncContacts,
 } from "./routes/contacts.js";
 import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
+import { ensureAfMirrorSchema } from "./lib/af-mirror-schema.js";
 // Phase 7 (Unification): the System B route files for boards / items /
 // subitems / customization / dashboards / Phase 1 subitem templates
 // are dormant — the tables they read are gone. The Phase 4 updates
@@ -2456,6 +2457,10 @@ async function start() {
       ["automations / events", ensureAutomationsSchema],
       // Contacts hub (PR 1): stable identity layer over the AppFolio cache.
       ["contacts + contact_identities", ensureContactsSchema],
+      // AppFolio Database API mirror tables (af_properties, af_units,
+      // af_tenants, af_leases, af_sync_state). Backfill is manual:
+      // scripts/backfill-appfolio-db.js.
+      ["af_* mirror tables", ensureAfMirrorSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {
