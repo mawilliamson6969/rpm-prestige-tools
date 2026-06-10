@@ -13,6 +13,7 @@ import { getPool } from "./db.js";
 import { runBoomSync } from "./boom-sync.js";
 import { runLeadSimpleSync } from "./leadsimple-sync.js";
 import { runRentEngineSync } from "./rentengine-sync.js";
+import { upsertContactsFromCache } from "./contacts-sync.js";
 
 const MIN_GAP_MS = 2500;
 
@@ -384,6 +385,14 @@ async function runSyncEndpointsForId(syncId, triggeredBy, { includeDaily = false
       await runLeadSimpleSync(triggeredBy);
     } catch (lsErr) {
       console.error("[sync] leadsimple failed:", lsErr?.message || lsErr);
+    }
+
+    // Contacts hub: re-derive contacts/identities from the cache we just
+    // reloaded. Must run AFTER the cache writes above (it reads them).
+    try {
+      await upsertContactsFromCache(triggeredBy);
+    } catch (cErr) {
+      console.error("[sync] contacts upsert failed:", cErr?.message || cErr);
     }
 
     return { syncId, endpointsSynced, totalRows, errors: syncErrors };
