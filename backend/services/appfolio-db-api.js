@@ -18,6 +18,12 @@
  *   APPFOLIO_DB_CLIENT_ID
  *   APPFOLIO_DB_CLIENT_SECRET
  *   APPFOLIO_DB_DEVELOPER_ID
+ *   APPFOLIO_DB_BASE_URL     (optional — defaults to production; must be
+ *                             https on a *.appfolio.com host. Point at the
+ *                             practice sandbox for write testing.)
+ *   APPFOLIO_DB_DRY_RUN=true (optional — GETs run normally, but
+ *                             POST/PATCH/DELETE are not sent: the skipped
+ *                             write is logged and { dryRun: true } returned)
  *   APPFOLIO_DB_DEBUG=true   (optional — emit per-request debug lines)
  */
 
@@ -25,8 +31,9 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-// The only place the Database API base URL is allowed to live.
-const BASE_URL = "https://api.appfolio.com/api/v0";
+// Production base URL; override with APPFOLIO_DB_BASE_URL (sandbox).
+// This service file is the only place a Database API base URL may live.
+const DEFAULT_BASE_URL = "https://api.appfolio.com/api/v0";
 
 // AppFolio's published hard ceilings, per credential set. A request must
 // satisfy ALL THREE simultaneously or AppFolio returns 429.
@@ -59,6 +66,56 @@ const DEBUG_ENABLED =
 
 function debug(...args) {
   if (DEBUG_ENABLED) console.debug("[appfolio-db]", ...args);
+}
+
+// ---------------------------------------------------------------------------
+// Settings — base URL (validated on first use, then cached) and dry-run.
+// Separate from credentials so callers like the proof-of-life script can
+// report where requests would go without needing creds in the environment.
+// ---------------------------------------------------------------------------
+
+let cachedBaseUrl = null;
+
+function getBaseUrl() {
+  if (cachedBaseUrl) return cachedBaseUrl;
+
+  const raw = process.env.APPFOLIO_DB_BASE_URL?.trim() || DEFAULT_BASE_URL;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    const err = new Error(
+      `APPFOLIO_DB_BASE_URL is not a valid URL: "${raw}".`
+    );
+    err.code = "APPFOLIO_DB_CONFIG";
+    throw err;
+  }
+  // Only ever talk https to an *.appfolio.com host — a typo'd or hostile
+  // override must not receive Basic credentials.
+  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".appfolio.com")) {
+    const err = new Error(
+      `APPFOLIO_DB_BASE_URL must be an https URL on a *.appfolio.com host; got "${raw}".`
+    );
+    err.code = "APPFOLIO_DB_CONFIG";
+    throw err;
+  }
+
+  cachedBaseUrl = raw.replace(/\/+$/, ""); // no trailing slash; paths supply their own
+  return cachedBaseUrl;
+}
+
+// Read per call (not cached) so the write gate always reflects the
+// current environment.
+function isDryRun() {
+  return String(process.env.APPFOLIO_DB_DRY_RUN || "").toLowerCase() === "true";
+}
+
+/**
+ * Safe-to-print settings (no secrets). Used by the proof-of-life script.
+ * Resolving the base URL here triggers its validation.
+ */
+function getSettings() {
+  return { baseUrl: getBaseUrl(), dryRun: isDryRun() };
 }
 
 // ---------------------------------------------------------------------------
@@ -254,9 +311,33 @@ function structuredError({ status, statusText, path, method, body }) {
 // Core request: rate-limited, with retry logic.
 // ---------------------------------------------------------------------------
 
+/**
+ * Body description safe for logs: key names and size only, never values
+ * (POST/PATCH bodies can carry tenant PII).
+ */
+function summarizePayload(body) {
+  if (body === undefined || body === null) return "no body";
+  const json = JSON.stringify(body);
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    return `keys [${Object.keys(body).join(", ")}], ${json.length} bytes`;
+  }
+  return `${Array.isArray(body) ? "array" : typeof body}, ${json.length} bytes`;
+}
+
 async function request(method, path, { query, body } = {}) {
+  // Dry-run write gate: reads pass through untouched; writes never leave
+  // the process. Checked before the rate limiter so skipped writes don't
+  // consume request slots. Logged unconditionally — it is the only record
+  // that the write was attempted.
+  if (method !== "GET" && isDryRun()) {
+    console.info(
+      `[appfolio-db] DRY RUN — skipped ${method} ${path} (${summarizePayload(body)})`
+    );
+    return { dryRun: true, method, path };
+  }
+
   const config = getConfig();
-  const url = `${BASE_URL}${path}${buildQueryString(query)}`;
+  const url = `${getBaseUrl()}${path}${buildQueryString(query)}`;
 
   const headers = {
     Authorization: config.authHeader,
@@ -366,6 +447,9 @@ const appfolioDbApi = {
   delete(path) {
     return request("DELETE", path);
   },
+
+  /** { baseUrl, dryRun } — safe to print, never includes credentials. */
+  getSettings,
 };
 
 export default appfolioDbApi;
