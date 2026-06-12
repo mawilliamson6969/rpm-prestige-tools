@@ -1,4 +1,5 @@
 import { getPool } from "./db.js";
+import { ensureOnboardingProcessSeeds } from "./onboardingProcessSeeds.js";
 
 const STARTER_TEMPLATES = [
   {
@@ -1028,19 +1029,23 @@ export async function ensureOperationsSchema() {
   }
 
   const { rows: existing } = await pool.query(`SELECT COUNT(*)::int AS c FROM process_templates`);
-  if (existing[0].c > 0) return;
-
-  const { rows: admin } = await pool.query(
-    `SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1`
-  );
-  const createdBy = admin[0]?.id ?? null;
-
-  for (const t of STARTER_TEMPLATES) {
-    await pool.query(
-      `INSERT INTO process_templates (name, description, category, icon, color, estimated_days, is_active, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
-      [t.name, t.description, t.category, t.icon, t.color, t.estimated_days, createdBy]
+  if (existing[0].c === 0) {
+    const { rows: admin } = await pool.query(
+      `SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1`
     );
+    const createdBy = admin[0]?.id ?? null;
+
+    for (const t of STARTER_TEMPLATES) {
+      await pool.query(
+        `INSERT INTO process_templates (name, description, category, icon, color, estimated_days, is_active, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
+        [t.name, t.description, t.category, t.icon, t.color, t.estimated_days, createdBy]
+      );
+    }
+    console.log("[operations] Seeded 8 starter process templates.");
   }
-  console.log("[operations] Seeded 8 starter process templates.");
+
+  // June 2026 onboarding process family — runs every boot, idempotent
+  // (keyed on slug/versioned name; see onboardingProcessSeeds.js).
+  await ensureOnboardingProcessSeeds();
 }
