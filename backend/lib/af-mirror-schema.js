@@ -8,6 +8,7 @@
  *                                      appfolio.current_tenancies view
  *   045_appfolio_sync_phase3.sql     — missing_since, failure counters,
  *                                      missing-aware current_tenancies
+ *   046_appfolio_webhook_events.sql  — raw webhook inbox (doorbell model)
  *
  * We read them at boot and run them against the pool — same pattern as
  * agentHubSchema.js. Both migrations are idempotent (CREATE ... IF NOT
@@ -25,6 +26,7 @@ const MIGRATION_FILES = [
   "043_appfolio_mirror_tables.sql",
   "044_appfolio_curated_columns.sql",
   "045_appfolio_sync_phase3.sql",
+  "046_appfolio_webhook_events.sql",
 ];
 
 let cachedSql = null;

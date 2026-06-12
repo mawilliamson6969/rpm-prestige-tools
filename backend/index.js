@@ -46,6 +46,8 @@ import {
 import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
 import { ensureAfMirrorSchema } from "./lib/af-mirror-schema.js";
 import { ensureAppfolioSyncScheduled } from "./services/appfolio-db-scheduler.js";
+import { receiveAppfolioDbWebhook } from "./routes/appfolio-db-webhook.js";
+import { ensureAppfolioWebhookProcessing } from "./services/appfolio-webhook-processor.js";
 // Phase 7 (Unification): the System B route files for boards / items /
 // subitems / customization / dashboards / Phase 1 subitem templates
 // are dormant — the tables they read are gone. The Phase 4 updates
@@ -2381,6 +2383,10 @@ app.get("/mb/mentions/unseen", requireAuth, listMbUnseenMentions);
 /** AppFolio webhook receiver (public — AppFolio server-to-server). JWS verification is Phase 2. */
 app.post("/webhooks/appfolio", receiveMbAppfolioWebhook);
 
+/** AppFolio Database API webhooks (Phase 3.5 doorbell — public, token in path).
+ *  404s unless APPFOLIO_WEBHOOK_TOKEN is set and matches. */
+app.post("/webhooks/appfolio-db/:token", receiveAppfolioDbWebhook);
+
 /**
  * Prestige Connect webhook receivers (OpenPhone + Microsoft Graph).
  * AppFolio uses receiveMbAppfolioWebhook above, which now also mirrors
@@ -2508,6 +2514,10 @@ async function start() {
     // nightly full pass with missing-sweep. Self-disables (with a log
     // line) when APPFOLIO_SYNC_ENABLED=false or DB-API creds are absent.
     ensureAppfolioSyncScheduled();
+
+    // Phase 3.5: webhook doorbell processor (15s tick). Self-disables
+    // when APPFOLIO_WEBHOOK_TOKEN is unset.
+    ensureAppfolioWebhookProcessing();
 
     cron.schedule("0 2 * * *", () => {
       runFullSync("daily", { includeDaily: true }).catch((e) => console.error("[sync daily]", e.message || e));
