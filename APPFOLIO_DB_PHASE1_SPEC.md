@@ -310,6 +310,9 @@ Emitted via `lib/eventBus.js` (emit-only; no automation config in code),
 Shipped in `migrations/046_appfolio_webhook_events.sql`,
 `backend/routes/appfolio-db-webhook.js`, and
 `backend/services/appfolio-webhook-processor.js`.
+**Verified live end-to-end 2026-06-12**: test delivery and a real unit
+edit both confirmed — topic extracted, delta triggered, mirror updated
+in seconds.
 
 ### Doorbell model
 
@@ -330,12 +333,38 @@ freshness, never data.
 - Bodies over 100 KB → 413.
 - The payload is stored verbatim in `appfolio.webhook_events`
   (audit/debug inbox) and trusted for nothing beyond topic extraction.
-  Topic extraction is tolerant (`topic`/`Topic`/`event_type`/headers…)
-  because AppFolio's format is unknown until first delivery; extraction
-  failure logs a warning and stores the event with NULL topic.
+  Topic extraction is tolerant (`topic`/`Topic`/`event_type`/headers…) —
+  written before the format was known; kept tolerant in case AppFolio's
+  shape drifts. Extraction failure logs a warning and stores the event
+  with NULL topic.
 - Dedupe: provider event id when present, else
   `sha256(topic + payload + minute bucket)`, enforced by a partial
   unique index — provider retries are idempotent inserts answered 200.
+
+### Actual payload format (confirmed from live deliveries, 2026-06-12)
+
+AppFolio Database API webhooks POST a JSON body with:
+
+| Field             | Notes                                              |
+|-------------------|----------------------------------------------------|
+| `topic`           | Resource topic (e.g. `Units`) — matched by the extractor's first candidate (`body.topic`) |
+| `event_id`        | Provider event id — picked up by the dedupe key (`id:<event_id>`) |
+| `client_id`       | The AppFolio client the event belongs to — **not yet validated** (see deferred hardening) |
+| `resource_id`     | UUID of the changed record — not yet used (deltas re-fetch by `LastUpdatedAtFrom`; a future optimization could single-record fetch) |
+| `event_timestamp` | When the change happened in AppFolio                |
+
+### Deferred hardening (intentionally not yet built)
+
+- **`client_id` validation in the processor** — assert the payload's
+  `client_id` matches our AppFolio account before triggering work, so a
+  forged-but-token-valid POST (or an AppFolio cross-tenant mixup) can't
+  drive syncs or bus events.
+- **Signature-header investigation** — capture and inspect what AppFolio
+  sends in delivery headers; add signature verification once the signing
+  scheme is identified. Until then the URL token is the only auth.
+- **`webhook_events` retention cleanup** — the raw inbox grows
+  unbounded; add a sweep (e.g. delete processed rows older than N days)
+  when the table earns it.
 
 ### Processor (15-second tick)
 
@@ -373,6 +402,7 @@ freshness, never data.
    `migrations/046_appfolio_webhook_events.sql`,
    `backend/routes/appfolio-db-webhook.js`,
    `backend/services/appfolio-webhook-processor.js` (this section). ✅
-4. Webhook signature verification — once AppFolio's signing scheme is
-   known. Retention cleanup for the webhook inbox — when the table earns
-   it.
+4. Deferred hardening (see Phase 3.5 section): `client_id` validation in
+   the processor, signature-header investigation / verification,
+   `webhook_events` retention cleanup. Possible optimization:
+   single-record fetch by `resource_id` instead of delta re-fetch.
