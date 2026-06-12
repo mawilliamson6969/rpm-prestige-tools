@@ -305,6 +305,56 @@ Emitted via `lib/eventBus.js` (emit-only; no automation config in code),
 `appfolio.sync_state` gained `consecutive_failures` and
 `last_success_at` (the latter feeds the events' downtime math).
 
+## Phase 3.5 — Webhooks as sync triggers + automation events
+
+Shipped in `migrations/046_appfolio_webhook_events.sql`,
+`backend/routes/appfolio-db-webhook.js`, and
+`backend/services/appfolio-webhook-processor.js`.
+
+### Doorbell model
+
+Webhooks **accelerate** the mirror; they never own correctness. The
+receiver stores the raw delivery and returns 200 in milliseconds; a
+15-second processor turns stored events into targeted delta syncs and
+bus events; the Phase 3 polling sync (hourly delta + nightly full) stays
+untouched as the reconciliation layer. A lost or malformed webhook costs
+freshness, never data.
+
+### Receiver: `POST /webhooks/appfolio-db/:token`
+
+- Shared-token auth: the path token is compared constant-time against
+  `APPFOLIO_WEBHOOK_TOKEN`. Unset env **or** wrong token → 404, so the
+  endpoint is indistinguishable from a missing route without the token.
+  Signature verification is a follow-up once AppFolio's signing scheme
+  is known.
+- Bodies over 100 KB → 413.
+- The payload is stored verbatim in `appfolio.webhook_events`
+  (audit/debug inbox) and trusted for nothing beyond topic extraction.
+  Topic extraction is tolerant (`topic`/`Topic`/`event_type`/headers…)
+  because AppFolio's format is unknown until first delivery; extraction
+  failure logs a warning and stores the event with NULL topic.
+- Dedupe: provider event id when present, else
+  `sha256(topic + payload + minute bucket)`, enforced by a partial
+  unique index — provider retries are idempotent inserts answered 200.
+
+### Processor (15-second tick)
+
+- Topics mapping to mirrored resources (Properties/Units/Tenants/Leases,
+  normalized) trigger **one delta sync per resource per tick** — a burst
+  of webhooks coalesces into a single fetch. The sync's per-resource
+  advisory lock covers contention with scheduled/CLI runs; a held lock
+  defers those events to the next tick.
+- Work-order and unknown topics: no fetch (work orders aren't mirrored).
+- Every processed event emits `appfolio.webhook.<topic_snake_case>`
+  (source `appfolio-webhook`) with `{ topic, receivedAt, raw }`, then
+  gets `processed_at` stamped. Unknown topics warn once per process.
+  These compose with the "Internal: Custom event" automation trigger
+  (e.g. pattern `appfolio.webhook.*`).
+- A delta-sync *failure* (not lock contention) still emits + stamps:
+  notification is the doorbell's job; polling reconciles the data.
+- Processor self-disables when `APPFOLIO_WEBHOOK_TOKEN` is unset (the
+  receiver 404s, so there is nothing to process).
+
 ## Phase roadmap
 
 1. **Client + proof-of-life** — this document. ✅ shipped & verified
@@ -318,5 +368,11 @@ Emitted via `lib/eventBus.js` (emit-only; no automation config in code),
    `migrations/044_appfolio_curated_columns.sql`. ✅
 3. **Scheduled delta syncs + deletion detection + failure events** —
    `migrations/045_appfolio_sync_phase3.sql`,
-   `backend/services/appfolio-db-scheduler.js` (this section). ✅
-4. Webhooks — only if a feature later needs sub-hourly freshness
+   `backend/services/appfolio-db-scheduler.js`. ✅
+   3.5. **Webhooks as sync triggers + automation events** —
+   `migrations/046_appfolio_webhook_events.sql`,
+   `backend/routes/appfolio-db-webhook.js`,
+   `backend/services/appfolio-webhook-processor.js` (this section). ✅
+4. Webhook signature verification — once AppFolio's signing scheme is
+   known. Retention cleanup for the webhook inbox — when the table earns
+   it.
