@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 
 const MARKETING_AI_SYSTEM = `You are a marketing content writer for RPM Prestige, a property management company in Houston, TX managing 217+ rental properties. A Neighborly® franchise.
 

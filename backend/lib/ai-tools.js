@@ -17,7 +17,7 @@
  * (`ai_templates`); the frontend merges them into this list per logged-in user.
  *
  * Per-tool provider/model: each tool MAY pin `provider` ("anthropic" | "openai")
- * and `model` (e.g. "claude-sonnet-4-20250514", "gpt-4o"). If omitted, the
+ * and `model` (e.g. "claude-sonnet-4-5", "gpt-4o"). If omitted, the
  * backend falls back to AI_TOOL_DEFAULT_PROVIDER / AI_TOOL_DEFAULT_MODEL env
  * vars, then to the provider-layer baseline. Either way, automatic failover
  * still applies — provider here selects the PRIMARY only.
@@ -61,7 +61,7 @@ export const AI_TOOLS = [
     category: "Communication",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     systemPrompt: `
 TASK: Draft a reply to an email the team member received.
 
@@ -96,7 +96,7 @@ Rules:
     category: "Writing",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     systemPrompt: `
 TASK: Improve a piece of text the team member wrote.
 
@@ -131,7 +131,7 @@ Rules:
     category: "Productivity",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     systemPrompt: `
 TASK: Summarize a long piece of text (email thread, call notes, meeting notes).
 
@@ -167,7 +167,7 @@ Rules:
     category: "Documents",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     // NOTE: This is the one tool with legal exposure. The prompt below makes
     // the AI cautious and flag compliance items. For TRUE compliance, Step 3
     // of the build brief feeds Texas Property Code reference text into the
@@ -216,7 +216,7 @@ Rules:
     category: "Marketing",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     systemPrompt: `
 TASK: Write marketing copy for a rental property.
 
@@ -251,7 +251,7 @@ Rules:
     category: "Productivity",
     builtIn: true,
     provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     // This is the flexible catch-all. It replaces the "blank Notion AI" use
     // case for the random stuff that doesn't fit a named tool.
     systemPrompt: `

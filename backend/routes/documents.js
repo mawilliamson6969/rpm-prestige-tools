@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 
-const AI_MODEL = "claude-sonnet-4-20250514";
+const AI_MODEL = "claude-sonnet-4-5";
 
 const AI_SYSTEM_PROMPT =
   "You are a helpful assistant for Real Property Management Prestige in Houston, TX. " +

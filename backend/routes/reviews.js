@@ -21,7 +21,7 @@ import { formatE164, isOpenPhoneConfigured, sendSMS } from "../lib/openphone.js"
 import { graphPost } from "../lib/inbox/graph-client.js";
 import { getValidAccessTokenForConnection } from "../lib/inbox/microsoft-auth.js";
 
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+const CLAUDE_MODEL = "claude-sonnet-4-5";
 
 function frontendBase() {
   return (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");

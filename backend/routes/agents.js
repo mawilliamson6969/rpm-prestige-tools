@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 import { CHI_TODAY } from "../lib/agents-schema.js";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 
 const STATUS = new Set(["active", "paused", "testing", "inactive"]);
 const CATEGORIES = new Set([

@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 import { mondayOfDate, meetsGoal } from "./eos.js";
 
-const AI_MODEL = "claude-sonnet-4-20250514";
+const AI_MODEL = "claude-sonnet-4-5";
 
 function anthropic() {
   const key = process.env.ANTHROPIC_API_KEY?.trim();

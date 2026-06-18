@@ -9,7 +9,7 @@ import { getPool } from "../lib/db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_ROOT = path.join(__dirname, "..", "uploads", "files");
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_ANALYSIS_BYTES = 20 * 1024 * 1024;
 

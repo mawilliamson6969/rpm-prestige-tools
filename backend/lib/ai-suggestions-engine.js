@@ -12,7 +12,7 @@ import { getPool } from "./db.js";
  * stale data. Estimated ~$1-3/day at the default 15-minute cadence.
  */
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 const MAX_SUGGESTIONS_PER_RUN = 8;
 const STALE_AFTER_DAYS = 7;
 

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../lib/db.js";
 
-const SCORECARD_AI_MODEL = "claude-sonnet-4-20250514";
+const SCORECARD_AI_MODEL = "claude-sonnet-4-5";
 
 function anthropicForScorecard() {
   const key = process.env.ANTHROPIC_API_KEY?.trim();

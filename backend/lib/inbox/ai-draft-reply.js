@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../db.js";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 
 const SYSTEM_PROMPT = `You are drafting an email reply for RPM Prestige, a professional property management company in Houston, TX. Your role is to draft polished, helpful responses that the team member will review before sending.
 

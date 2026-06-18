@@ -3,7 +3,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
 const DEFAULT_MODELS = {
-  anthropic: "claude-sonnet-4-20250514",
+  anthropic: "claude-sonnet-4-5",
   openai: "gpt-4o",
 };
 

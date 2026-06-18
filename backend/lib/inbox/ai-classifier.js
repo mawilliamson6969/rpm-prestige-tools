@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPool } from "../db.js";
 import { runAutomationsForThread } from "./automation-engine.js";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-5";
 
 function marketingPattern(senderEmail) {
   const e = String(senderEmail || "").toLowerCase();
