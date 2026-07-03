@@ -798,6 +798,15 @@ import {
   getProperties as getMaintProperties,
   getPropertyUnits as getMaintPropertyUnits,
 } from "./routes/maintenanceJobs.js";
+import {
+  listSubcontractors,
+  getSubcontractor,
+  createSubcontractor,
+  updateSubcontractor,
+  deleteSubcontractor,
+  addRating,
+} from "./routes/maintenanceSubcontractors.js";
+import { runCoiExpiryCheck } from "./lib/maint-coi-alerts.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -1969,6 +1978,14 @@ app.get("/maintenance/jobs/:id", requireAuth, getJob);
 app.put("/maintenance/jobs/:id", requireAuth, putJob);
 app.delete("/maintenance/jobs/:id", requireAuth, requirePermission("maintenance.delete"), deleteJob);
 
+/** Maintenance Management System — subcontractor DB (Phase 2) */
+app.get("/maintenance/subcontractors", requireAuth, listSubcontractors);
+app.post("/maintenance/subcontractors", requireAuth, createSubcontractor);
+app.get("/maintenance/subcontractors/:id", requireAuth, getSubcontractor);
+app.put("/maintenance/subcontractors/:id", requireAuth, updateSubcontractor);
+app.delete("/maintenance/subcontractors/:id", requireAuth, requirePermission("maintenance.delete"), deleteSubcontractor);
+app.post("/maintenance/subcontractors/:id/ratings", requireAuth, addRating);
+
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
 app.post("/processes/templates/:id/stages", requireAuth, requireAdminRole, postTemplateStage);
@@ -2648,6 +2665,15 @@ async function start() {
       );
     });
     console.log("Scheduled process automation delay check: 0 * * * * (hourly).");
+
+    // Maintenance Phase 2: daily COI-expiry scan → SMS digest to
+    // MAINT_ALERT_PHONE (skips gracefully if unset) + Connect events.
+    cron.schedule("0 7 * * *", () => {
+      runCoiExpiryCheck().catch((e) =>
+        console.error("[coi-alert cron]", e.message || e)
+      );
+    });
+    console.log("Scheduled subcontractor COI expiry check: 0 7 * * * (daily at 7 AM).");
 
     // Phase 4: autopilot rule firing every minute and scheduled email/SMS
     // sends every 5 minutes.
