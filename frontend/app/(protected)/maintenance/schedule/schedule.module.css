@@ -1,0 +1,349 @@
+/* Maintenance scheduling — weekly assignment grid + billing rollup.
+   Colors from app/globals.css tokens. */
+
+.page {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--rpm-navy, #1b2856);
+  margin: 0 0 0.2rem;
+}
+
+.subtitle {
+  color: var(--text-secondary, #6a737b);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--paper, #fff);
+  color: var(--rpm-navy, #1b2856);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: rgba(27, 40, 86, 0.04);
+}
+
+.btnPrimary {
+  background: var(--rpm-blue, #0098d0);
+  border-color: var(--rpm-blue, #0098d0);
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: #0086b8;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---------- Week nav ---------- */
+
+.weekNav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.weekLabel {
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+  min-width: 220px;
+}
+
+/* ---------- Week grid ---------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+
+.dayCol {
+  background: var(--paper, #fff);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dayHeader {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.dayHeaderToday {
+  color: var(--rpm-blue, #0098d0);
+}
+
+.dayDate {
+  color: var(--text-muted, #8b92a4);
+  font-weight: 600;
+}
+
+.dayBody {
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.assignCard {
+  border: 1px solid rgba(27, 40, 86, 0.12);
+  border-left: 3px solid var(--rpm-blue, #0098d0);
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  background: #fff;
+}
+
+.assignCard:hover {
+  background: rgba(0, 152, 208, 0.05);
+}
+
+.assignTime {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--rpm-blue, #0098d0);
+}
+
+.assignTech {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+}
+
+.assignJob {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #6a737b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignHours {
+  font-size: 0.72rem;
+  color: var(--text-muted, #8b92a4);
+  margin-top: 0.15rem;
+}
+
+.dayEmpty {
+  color: var(--text-muted, #8b92a4);
+  font-size: 0.72rem;
+  padding: 0.4rem;
+}
+
+/* ---------- Billing rollup ---------- */
+
+.rollup {
+  margin-top: 1.25rem;
+  background: var(--paper, #fff);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.rollupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.rollupTitle {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--rpm-navy, #1b2856);
+}
+
+.suggestBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(199, 120, 0, 0.14);
+  color: var(--warning, #c77800);
+}
+
+.rollupTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.rollupTable th,
+.rollupTable td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.06);
+  color: var(--rpm-navy, #1b2856);
+}
+
+.rollupTable th {
+  color: var(--text-secondary, #6a737b);
+  font-weight: 700;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rollupTotal {
+  font-weight: 800;
+}
+
+/* ---------- Forms / modal ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.7rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+}
+
+.field input,
+.field textarea,
+.field select {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--rpm-navy, #1b2856);
+  background: #fff;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.formFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.footerRight {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btnDanger {
+  color: var(--danger, #b32317);
+  border-color: rgba(179, 35, 23, 0.3);
+}
+
+.errorBanner {
+  background: rgba(179, 35, 23, 0.08);
+  border: 1px solid rgba(179, 35, 23, 0.25);
+  color: var(--danger, #b32317);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.8rem;
+}
+
+.loading {
+  color: var(--text-secondary, #6a737b);
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--paper, #fff);
+  border-radius: 12px;
+  width: min(540px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(27, 40, 86, 0.25);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+}
+
+.modalHeader h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+  margin: 0;
+}
+
+.closeBtn {
+  border: none;
+  background: transparent;
+  font-size: 1.3rem;
+  color: var(--text-secondary, #6a737b);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modalBody {
+  padding: 1rem 1.25rem 1.25rem;
+}

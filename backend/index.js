@@ -807,6 +807,18 @@ import {
   addRating,
 } from "./routes/maintenanceSubcontractors.js";
 import { runCoiExpiryCheck } from "./lib/maint-coi-alerts.js";
+import {
+  listTechs,
+  getTech,
+  createTech,
+  updateTech,
+  deleteTech,
+  listAssignments,
+  createAssignment,
+  updateAssignment,
+  deleteAssignment,
+  getJobLabor,
+} from "./routes/maintenanceTechs.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -1985,6 +1997,18 @@ app.get("/maintenance/subcontractors/:id", requireAuth, getSubcontractor);
 app.put("/maintenance/subcontractors/:id", requireAuth, updateSubcontractor);
 app.delete("/maintenance/subcontractors/:id", requireAuth, requirePermission("maintenance.delete"), deleteSubcontractor);
 app.post("/maintenance/subcontractors/:id/ratings", requireAuth, addRating);
+
+/** Maintenance Management System — techs + scheduling (Phase 3) */
+app.get("/maintenance/techs", requireAuth, listTechs);
+app.post("/maintenance/techs", requireAuth, createTech);
+app.get("/maintenance/techs/:id", requireAuth, getTech);
+app.put("/maintenance/techs/:id", requireAuth, updateTech);
+app.delete("/maintenance/techs/:id", requireAuth, requirePermission("maintenance.delete"), deleteTech);
+app.get("/maintenance/assignments", requireAuth, listAssignments);
+app.post("/maintenance/assignments", requireAuth, createAssignment);
+app.put("/maintenance/assignments/:id", requireAuth, updateAssignment);
+app.delete("/maintenance/assignments/:id", requireAuth, deleteAssignment);
+app.get("/maintenance/jobs/:id/labor", requireAuth, getJobLabor);
 
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
