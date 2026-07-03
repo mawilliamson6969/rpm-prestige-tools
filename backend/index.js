@@ -833,6 +833,13 @@ import {
   declineQuote,
   getBillDraft,
 } from "./routes/maintenanceQuotes.js";
+import {
+  listProjects as listMaintProjects,
+  getProject as getMaintProject,
+  createProject as createMaintProject,
+  updateProject as updateMaintProject,
+  deleteProject as deleteMaintProject,
+} from "./routes/maintenanceProjects.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -2037,6 +2044,13 @@ app.post("/maintenance/quotes/:id/send-esign", requireAuth, sendQuoteForSignatur
 app.post("/maintenance/quotes/:id/approve", requireAuth, approveQuote);
 app.post("/maintenance/quotes/:id/decline", requireAuth, declineQuote);
 app.get("/maintenance/quotes/:id/bill-draft", requireAuth, getBillDraft);
+
+/** Maintenance Management System — make-ready projects (Phase 5) */
+app.get("/maintenance/projects", requireAuth, listMaintProjects);
+app.post("/maintenance/projects", requireAuth, createMaintProject);
+app.get("/maintenance/projects/:id", requireAuth, getMaintProject);
+app.put("/maintenance/projects/:id", requireAuth, updateMaintProject);
+app.delete("/maintenance/projects/:id", requireAuth, requirePermission("maintenance.delete"), deleteMaintProject);
 
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
