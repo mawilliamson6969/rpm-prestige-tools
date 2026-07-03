@@ -142,6 +142,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // subcontractor DB (Phase 2), techs + scheduling (Phase 3). Phase 5
       // adds Projects.
       { id: "maint-jobs", label: "Jobs", icon: Wrench, href: "/maintenance/jobs" },
+      { id: "maint-quotes", label: "Quotes", icon: FileText, href: "/maintenance/quotes" },
       { id: "maint-schedule", label: "Schedule", icon: Calendar, href: "/maintenance/schedule" },
       { id: "maint-techs", label: "Techs", icon: Users, href: "/maintenance/techs" },
       { id: "maint-subs", label: "Subcontractors", icon: Building, href: "/maintenance/subcontractors" },
