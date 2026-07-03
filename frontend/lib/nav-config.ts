@@ -138,9 +138,12 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "maintenance",
     label: "Maintenance",
     items: [
-      // Maintenance Management System — job/ticket pipeline (Phase 1) +
-      // subcontractor DB (Phase 2). Later phases add Techs and Projects.
+      // Maintenance Management System — job/ticket pipeline (Phase 1),
+      // subcontractor DB (Phase 2), techs + scheduling (Phase 3). Phase 5
+      // adds Projects.
       { id: "maint-jobs", label: "Jobs", icon: Wrench, href: "/maintenance/jobs" },
+      { id: "maint-schedule", label: "Schedule", icon: Calendar, href: "/maintenance/schedule" },
+      { id: "maint-techs", label: "Techs", icon: Users, href: "/maintenance/techs" },
       { id: "maint-subs", label: "Subcontractors", icon: Building, href: "/maintenance/subcontractors" },
     ],
   },
