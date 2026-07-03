@@ -12,6 +12,7 @@
 
 import { getPool } from "../lib/db.js";
 import { emitEvent } from "../lib/eventBus.js";
+import { MAINT_EVENT } from "../lib/maint-events.js";
 import { createEsignEnvelope } from "./esign.js";
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -482,6 +483,13 @@ export async function sendQuoteForSignature(req, res) {
       res.status(404).json({ error: "Quote not found." });
       return;
     }
+    await emitEvent({
+      type: MAINT_EVENT.QUOTE_SENT,
+      source: "internal",
+      payload: { quote_id: id, job_id: row.job_id, esign_request_id: envelope.request.id },
+      externalId: `maintenance_quote_sent:${id}:${envelope.request.id}`,
+    });
+
     const fresh = await loadQuoteRow(pool, id);
     res.json({ quote: mapQuote(fresh), esignRequest: envelope.request });
   } catch (e) {
@@ -531,14 +539,14 @@ export async function approveQuote(req, res) {
     );
     if (jr.length) {
       await emitEvent({
-        type: "maintenance.status_changed",
+        type: MAINT_EVENT.STATUS_CHANGED,
         source: "internal",
         payload: { job_id: jobId, to_status: "scheduled", reason: "quote_approved", quote_id: id },
         externalId: `maintenance_status:${jobId}:scheduled:quote${id}`,
       });
     }
     await emitEvent({
-      type: "maintenance.quote_approved",
+      type: MAINT_EVENT.QUOTE_APPROVED,
       source: "internal",
       payload: { quote_id: id, job_id: jobId },
       externalId: `maintenance_quote_approved:${id}`,
@@ -573,7 +581,7 @@ export async function declineQuote(req, res) {
       return;
     }
     await emitEvent({
-      type: "maintenance.quote_declined",
+      type: MAINT_EVENT.QUOTE_DECLINED,
       source: "internal",
       payload: { quote_id: id, job_id: rows[0].job_id },
       externalId: `maintenance_quote_declined:${id}`,

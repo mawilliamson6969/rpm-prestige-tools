@@ -17,6 +17,7 @@
 import { getPool } from "./db.js";
 import { sendSMS } from "./openphone.js";
 import { emitEvent } from "./eventBus.js";
+import { MAINT_EVENT } from "./maint-events.js";
 
 /** Warn this many days before a COI lapses. */
 const WARN_DAYS = 30;
@@ -45,7 +46,7 @@ export async function runCoiExpiryCheck() {
   // Emit one Connect event per vendor regardless of SMS config.
   for (const s of rows) {
     await emitEvent({
-      type: "maintenance.coi_expiring",
+      type: MAINT_EVENT.COI_EXPIRING,
       source: "internal",
       payload: {
         subcontractor_id: s.id,

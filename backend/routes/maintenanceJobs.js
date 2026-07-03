@@ -14,6 +14,7 @@
 
 import { getPool } from "../lib/db.js";
 import { emitEvent } from "../lib/eventBus.js";
+import { MAINT_EVENT } from "../lib/maint-events.js";
 
 const STATUSES = [
   "new",
@@ -237,7 +238,7 @@ export async function postJob(req, res) {
     const job = mapJob(full[0]);
 
     await emitEvent({
-      type: "maintenance.job_created",
+      type: MAINT_EVENT.JOB_CREATED,
       source: "internal",
       payload: {
         job_id: job.id,
@@ -336,7 +337,7 @@ export async function putJob(req, res) {
     // downstream automations (custom-event triggers on "maintenance.*") fire.
     if (body.status !== undefined && body.status !== existing.status) {
       await emitEvent({
-        type: "maintenance.status_changed",
+        type: MAINT_EVENT.STATUS_CHANGED,
         source: "internal",
         payload: {
           job_id: job.id,

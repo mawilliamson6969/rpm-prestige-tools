@@ -14,6 +14,7 @@
 import cronParser from "cron-parser";
 import { getPool } from "../lib/db.js";
 import { emitEvent } from "../lib/eventBus.js";
+import { MAINT_EVENT_TYPES } from "../lib/maint-events.js";
 
 const DEFAULT_SCHEDULE_TZ = "America/Chicago";
 
@@ -55,6 +56,9 @@ const ALLOWED_TRIGGERS = new Set([
   // the event type exactly, or as a prefix when it ends in ".*"
   // (e.g. "appfolio.sync.*"). Matching lives in worker/matching.js.
   "custom.event",
+  // Maintenance Management System (Phase 6): the maintenance.* lifecycle
+  // events are first-class triggers too. Catalog: lib/maint-events.js.
+  ...MAINT_EVENT_TYPES,
 ]);
 
 /**
