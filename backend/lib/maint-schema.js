@@ -2,7 +2,8 @@
  * Maintenance Management System schema applier (Phase 1).
  *
  * The DDL lives in a numbered migration applied at boot:
- *   047_maintenance.sql — all six core tables + maint_job_photos
+ *   047_maintenance.sql        — all six core tables + maint_job_photos
+ *   048_maintenance_phase2.sql — subcontractor ratings + coi_alerted_at
  *
  * Read the migration at boot and run it against the pool — same pattern as
  * af-mirror-schema.js. The migration is idempotent (CREATE ... IF NOT EXISTS
@@ -19,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { getPool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION_FILES = ["047_maintenance.sql"];
+const MIGRATION_FILES = ["047_maintenance.sql", "048_maintenance_phase2.sql"];
 
 let cachedSql = null;
 
