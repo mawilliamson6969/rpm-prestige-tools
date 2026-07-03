@@ -1,0 +1,455 @@
+/* Maintenance quotes — list + line-item editor. Colors from globals.css. */
+
+.page {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--rpm-navy, #1b2856);
+  margin: 0 0 0.2rem;
+}
+
+.subtitle {
+  color: var(--text-secondary, #6a737b);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--paper, #fff);
+  color: var(--rpm-navy, #1b2856);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: rgba(27, 40, 86, 0.04);
+}
+
+.btnPrimary {
+  background: var(--rpm-blue, #0098d0);
+  border-color: var(--rpm-blue, #0098d0);
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: #0086b8;
+}
+
+.btnSuccess {
+  background: var(--success, #1f8a5b);
+  border-color: var(--success, #1f8a5b);
+  color: #fff;
+}
+
+.btnDanger {
+  color: var(--danger, #b32317);
+  border-color: rgba(179, 35, 23, 0.3);
+}
+
+.btnSmall {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.searchRow {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  background: var(--paper, #fff);
+  color: var(--text-secondary, #6a737b);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chipActive {
+  background: var(--rpm-navy, #1b2856);
+  border-color: var(--rpm-navy, #1b2856);
+  color: #fff;
+}
+
+.card {
+  background: var(--paper, #fff);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(27, 40, 86, 0.06);
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  overflow: hidden;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th {
+  background: rgba(27, 40, 86, 0.06);
+  color: var(--rpm-navy, #1b2856);
+  font-weight: 700;
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid rgba(27, 40, 86, 0.07);
+  color: var(--rpm-navy, #1b2856);
+  vertical-align: middle;
+}
+
+.rowLink {
+  cursor: pointer;
+}
+
+.rowLink:hover {
+  background: rgba(0, 152, 208, 0.05);
+}
+
+.muted {
+  color: var(--text-secondary, #6a737b);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Status badges ---------- */
+
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badgeDraft {
+  background: rgba(106, 115, 123, 0.13);
+  color: var(--rpm-gray, #6a737b);
+}
+
+.badgeSent {
+  background: rgba(0, 152, 208, 0.12);
+  color: #0073a0;
+}
+
+.badgeApproved {
+  background: rgba(31, 138, 91, 0.12);
+  color: var(--success, #1f8a5b);
+}
+
+.badgeRejected {
+  background: rgba(179, 35, 23, 0.12);
+  color: var(--danger, #b32317);
+}
+
+/* ---------- Editor / line items ---------- */
+
+.lineTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.lineTable th {
+  text-align: left;
+  color: var(--text-secondary, #6a737b);
+  font-weight: 700;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.1);
+  font-size: 0.78rem;
+}
+
+.lineTable td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.05);
+  vertical-align: middle;
+}
+
+.lineInput {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--rpm-navy, #1b2856);
+  width: 100%;
+  background: #fff;
+}
+
+.lineInputNum {
+  width: 90px;
+  text-align: right;
+}
+
+.kindSelect {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: #fff;
+}
+
+.iconBtn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8b92a4);
+  cursor: pointer;
+  padding: 0.2rem;
+  line-height: 1;
+}
+
+.iconBtn:hover {
+  color: var(--danger, #b32317);
+}
+
+.totals {
+  margin-top: 0.8rem;
+  margin-left: auto;
+  width: 260px;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+  font-size: 0.9rem;
+  color: var(--rpm-navy, #1b2856);
+}
+
+.grandTotal {
+  border-top: 2px solid rgba(27, 40, 86, 0.15);
+  margin-top: 0.3rem;
+  padding-top: 0.4rem;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.sectionLabel {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #6a737b);
+  margin: 1rem 0 0.5rem;
+}
+
+.approvalBar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem;
+  border: 1px solid rgba(27, 40, 86, 0.1);
+  border-radius: 8px;
+  background: var(--bg-subtle, #f4f5f8);
+  margin-top: 0.5rem;
+}
+
+.approvalBar input {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-width: 180px;
+  flex: 1;
+}
+
+.suggestBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(199, 120, 0, 0.14);
+  color: var(--warning, #c77800);
+}
+
+/* ---------- Fields / modal ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.7rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+}
+
+.field input,
+.field textarea,
+.field select {
+  border: 1px solid rgba(27, 40, 86, 0.15);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--rpm-navy, #1b2856);
+  background: #fff;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.errorBanner {
+  background: rgba(179, 35, 23, 0.08);
+  border: 1px solid rgba(179, 35, 23, 0.25);
+  color: var(--danger, #b32317);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.8rem;
+}
+
+.okBanner {
+  background: rgba(31, 138, 91, 0.08);
+  border: 1px solid rgba(31, 138, 91, 0.25);
+  color: var(--success, #1f8a5b);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.8rem;
+}
+
+.empty {
+  color: var(--text-secondary, #6a737b);
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+
+.loading {
+  color: var(--text-secondary, #6a737b);
+  padding: 2rem;
+  text-align: center;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 40, 86, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--paper, #fff);
+  border-radius: 12px;
+  width: min(720px, 100%);
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(27, 40, 86, 0.25);
+}
+
+.modalSmall {
+  width: min(460px, 100%);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(27, 40, 86, 0.08);
+  position: sticky;
+  top: 0;
+  background: var(--paper, #fff);
+}
+
+.modalHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.modalHeader h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--rpm-navy, #1b2856);
+  margin: 0;
+}
+
+.closeBtn {
+  border: none;
+  background: transparent;
+  font-size: 1.3rem;
+  color: var(--text-secondary, #6a737b);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modalBody {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.metaLine {
+  color: var(--text-secondary, #6a737b);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}

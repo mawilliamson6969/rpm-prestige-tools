@@ -102,80 +102,110 @@ function fieldsToSubmitterValues(fields) {
   return Object.entries(fields).map(([name, value]) => ({ name, default_value: value }));
 }
 
+/**
+ * Create a Docuseal submission and store a local esign_requests tracking row.
+ * Shared by POST /esign/send and by feature flows that need a signing envelope
+ * (e.g. maintenance quote approval). Throws DOCUSEAL_CONFIG / DOCUSEAL_HTTP on
+ * failure and a plain Error (code VALIDATION) on bad input, so callers can map
+ * to their own responses.
+ *
+ * Returns { request, docuseal } — the stored row and the raw Docuseal result.
+ */
+export async function createEsignEnvelope({
+  templateId,
+  templateName,
+  processId,
+  propertyName,
+  signers,
+  prefillFields,
+  userId = null,
+} = {}) {
+  const pool = getPool();
+  if (!templateId) {
+    const err = new Error("templateId is required");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  const cleanSigners = normalizeSigners(signers);
+  if (!cleanSigners.length) {
+    const err = new Error("At least one signer with an email is required");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  const submitters = cleanSigners.map((s) => ({
+    role: s.role,
+    email: s.email,
+    name: s.name || undefined,
+    values: fieldsToSubmitterValues({ ...(prefillFields || {}), ...s.fields }),
+  }));
+
+  const submission = await docusealFetch("/submissions", {
+    method: "POST",
+    body: JSON.stringify({
+      template_id: Number(templateId),
+      send_email: true,
+      submitters,
+    }),
+  });
+
+  // Docuseal returns either an array of submitters with submission_id, or a single submission object.
+  const submissionId = Array.isArray(submission)
+    ? submission[0]?.submission_id || submission[0]?.id
+    : submission?.id || submission?.submission_id;
+
+  const procIdNum = Number.parseInt(processId, 10);
+  const { rows } = await pool.query(
+    `INSERT INTO esign_requests
+       (docuseal_submission_id, template_id, template_name, process_id, property_name,
+        signers, prefill_fields, status, created_by, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', $8, NOW(), NOW())
+     RETURNING *`,
+    [
+      submissionId || null,
+      Number(templateId),
+      typeof templateName === "string" ? templateName : null,
+      Number.isFinite(procIdNum) ? procIdNum : null,
+      typeof propertyName === "string" ? propertyName : null,
+      JSON.stringify(cleanSigners),
+      JSON.stringify(prefillFields || {}),
+      userId,
+    ]
+  );
+
+  if (Number.isFinite(procIdNum)) {
+    await pool.query(
+      `UPDATE processes
+          SET last_activity_at = NOW(),
+              last_activity_type = 'esign_sent',
+              last_activity_by = $2
+        WHERE id = $1`,
+      [procIdNum, userId]
+    );
+  }
+
+  return { request: rows[0], docuseal: submission };
+}
+
 /** POST /esign/send — create a Docuseal submission and store a tracking row locally. */
 export async function postSend(req, res) {
   try {
-    const pool = getPool();
-    const {
+    const { templateId, templateName, processId, propertyName, signers, prefillFields } =
+      req.body || {};
+    const { request, docuseal } = await createEsignEnvelope({
       templateId,
       templateName,
       processId,
       propertyName,
       signers,
       prefillFields,
-    } = req.body || {};
-
-    if (!templateId) {
-      return res.status(400).json({ error: "templateId is required" });
-    }
-    const cleanSigners = normalizeSigners(signers);
-    if (!cleanSigners.length) {
-      return res.status(400).json({ error: "At least one signer with an email is required" });
-    }
-
-    const submitters = cleanSigners.map((s) => ({
-      role: s.role,
-      email: s.email,
-      name: s.name || undefined,
-      values: fieldsToSubmitterValues({ ...(prefillFields || {}), ...s.fields }),
-    }));
-
-    const submission = await docusealFetch("/submissions", {
-      method: "POST",
-      body: JSON.stringify({
-        template_id: Number(templateId),
-        send_email: true,
-        submitters,
-      }),
+      userId: req.user?.id || null,
     });
-
-    // Docuseal returns either an array of submitters with submission_id, or a single submission object.
-    const submissionId = Array.isArray(submission)
-      ? submission[0]?.submission_id || submission[0]?.id
-      : submission?.id || submission?.submission_id;
-
-    const procIdNum = Number.parseInt(processId, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO esign_requests
-         (docuseal_submission_id, template_id, template_name, process_id, property_name,
-          signers, prefill_fields, status, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', $8, NOW(), NOW())
-       RETURNING *`,
-      [
-        submissionId || null,
-        Number(templateId),
-        typeof templateName === "string" ? templateName : null,
-        Number.isFinite(procIdNum) ? procIdNum : null,
-        typeof propertyName === "string" ? propertyName : null,
-        JSON.stringify(cleanSigners),
-        JSON.stringify(prefillFields || {}),
-        req.user?.id || null,
-      ]
-    );
-
-    if (Number.isFinite(procIdNum)) {
-      await pool.query(
-        `UPDATE processes
-            SET last_activity_at = NOW(),
-                last_activity_type = 'esign_sent',
-                last_activity_by = $2
-          WHERE id = $1`,
-        [procIdNum, req.user?.id || null]
-      );
-    }
-
-    res.status(201).json({ success: true, request: rows[0], docuseal: submission });
+    res.status(201).json({ success: true, request, docuseal });
   } catch (err) {
+    if (err.code === "VALIDATION") {
+      return res.status(400).json({ error: err.message });
+    }
     sendDocusealError(res, err);
   }
 }

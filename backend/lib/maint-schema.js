@@ -5,6 +5,7 @@
  *   047_maintenance.sql        — all six core tables + maint_job_photos
  *   048_maintenance_phase2.sql — subcontractor ratings + coi_alerted_at
  *   049_maintenance_phase3.sql — tech assignment notes
+ *   050_maintenance_phase4.sql — quote title + lifecycle timestamps
  *
  * Read the migration at boot and run it against the pool — same pattern as
  * af-mirror-schema.js. The migration is idempotent (CREATE ... IF NOT EXISTS
@@ -25,6 +26,7 @@ const MIGRATION_FILES = [
   "047_maintenance.sql",
   "048_maintenance_phase2.sql",
   "049_maintenance_phase3.sql",
+  "050_maintenance_phase4.sql",
 ];
 
 let cachedSql = null;

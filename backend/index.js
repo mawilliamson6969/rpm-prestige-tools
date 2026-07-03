@@ -819,6 +819,20 @@ import {
   deleteAssignment,
   getJobLabor,
 } from "./routes/maintenanceTechs.js";
+import {
+  listQuotes,
+  getQuote,
+  createQuote,
+  updateQuote,
+  deleteQuote,
+  addLine,
+  updateLine,
+  deleteLine,
+  sendQuoteForSignature,
+  approveQuote,
+  declineQuote,
+  getBillDraft,
+} from "./routes/maintenanceQuotes.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -2009,6 +2023,20 @@ app.post("/maintenance/assignments", requireAuth, createAssignment);
 app.put("/maintenance/assignments/:id", requireAuth, updateAssignment);
 app.delete("/maintenance/assignments/:id", requireAuth, deleteAssignment);
 app.get("/maintenance/jobs/:id/labor", requireAuth, getJobLabor);
+
+/** Maintenance Management System — quotes + PrestigeSign (Phase 4) */
+app.get("/maintenance/quotes", requireAuth, listQuotes);
+app.post("/maintenance/quotes", requireAuth, createQuote);
+app.get("/maintenance/quotes/:id", requireAuth, getQuote);
+app.put("/maintenance/quotes/:id", requireAuth, updateQuote);
+app.delete("/maintenance/quotes/:id", requireAuth, requirePermission("maintenance.delete"), deleteQuote);
+app.post("/maintenance/quotes/:id/lines", requireAuth, addLine);
+app.put("/maintenance/quotes/:id/lines/:lineId", requireAuth, updateLine);
+app.delete("/maintenance/quotes/:id/lines/:lineId", requireAuth, deleteLine);
+app.post("/maintenance/quotes/:id/send-esign", requireAuth, sendQuoteForSignature);
+app.post("/maintenance/quotes/:id/approve", requireAuth, approveQuote);
+app.post("/maintenance/quotes/:id/decline", requireAuth, declineQuote);
+app.get("/maintenance/quotes/:id/bill-draft", requireAuth, getBillDraft);
 
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
