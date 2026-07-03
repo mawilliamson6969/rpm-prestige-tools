@@ -45,6 +45,7 @@ import {
 } from "./routes/contacts.js";
 import { ensureMbUnifiedSchema } from "./lib/mbSchema.js";
 import { ensureAfMirrorSchema } from "./lib/af-mirror-schema.js";
+import { ensureMaintSchema } from "./lib/maint-schema.js";
 import { ensureAppfolioSyncScheduled } from "./services/appfolio-db-scheduler.js";
 import { receiveAppfolioDbWebhook } from "./routes/appfolio-db-webhook.js";
 import { ensureAppfolioWebhookProcessing } from "./services/appfolio-webhook-processor.js";
@@ -788,6 +789,15 @@ import {
   putProcessStepComplete,
   putProcessStepSkip,
 } from "./routes/processes.js";
+import {
+  getJobs,
+  getJob,
+  postJob,
+  putJob,
+  deleteJob,
+  getProperties as getMaintProperties,
+  getPropertyUnits as getMaintPropertyUnits,
+} from "./routes/maintenanceJobs.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -1950,6 +1960,15 @@ app.get("/processes/board", requireAuth, getProcessesBoard);
 app.get("/processes", requireAuth, getProcesses);
 app.post("/processes", requireAuth, postProcess);
 
+/** Maintenance Management System — job/ticket CRUD (Phase 1) */
+app.get("/maintenance/properties", requireAuth, getMaintProperties);
+app.get("/maintenance/properties/:propertyId/units", requireAuth, getMaintPropertyUnits);
+app.get("/maintenance/jobs", requireAuth, getJobs);
+app.post("/maintenance/jobs", requireAuth, postJob);
+app.get("/maintenance/jobs/:id", requireAuth, getJob);
+app.put("/maintenance/jobs/:id", requireAuth, putJob);
+app.delete("/maintenance/jobs/:id", requireAuth, requirePermission("maintenance.delete"), deleteJob);
+
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
 app.post("/processes/templates/:id/stages", requireAuth, requireAdminRole, postTemplateStage);
@@ -2479,6 +2498,9 @@ async function start() {
       // schema (properties, units, tenants, leases, sync_state).
       // Backfill is manual: scripts/backfill-appfolio-db.js.
       ["appfolio.* mirror tables", ensureAfMirrorSchema],
+      // Maintenance Management System (Phase 1). Runs AFTER the appfolio
+      // mirror: maint_jobs / maint_projects carry TEXT FKs into appfolio.*.
+      ["maint_* (maintenance management)", ensureMaintSchema],
     ];
     let failures = 0;
     for (const [label, fn] of steps) {
