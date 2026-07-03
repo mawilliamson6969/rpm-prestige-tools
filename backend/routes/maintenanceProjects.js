@@ -17,6 +17,8 @@
  */
 
 import { getPool } from "../lib/db.js";
+import { emitEvent } from "../lib/eventBus.js";
+import { MAINT_EVENT } from "../lib/maint-events.js";
 
 function mapProject(r) {
   const total = r.total_steps != null ? Number(r.total_steps) : 0;
@@ -166,7 +168,16 @@ export async function createProject(req, res) {
       ]
     );
     const row = await loadProjectRow(pool, rows[0].id);
-    res.status(201).json({ project: mapProject(row) });
+    const project = mapProject(row);
+
+    await emitEvent({
+      type: MAINT_EVENT.PROJECT_CREATED,
+      source: "internal",
+      payload: { project_id: project.id, property_id: project.propertyId, name: project.name },
+      externalId: `maintenance_project_created:${project.id}`,
+    });
+
+    res.status(201).json({ project });
   } catch (e) {
     console.error("createProject failed", e);
     res.status(500).json({ error: "Could not create project." });

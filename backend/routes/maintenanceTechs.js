@@ -22,6 +22,7 @@
 
 import { getPool } from "../lib/db.js";
 import { emitEvent } from "../lib/eventBus.js";
+import { MAINT_EVENT } from "../lib/maint-events.js";
 
 const SANITIZE_ARRAY = (v) =>
   Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [];
@@ -328,7 +329,7 @@ export async function createAssignment(req, res) {
     const assignment = mapAssignment(rows[0]);
 
     await emitEvent({
-      type: "maintenance.tech_assigned",
+      type: MAINT_EVENT.TECH_ASSIGNED,
       source: "internal",
       payload: {
         assignment_id: assignment.id,

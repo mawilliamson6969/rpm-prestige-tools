@@ -840,6 +840,7 @@ import {
   updateProject as updateMaintProject,
   deleteProject as deleteMaintProject,
 } from "./routes/maintenanceProjects.js";
+import { getMaintEventTypes } from "./routes/maintenanceEvents.js";
 import { processDelayedAutoCompletes } from "./lib/process-automation.js";
 import { runAutopilotCheck } from "./lib/autopilot-engine.js";
 import { executeScheduledSteps } from "./lib/scheduled-step-executor.js";
@@ -2051,6 +2052,9 @@ app.post("/maintenance/projects", requireAuth, createMaintProject);
 app.get("/maintenance/projects/:id", requireAuth, getMaintProject);
 app.put("/maintenance/projects/:id", requireAuth, updateMaintProject);
 app.delete("/maintenance/projects/:id", requireAuth, requirePermission("maintenance.delete"), deleteMaintProject);
+
+/** Maintenance Management System — Prestige Connect event catalog (Phase 6) */
+app.get("/maintenance/event-types", requireAuth, getMaintEventTypes);
 
 /** Template stages */
 app.get("/processes/templates/:id/stages", requireAuth, getTemplateStages);
